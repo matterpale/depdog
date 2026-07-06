@@ -141,14 +141,28 @@ func (m Model) packagesView() string {
 		return styleDim.Render("no packages")
 	}
 	var b strings.Builder
+	if m.filtering || m.filter != "" {
+		hint := "  (esc clears)"
+		if m.filtering {
+			hint = "▊"
+		}
+		b.WriteString(styleWarn.Render("filter: "+m.filter) + styleDim.Render(hint) + "\n\n")
+	}
 
-	start, end, above, below := window(len(m.pkgs), m.selPkg, m.listRows())
+	pkgs := m.filteredPackages()
+	if len(pkgs) == 0 {
+		b.WriteString(styleDim.Render("no packages match the filter"))
+		return b.String()
+	}
+	sel := clamp(m.selPkg, len(pkgs))
+
+	start, end, above, below := window(len(pkgs), sel, m.listRows())
 	if above > 0 {
 		b.WriteString(moreLine("▲", above) + "\n")
 	}
 	lastComp := "\x00"
 	for i := start; i < end; i++ {
-		p := m.pkgs[i]
+		p := pkgs[i]
 		comp := p.Component
 		if comp == "" {
 			comp = "unassigned"
@@ -158,7 +172,7 @@ func (m Model) packagesView() string {
 			lastComp = comp
 		}
 		name := "  " + m.short(p.ImportPath)
-		if i == m.selPkg {
+		if i == sel {
 			b.WriteString(styleSelected.Render(name))
 		} else {
 			b.WriteString(name)
@@ -169,7 +183,7 @@ func (m Model) packagesView() string {
 		b.WriteString(moreLine("▼", below) + "\n")
 	}
 
-	p := m.pkgs[m.selPkg]
+	p := pkgs[sel]
 	b.WriteString("\n")
 	b.WriteString(styleDim.Render("── " + p.ImportPath + " ──"))
 	b.WriteString("\n")

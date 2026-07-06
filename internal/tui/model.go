@@ -101,7 +101,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "3":
 			m.active = tabPackages
 		case "/":
-			if m.active == tabViolations {
+			if m.active == tabViolations || m.active == tabPackages {
 				m.filtering = true
 			}
 		case "up", "k":
@@ -122,20 +122,27 @@ func (m Model) updateFilter(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case tea.KeyEsc:
 		m.filtering = false
 		m.filter = ""
-		m.selected = 0
+		m.resetSelection()
 	case tea.KeyBackspace:
 		if m.filter != "" {
 			m.filter = m.filter[:len(m.filter)-1]
-			m.selected = 0
+			m.resetSelection()
 		}
 	case tea.KeyCtrlC:
 		m.quitting = true
 		return m, tea.Quit
 	case tea.KeyRunes:
 		m.filter += string(msg.Runes)
-		m.selected = 0
+		m.resetSelection()
 	}
 	return m, nil
+}
+
+// resetSelection moves both list selections back to the top, so a filter change
+// never leaves the highlight past the end of a narrowed list.
+func (m *Model) resetSelection() {
+	m.selected = 0
+	m.selPkg = 0
 }
 
 // moveSelection moves the highlighted row on whichever list-bearing screen is
@@ -145,7 +152,7 @@ func (m *Model) moveSelection(d int) {
 	case tabViolations:
 		m.selected = clamp(m.selected+d, len(m.filteredViolations()))
 	case tabPackages:
-		m.selPkg = clamp(m.selPkg+d, len(m.pkgs))
+		m.selPkg = clamp(m.selPkg+d, len(m.filteredPackages()))
 	}
 }
 
@@ -162,6 +169,23 @@ func (m Model) filteredViolations() []core.Violation {
 		hay := strings.ToLower(v.FromComponent + " " + v.ImportPath + " " + v.Rule)
 		if strings.Contains(hay, f) {
 			out = append(out, v)
+		}
+	}
+	return out
+}
+
+// filteredPackages returns the package views matching the active filter (a
+// case-insensitive substring over import path and component), or all of them
+// when no filter is set.
+func (m Model) filteredPackages() []core.PackageView {
+	if m.filter == "" {
+		return m.pkgs
+	}
+	f := strings.ToLower(m.filter)
+	var out []core.PackageView
+	for _, p := range m.pkgs {
+		if strings.Contains(strings.ToLower(p.ImportPath+" "+p.Component), f) {
+			out = append(out, p)
 		}
 	}
 	return out
@@ -224,7 +248,7 @@ func (m Model) footer() string {
 	if m.filtering {
 		return styleDim.Render("type to filter · enter accept · esc clear")
 	}
-	if m.active == tabViolations {
+	if m.active == tabViolations || m.active == tabPackages {
 		return styleDim.Render("tab/1-3 switch · ↑/↓ move · / filter · q quit")
 	}
 	return styleDim.Render("tab/1-3 switch · ↑/↓ move · q quit")

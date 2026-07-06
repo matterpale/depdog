@@ -272,6 +272,35 @@ func TestViolationFilter(t *testing.T) {
 	}
 }
 
+func TestPackageFilter(t *testing.T) {
+	m := update(New(fixtureResult(), fixturePkgs()), runes("3")) // Packages screen
+	m = update(m, runes("/"))
+	if !m.filtering {
+		t.Fatal("/ should enter filter mode on the Packages screen")
+	}
+	for _, r := range "handler" {
+		m = update(m, runes(string(r)))
+	}
+	v := m.View()
+	if !strings.Contains(v, "filter: handler") {
+		t.Errorf("active filter indicator missing:\n%s", v)
+	}
+	if !strings.Contains(v, "internal/handler") {
+		t.Errorf("matching package should show:\n%s", v)
+	}
+	if strings.Contains(v, "▸ domain") {
+		t.Errorf("non-matching component group should be filtered out:\n%s", v)
+	}
+	m = update(m, tea.KeyMsg{Type: tea.KeyEsc})
+	if m.filtering || m.filter != "" {
+		t.Errorf("esc should clear the filter: filtering=%v filter=%q", m.filtering, m.filter)
+	}
+	// After clearing, both groups are back.
+	if !strings.Contains(m.View(), "▸ domain") {
+		t.Errorf("clearing the filter should restore all packages:\n%s", m.View())
+	}
+}
+
 func TestProgramLifecycle(t *testing.T) {
 	tm := teatest.NewTestModel(t, New(fixtureResult(), fixturePkgs()), teatest.WithInitialTermSize(90, 30))
 	teatest.WaitFor(t, tm.Output(), func(b []byte) bool {
