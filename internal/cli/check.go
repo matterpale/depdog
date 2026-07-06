@@ -65,7 +65,7 @@ Exit codes: 0 clean, 1 violations found, 2 configuration or usage error.`,
 			case "text":
 				err = report.Text(out, res, elapsed, color)
 			case "json":
-				err = report.JSON(out, res, elapsed)
+				err = report.JSON(out, res, ev.Rules, elapsed)
 			case "github":
 				err = report.GitHub(out, res)
 			case "sarif":

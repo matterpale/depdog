@@ -54,8 +54,9 @@ Improvements, refinements, and polish beyond the M0–M5 work already shipped.
   (core.RuleSet.Decide).
 - ✅ **Shipped:** `check --color=auto|always|never` — auto keeps the per-writer
   detection (honoring NO_COLOR); always/never force the profile.
-- **Richer JSON.** (S) Include the resolved policy and each component's rule text
-  in `--format json` so consumers have full context (keep additive/stable).
+- ✅ **Shipped:** `--format json` now includes the resolved top-level `policy`
+  and, per component, its inferred `stance` and `allow`/`deny` refs (omitempty),
+  so consumers get the full config context alongside the results.
 - ✅ **Shipped:** `depdog config` dumps the compiled rule set — components,
   patterns, each component's inferred stance and rule, policy and options.
 

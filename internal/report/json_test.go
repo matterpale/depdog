@@ -9,6 +9,49 @@ import (
 	"github.com/matterpale/depdog/internal/core"
 )
 
+func TestJSONComponentsAndPolicy(t *testing.T) {
+	rs := &core.RuleSet{
+		Components: []core.Component{{Name: "app", Patterns: []string{"a"}}, {Name: "domain", Patterns: []string{"d"}}},
+		Rules: map[string]core.Rule{
+			"app":    {Deny: []core.Ref{{Kind: core.RefExternal}}},
+			"domain": {Allow: []core.Ref{{Kind: core.RefStd}}},
+		},
+		Policy: core.PolicyDeny,
+	}
+	res := &core.Result{
+		ModulePath: "m",
+		Components: []core.ComponentStat{{Name: "app"}, {Name: "domain", Packages: 2}},
+	}
+	var buf bytes.Buffer
+	if err := JSON(&buf, res, rs, 0); err != nil {
+		t.Fatal(err)
+	}
+	var parsed struct {
+		Policy     string           `json:"policy"`
+		Components []map[string]any `json:"components"`
+	}
+	if err := json.Unmarshal(buf.Bytes(), &parsed); err != nil {
+		t.Fatalf("invalid JSON: %v\n%s", err, buf.String())
+	}
+	if parsed.Policy != "deny" {
+		t.Errorf("policy = %q, want deny", parsed.Policy)
+	}
+	app := parsed.Components[0]
+	if app["stance"] != "blacklist" { // a deny-only rule
+		t.Errorf("app stance = %v, want blacklist", app["stance"])
+	}
+	if _, ok := app["allow"]; ok {
+		t.Errorf("app should omit an empty allow: %v", app)
+	}
+	dom := parsed.Components[1]
+	if dom["stance"] != "whitelist" {
+		t.Errorf("domain stance = %v, want whitelist", dom["stance"])
+	}
+	if allow, _ := dom["allow"].([]any); len(allow) != 1 || allow[0] != "std" {
+		t.Errorf("domain allow = %v, want [std]", dom["allow"])
+	}
+}
+
 func TestJSONWarningKinds(t *testing.T) {
 	res := &core.Result{
 		ModulePath: "m",
@@ -18,7 +61,7 @@ func TestJSONWarningKinds(t *testing.T) {
 		},
 	}
 	var buf bytes.Buffer
-	if err := JSON(&buf, res, 0); err != nil {
+	if err := JSON(&buf, res, &core.RuleSet{Policy: core.PolicyDeny}, 0); err != nil {
 		t.Fatal(err)
 	}
 	var parsed struct {

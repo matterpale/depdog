@@ -13,6 +13,7 @@ import (
 
 type jsonReport struct {
 	Module     string          `json:"module"`
+	Policy     string          `json:"policy"`
 	Violations []jsonViolation `json:"violations"`
 	Warnings   []jsonWarning   `json:"warnings"`
 	Components []jsonComponent `json:"components"`
@@ -21,10 +22,13 @@ type jsonReport struct {
 }
 
 type jsonComponent struct {
-	Name       string `json:"name"`
-	Packages   int    `json:"packages"`
-	Edges      int    `json:"edges"`
-	Violations int    `json:"violations"`
+	Name       string   `json:"name"`
+	Stance     string   `json:"stance"`
+	Allow      []string `json:"allow,omitempty"`
+	Deny       []string `json:"deny,omitempty"`
+	Packages   int      `json:"packages"`
+	Edges      int      `json:"edges"`
+	Violations int      `json:"violations"`
 }
 
 type jsonViolation struct {
@@ -55,6 +59,19 @@ type jsonStats struct {
 	DurationMS int64 `json:"duration_ms"`
 }
 
+// refStrings renders rule refs as plain strings, or nil when empty so the
+// allow/deny fields are omitted.
+func refStrings(refs []core.Ref) []string {
+	if len(refs) == 0 {
+		return nil
+	}
+	out := make([]string, len(refs))
+	for i, r := range refs {
+		out[i] = r.String()
+	}
+	return out
+}
+
 // emptyIfNil ensures an absent cycle list encodes as [] rather than null,
 // matching the schema convention for the other collections.
 func emptyIfNil(c [][]string) [][]string {
@@ -64,9 +81,10 @@ func emptyIfNil(c [][]string) [][]string {
 	return c
 }
 
-func JSON(w io.Writer, res *core.Result, elapsed time.Duration) error {
+func JSON(w io.Writer, res *core.Result, rs *core.RuleSet, elapsed time.Duration) error {
 	out := jsonReport{
 		Module:     res.ModulePath,
+		Policy:     policyName(rs.Policy),
 		Violations: make([]jsonViolation, 0, len(res.Violations)),
 		Warnings:   make([]jsonWarning, 0, len(res.Warnings)),
 		Components: make([]jsonComponent, 0, len(res.Components)),
@@ -102,8 +120,15 @@ func JSON(w io.Writer, res *core.Result, elapsed time.Duration) error {
 		})
 	}
 	for _, c := range res.Components {
+		stance := "whitelist"
+		if rs.Stance(c.Name) == core.PolicyAllow {
+			stance = "blacklist"
+		}
+		rule := rs.Rules[c.Name]
 		out.Components = append(out.Components, jsonComponent{
-			Name: c.Name, Packages: c.Packages, Edges: c.Edges, Violations: c.Violations,
+			Name: c.Name, Stance: stance,
+			Allow: refStrings(rule.Allow), Deny: refStrings(rule.Deny),
+			Packages: c.Packages, Edges: c.Edges, Violations: c.Violations,
 		})
 	}
 	enc := json.NewEncoder(w)

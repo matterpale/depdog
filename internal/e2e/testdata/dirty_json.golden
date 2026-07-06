@@ -1,5 +1,6 @@
 {
   "module": "example.test/dirty",
+  "policy": "deny",
   "violations": [
     {
       "from_package": "example.test/dirty/internal/domain/pricing",
@@ -72,30 +73,54 @@
   "components": [
     {
       "name": "domain",
+      "stance": "whitelist",
+      "allow": [
+        "std"
+      ],
       "packages": 1,
       "edges": 2,
       "violations": 2
     },
     {
       "name": "handler",
+      "stance": "whitelist",
+      "allow": [
+        "domain",
+        "std"
+      ],
       "packages": 1,
       "edges": 4,
       "violations": 2
     },
     {
       "name": "main",
+      "stance": "whitelist",
+      "allow": [
+        "*"
+      ],
       "packages": 1,
       "edges": 5,
       "violations": 0
     },
     {
       "name": "repository",
+      "stance": "whitelist",
+      "allow": [
+        "domain",
+        "std",
+        "external"
+      ],
       "packages": 1,
       "edges": 1,
       "violations": 0
     },
     {
       "name": "service",
+      "stance": "whitelist",
+      "allow": [
+        "domain",
+        "std"
+      ],
       "packages": 1,
       "edges": 2,
       "violations": 0
