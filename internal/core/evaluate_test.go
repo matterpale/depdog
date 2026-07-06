@@ -276,11 +276,46 @@ func TestEvaluateUnassigned(t *testing.T) {
 		}},
 	}}
 	res := evaluate(t, g, ddd())
-	if len(res.Warnings) != 1 || res.Warnings[0].RelDir != "pkg/util" {
-		t.Fatalf("warnings = %+v, want one for pkg/util", res.Warnings)
+	var un []Warning
+	for _, w := range res.Warnings {
+		if w.Kind == WarnUnassigned {
+			un = append(un, w)
+		}
+	}
+	if len(un) != 1 || un[0].RelDir != "pkg/util" {
+		t.Fatalf("unassigned warnings = %+v, want one for pkg/util", un)
 	}
 	if len(res.Violations) != 1 || res.Violations[0].Target != "unassigned" {
 		t.Fatalf("violations = %+v, want one with target unassigned", res.Violations)
+	}
+}
+
+func TestEvaluateEmptyComponent(t *testing.T) {
+	// Only domain has a package; the other declared components match nothing
+	// and should be flagged as empty (dead patterns), never fatal.
+	g := &Graph{ModulePath: "m", Packages: []Package{
+		{ImportPath: "m/internal/domain/order", RelDir: "internal/domain/order", Imports: []Import{
+			mkImport("fmt", ClassStd, "", false),
+		}},
+	}}
+	res := evaluate(t, g, ddd())
+
+	empty := map[string]bool{}
+	for _, w := range res.Warnings {
+		if w.Kind == WarnEmptyComponent {
+			empty[w.Component] = true
+		}
+	}
+	for _, name := range []string{"handler", "main", "repository", "service"} {
+		if !empty[name] {
+			t.Errorf("component %q claims no package and should be flagged empty", name)
+		}
+	}
+	if empty["domain"] {
+		t.Error("domain has a package and must not be flagged empty")
+	}
+	if len(res.Violations) != 0 {
+		t.Errorf("empty components must not produce violations: %+v", res.Violations)
 	}
 }
 
@@ -296,8 +331,13 @@ func TestEvaluateSkip(t *testing.T) {
 		}},
 	}}
 	res := evaluate(t, g, rs)
-	if len(res.Violations) != 0 || len(res.Warnings) != 0 {
-		t.Fatalf("skipped packages should be invisible: %+v %+v", res.Violations, res.Warnings)
+	if len(res.Violations) != 0 {
+		t.Fatalf("skipped packages should produce no violations: %+v", res.Violations)
+	}
+	for _, w := range res.Warnings {
+		if w.Kind == WarnUnassigned {
+			t.Fatalf("skipped package leaked as an unassigned warning: %+v", w)
+		}
 	}
 	if res.Stats.Packages != 1 {
 		t.Errorf("stats.Packages = %d, want 1", res.Stats.Packages)

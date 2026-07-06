@@ -78,9 +78,8 @@ Improvements, refinements, and polish beyond the M0–M5 work already shipped.
 
 ## Config validation & DX
 
-- **Warn on dead patterns.** (S) A component pattern that matches zero package
-  dirs is almost always a typo — surface it (like unassigned-package warnings).
-- **Warn on empty components** referenced by rules. (S)
+- ✅ **Shipped:** components whose patterns match no package are now flagged as
+  `empty-component` warnings (never fatal), in both text and JSON output.
 - **JSON Schema for `depdog.yaml`.** (S) Ship a schema for editor autocomplete
   and validation; link it from the docs.
 

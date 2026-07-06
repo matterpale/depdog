@@ -42,9 +42,10 @@ type jsonPosition struct {
 }
 
 type jsonWarning struct {
-	Kind    string `json:"kind"`
-	Package string `json:"package"`
-	Dir     string `json:"dir"`
+	Kind      string `json:"kind"`
+	Package   string `json:"package,omitempty"`
+	Dir       string `json:"dir,omitempty"`
+	Component string `json:"component,omitempty"`
 }
 
 type jsonStats struct {
@@ -81,7 +82,13 @@ func JSON(w io.Writer, res *core.Result, elapsed time.Duration) error {
 		out.Violations = append(out.Violations, jv)
 	}
 	for _, wr := range res.Warnings {
-		out.Warnings = append(out.Warnings, jsonWarning{Kind: "unassigned", Package: wr.Package, Dir: wr.RelDir})
+		kind := wr.Kind
+		if kind == "" {
+			kind = "unassigned"
+		}
+		out.Warnings = append(out.Warnings, jsonWarning{
+			Kind: kind, Package: wr.Package, Dir: wr.RelDir, Component: wr.Component,
+		})
 	}
 	for _, c := range res.Components {
 		out.Components = append(out.Components, jsonComponent{

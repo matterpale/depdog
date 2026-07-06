@@ -16,11 +16,20 @@ type Violation struct {
 	Positions     []Position
 }
 
-// Warning flags an in-module package no component claims. Warnings never
-// fail a check by themselves.
+// WarningKind distinguishes the advisory notes a check surfaces.
+const (
+	WarnUnassigned     = "unassigned"      // an in-module package no component claims
+	WarnEmptyComponent = "empty-component" // a component whose patterns match no package
+)
+
+// Warning is an advisory note that never fails a check by itself. Its fields
+// depend on Kind: WarnUnassigned carries Package and RelDir; WarnEmptyComponent
+// carries Component.
 type Warning struct {
-	Package string
-	RelDir  string
+	Kind      string
+	Package   string
+	RelDir    string
+	Component string
 }
 
 type Stats struct {
@@ -87,7 +96,7 @@ func Evaluate(g *Graph, rs *RuleSet) (*Result, error) {
 		if comp == "" {
 			// No component means no rule to judge outgoing edges by; the
 			// package is reported once instead of flooding the output.
-			res.Warnings = append(res.Warnings, Warning{Package: p.ImportPath, RelDir: p.RelDir})
+			res.Warnings = append(res.Warnings, Warning{Kind: WarnUnassigned, Package: p.ImportPath, RelDir: p.RelDir})
 			continue
 		}
 		cs := compStats[comp]
@@ -142,7 +151,13 @@ func Evaluate(g *Graph, rs *RuleSet) (*Result, error) {
 	}
 
 	for _, c := range rs.Components {
-		res.Components = append(res.Components, *compStats[c.Name])
+		stat := compStats[c.Name]
+		res.Components = append(res.Components, *stat)
+		if stat.Packages == 0 {
+			// A component whose patterns claimed no package is usually a typo
+			// or dead pattern; surface it without failing the build.
+			res.Warnings = append(res.Warnings, Warning{Kind: WarnEmptyComponent, Component: c.Name})
+		}
 	}
 	return res, nil
 }

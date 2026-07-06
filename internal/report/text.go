@@ -81,10 +81,24 @@ func Text(w io.Writer, res *core.Result, elapsed time.Duration) error {
 		}
 	}
 
-	if len(res.Warnings) > 0 {
-		fmt.Fprintf(&b, "\n%s %s not covered by any component:\n", st.warn.Render("!"), plural(len(res.Warnings), "package"))
-		for _, wr := range res.Warnings {
+	var unassigned, empty []core.Warning
+	for _, wr := range res.Warnings {
+		if wr.Kind == core.WarnEmptyComponent {
+			empty = append(empty, wr)
+		} else {
+			unassigned = append(unassigned, wr)
+		}
+	}
+	if len(unassigned) > 0 {
+		fmt.Fprintf(&b, "\n%s %s not covered by any component:\n", st.warn.Render("!"), plural(len(unassigned), "package"))
+		for _, wr := range unassigned {
 			fmt.Fprintf(&b, "    %s  (%s)\n", wr.Package, wr.RelDir)
+		}
+	}
+	if len(empty) > 0 {
+		fmt.Fprintf(&b, "\n%s %s with no packages (dead patterns?):\n", st.warn.Render("!"), plural(len(empty), "component"))
+		for _, wr := range empty {
+			fmt.Fprintf(&b, "    %s\n", wr.Component)
 		}
 	}
 

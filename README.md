@@ -85,7 +85,8 @@ Key ideas:
   `unassigned` and `"*"`.
 - In-module packages no component claims are always reported as **warnings**,
   but never fail the build on their own — unmapped packages are how rule sets
-  rot, so they stay visible without blocking adoption.
+  rot, so they stay visible without blocking adoption. A component whose
+  patterns match no package is likewise flagged (a likely typo or dead pattern).
 - **test_files: hybrid** (the default) lets `_test.go` files import any external
   module while still enforcing component-to-component rules; `same-rules` is
   strict, `relaxed` exempts test files entirely.

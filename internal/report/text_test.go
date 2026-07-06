@@ -43,6 +43,26 @@ func TestTextNoANSIWhenNotTerminal(t *testing.T) {
 	}
 }
 
+func TestTextEmptyComponentWarning(t *testing.T) {
+	res := &core.Result{
+		ModulePath: "example.test/m",
+		Warnings:   []core.Warning{{Kind: core.WarnEmptyComponent, Component: "ghost"}},
+		Stats:      core.Stats{Packages: 1},
+	}
+	var buf bytes.Buffer
+	if err := Text(&buf, res, 0); err != nil {
+		t.Fatal(err)
+	}
+	out := buf.String()
+	if !strings.Contains(out, "ghost") || !strings.Contains(out, "no packages") {
+		t.Errorf("empty-component warning not rendered:\n%s", out)
+	}
+	// It's a warning, not a violation.
+	if !strings.Contains(out, "✓ no violations") {
+		t.Errorf("empty component should not read as a violation:\n%s", out)
+	}
+}
+
 func TestTextCleanIsPlain(t *testing.T) {
 	var buf bytes.Buffer
 	res := &core.Result{ModulePath: "example.test/m", Stats: core.Stats{Packages: 3, Edges: 5}}
