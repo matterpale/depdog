@@ -34,9 +34,10 @@ Improvements, refinements, and polish beyond the M0–M5 work already shipped.
 - **Nested modules & `go.work`.** (L) Both are declined today with a message.
   Support checking a workspace (each module in turn) and nested modules without
   crashing.
-- **Loader benchmark + optional cache.** (M) The loader is the bottleneck;
-  `PLAN.md` says "measure first". Add a benchmark over a large synthetic module,
-  then decide whether a metadata cache is worth it.
+- **Loader cache.** (M) BenchmarkLoad now measures the loader (the bottleneck) —
+  ~46ms for the small dirty fixture, dominated by `go/packages` startup. Still
+  open: measure a large synthetic module, then decide whether a metadata cache
+  is worth it.
 - ✅ **Shipped:** a `replace` fixture whose dependency is a nested local module
   (replace => ./vendored) confirms the loader still classifies it as external.
   (A full vendor-tree fixture could still be added.)
@@ -78,8 +79,8 @@ Improvements, refinements, and polish beyond the M0–M5 work already shipped.
 
 ## Adoption & baseline
 
-- **`baseline --prune`.** (S) Drop baseline entries that are no longer
-  violations, so the ratchet file doesn't accumulate stale grandfathering.
+- ~~`baseline --prune`~~ — obviated: `depdog baseline` already overwrites with
+  the current violations, so it never accumulates stale entries.
 - ✅ **Shipped:** `check --fail-on new` now reports how many baselined entries
   are resolved and nudges the user to rerun `depdog baseline` to shrink the file.
 

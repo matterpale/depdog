@@ -77,3 +77,22 @@ func TestLoadCleanFixture(t *testing.T) {
 		t.Errorf("service→order: %+v", i)
 	}
 }
+
+// BenchmarkLoad measures a full metadata load of the dirty fixture (which pulls
+// in its external extlib sibling), the check pipeline's bottleneck. Run with:
+//
+//	go test ./internal/lang/golang -bench BenchmarkLoad -run '^$'
+func BenchmarkLoad(b *testing.B) {
+	b.Setenv("GOWORK", "off")
+	l := &Loader{Dir: filepath.Join("..", "..", "..", "testdata", "fixtures", "dirty")}
+	ctx := context.Background()
+	if _, err := l.Load(ctx); err != nil { // fail fast before timing
+		b.Fatalf("Load: %v", err)
+	}
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if _, err := l.Load(ctx); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
