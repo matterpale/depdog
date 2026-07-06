@@ -149,3 +149,113 @@ func TestCheckSelf(t *testing.T) {
 		t.Errorf("self-check output:\n%s", out)
 	}
 }
+
+// initModule lays down a fixed module tree for the init wizard to scan. The
+// layout matches the ddd preset (cmd + domain/handler/service/repository) plus
+// two extras (internal/telemetry, pkg/util) that exercise the "propose a
+// component for an unmatched directory" path.
+func initModule(t *testing.T) string {
+	t.Helper()
+	dir := t.TempDir()
+	files := map[string]string{
+		"go.mod":                         "module example.test/shop\n\ngo 1.26\n",
+		"cmd/app/main.go":                "package main\n",
+		"internal/domain/order/order.go": "package order\n",
+		"internal/handler/handler.go":    "package handler\n",
+		"internal/service/service.go":    "package service\n",
+		"internal/repository/repo.go":    "package repository\n",
+		"internal/telemetry/tel.go":      "package telemetry\n",
+		"pkg/util/util.go":               "package util\n",
+	}
+	for rel, body := range files {
+		p := filepath.Join(dir, filepath.FromSlash(rel))
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return dir
+}
+
+func readConfig(t *testing.T, dir string) string {
+	t.Helper()
+	data, err := os.ReadFile(filepath.Join(dir, "depdog.yaml"))
+	if err != nil {
+		t.Fatalf("reading generated config: %v", err)
+	}
+	return string(data)
+}
+
+func TestInitDDDDeny(t *testing.T) {
+	dir := initModule(t)
+	out, stderr, exit := run(t, dir, "init", "--yes")
+	if exit != 0 {
+		t.Fatalf("exit %d\nstdout:\n%s\nstderr:\n%s", exit, out, stderr)
+	}
+	golden(t, "init_ddd_deny.golden", readConfig(t, dir))
+
+	// A successful init already round-trips (it parses before writing); prove
+	// end to end that check accepts the file rather than erroring on config.
+	if _, cerr, cexit := run(t, dir, "check"); cexit == 2 {
+		t.Fatalf("generated config is a config error (exit 2):\n%s", cerr)
+	}
+}
+
+func TestInitBlacklist(t *testing.T) {
+	dir := initModule(t)
+	_, stderr, exit := run(t, dir, "init", "--yes", "--policy", "allow")
+	if exit != 0 {
+		t.Fatalf("exit %d\nstderr:\n%s", exit, stderr)
+	}
+	golden(t, "init_ddd_allow.golden", readConfig(t, dir))
+}
+
+func TestInitFlat(t *testing.T) {
+	dir := initModule(t)
+	_, stderr, exit := run(t, dir, "init", "--yes", "--preset", "flat")
+	if exit != 0 {
+		t.Fatalf("exit %d\nstderr:\n%s", exit, stderr)
+	}
+	golden(t, "init_flat_deny.golden", readConfig(t, dir))
+}
+
+func TestInitRefusesOverwrite(t *testing.T) {
+	dir := initModule(t)
+	if _, stderr, exit := run(t, dir, "init", "--yes"); exit != 0 {
+		t.Fatalf("first init exit %d\n%s", exit, stderr)
+	}
+	_, stderr, exit := run(t, dir, "init", "--yes")
+	if exit != 2 {
+		t.Fatalf("overwrite without --force exit %d, want 2", exit)
+	}
+	if !strings.Contains(stderr, "--force") {
+		t.Errorf("stderr should mention --force:\n%s", stderr)
+	}
+	if _, stderr, exit := run(t, dir, "init", "--yes", "--force"); exit != 0 {
+		t.Fatalf("init --force exit %d\n%s", exit, stderr)
+	}
+}
+
+func TestInitBadPreset(t *testing.T) {
+	dir := initModule(t)
+	_, stderr, exit := run(t, dir, "init", "--yes", "--preset", "nope")
+	if exit != 2 {
+		t.Fatalf("exit %d, want 2", exit)
+	}
+	if !strings.Contains(stderr, "ddd") {
+		t.Errorf("stderr should list valid presets:\n%s", stderr)
+	}
+}
+
+func TestInitNeedsTTYWithoutYes(t *testing.T) {
+	dir := initModule(t)
+	_, stderr, exit := run(t, dir, "init")
+	if exit != 2 {
+		t.Fatalf("exit %d, want 2", exit)
+	}
+	if !strings.Contains(stderr, "--yes") {
+		t.Errorf("stderr should point at --yes:\n%s", stderr)
+	}
+}
