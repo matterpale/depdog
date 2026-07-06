@@ -1,0 +1,19 @@
+policy:     deny
+test_files: hybrid
+
+components:
+  domain      internal/domain/**
+              stance: whitelist (only allowed pass)
+              allow:  [std]
+  handler     internal/handler/**
+              stance: whitelist (only allowed pass)
+              allow:  [domain, std]
+  main        cmd/**
+              stance: whitelist (only allowed pass)
+              allow:  [*]
+  repository  internal/repository/**
+              stance: whitelist (only allowed pass)
+              allow:  [domain, std, external]
+  service     internal/service/**
+              stance: whitelist (only allowed pass)
+              allow:  [domain, std]

@@ -24,6 +24,7 @@ declared in depdog.yaml: which components exist, and who may import whom.`,
 	}
 	root.AddCommand(initCmd())
 	root.AddCommand(checkCmd())
+	root.AddCommand(configCmd())
 	root.AddCommand(baselineCmd())
 	root.AddCommand(graphCmd())
 	root.AddCommand(explainCmd())

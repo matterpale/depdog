@@ -55,8 +55,8 @@ Improvements, refinements, and polish beyond the M0–M5 work already shipped.
   detection (honoring NO_COLOR); always/never force the profile.
 - **Richer JSON.** (S) Include the resolved policy and each component's rule text
   in `--format json` so consumers have full context (keep additive/stable).
-- **`config` / `--print-config` command.** (S) Dump the compiled ruleset
-  (components, resolved rules, policy) for debugging a config.
+- ✅ **Shipped:** `depdog config` dumps the compiled rule set — components,
+  patterns, each component's inferred stance and rule, policy and options.
 
 ## TUI
 

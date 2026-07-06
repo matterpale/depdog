@@ -1,0 +1,12 @@
+policy:     allow
+test_files: hybrid
+
+components:
+  domain   internal/domain/**
+           stance: blacklist (all pass except denied)
+           deny:   [handler, service, external]
+  handler  internal/handler/**
+           stance: blacklist (all pass except denied)
+           deny:   [service]
+  service  internal/service/**
+           stance: blacklist (all pass except denied)

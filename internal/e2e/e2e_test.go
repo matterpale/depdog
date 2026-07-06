@@ -145,6 +145,22 @@ func TestCheckBadFormat(t *testing.T) {
 	}
 }
 
+func TestConfigDumpClean(t *testing.T) {
+	out, stderr, exit := run(t, fixture("clean"), "config")
+	if exit != 0 {
+		t.Fatalf("exit %d\nstderr:\n%s", exit, stderr)
+	}
+	golden(t, "config_clean.golden", out)
+}
+
+func TestConfigDumpBlacklist(t *testing.T) {
+	out, stderr, exit := run(t, fixture("blacklist"), "config")
+	if exit != 0 {
+		t.Fatalf("exit %d\nstderr:\n%s", exit, stderr)
+	}
+	golden(t, "config_blacklist.golden", out)
+}
+
 func TestCheckColorAlways(t *testing.T) {
 	// --color=always forces ANSI even though the run env sets NO_COLOR and pipes.
 	out, _, exit := run(t, fixture("dirty"), "check", "--color", "always")
