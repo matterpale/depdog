@@ -207,6 +207,49 @@ func TestDecide(t *testing.T) {
 	}
 }
 
+func TestEvaluateExternalModuleAllow(t *testing.T) {
+	// Whitelist only std and one external module prefix.
+	rs := &RuleSet{
+		Components: []Component{{Name: "domain", Patterns: []string{"internal/domain/**"}}},
+		Rules: map[string]Rule{
+			"domain": {Allow: []Ref{{Kind: RefStd}, {Kind: RefExternalModule, Name: "example.com/ok"}}},
+		},
+		Policy: PolicyDeny,
+	}
+	g := &Graph{ModulePath: "m", Packages: []Package{
+		{ImportPath: "m/internal/domain", RelDir: "internal/domain", Imports: []Import{
+			mkImport("example.com/ok", ClassExternal, "", false),     // exact prefix -> allowed
+			mkImport("example.com/ok/sub", ClassExternal, "", false), // sub-path -> allowed
+			mkImport("example.com/other", ClassExternal, "", false),  // different module -> violation
+		}},
+	}}
+	res := evaluate(t, g, rs)
+	if len(res.Violations) != 1 || res.Violations[0].ImportPath != "example.com/other" {
+		t.Fatalf("only example.com/other should violate: %+v", res.Violations)
+	}
+}
+
+func TestEvaluateExternalModuleDenyWins(t *testing.T) {
+	// Allow external broadly, but deny one specific module.
+	rs := &RuleSet{
+		Components: []Component{{Name: "app", Patterns: []string{"**"}}},
+		Rules: map[string]Rule{
+			"app": {Allow: []Ref{{Kind: RefExternal}}, Deny: []Ref{{Kind: RefExternalModule, Name: "example.com/bad"}}},
+		},
+		Policy: PolicyDeny,
+	}
+	g := &Graph{ModulePath: "m", Packages: []Package{
+		{ImportPath: "m/app", RelDir: "app", Imports: []Import{
+			mkImport("example.com/good", ClassExternal, "", false),  // allowed by external
+			mkImport("example.com/bad/x", ClassExternal, "", false), // denied (deny prefix wins)
+		}},
+	}}
+	res := evaluate(t, g, rs)
+	if len(res.Violations) != 1 || res.Violations[0].ImportPath != "example.com/bad/x" {
+		t.Fatalf("the deny module prefix should win: %+v", res.Violations)
+	}
+}
+
 func TestEvaluateBlacklist(t *testing.T) {
 	rs := &RuleSet{
 		Components: []Component{

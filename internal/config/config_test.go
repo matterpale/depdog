@@ -82,6 +82,26 @@ rules:
 	}
 }
 
+func TestParseExternalModuleRef(t *testing.T) {
+	rs, err := Parse([]byte("version: 1\ncomponents: {a: [\"x/**\"]}\npolicy: deny\nrules: {a: {allow: [std, \"golang.org/x/sync\"]}}\n"))
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	allow := rs.Rules["a"].Allow
+	if len(allow) != 2 {
+		t.Fatalf("allow = %+v, want 2 refs", allow)
+	}
+	found := false
+	for _, r := range allow {
+		if r.Kind == core.RefExternalModule && r.Name == "golang.org/x/sync" {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("a module-path ref should parse to an external-module ref: %+v", allow)
+	}
+}
+
 func TestParseScalarPattern(t *testing.T) {
 	rs, err := Parse([]byte("version: 1\ncomponents:\n  main: cmd/**\npolicy: deny\n"))
 	if err != nil {

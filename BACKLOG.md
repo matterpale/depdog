@@ -13,10 +13,13 @@ Improvements, refinements, and polish beyond the M0–M5 work already shipped.
   blacklist, otherwise the global `policy`), fixing the deny-only-under-policy-
   deny footgun. Top-level `policy` is now optional (defaults to `deny`).
   Follow-up: teach the wizard to generate mixed-stance configs.
-- **Per-component external allowlists (depguard-style).** (L) Let `external`
-  carry sub-rules so a component can allow only specific third-party modules
-  (e.g. `external: { allow: ["github.com/google/uuid"] }`). Currently third
-  parties are one opaque bucket.
+- **Per-component external allowlists (depguard-style).** In progress.
+  - ✅ Shipped: an allow/deny entry that looks like an import path (contains `/`
+    or `.`) matches a specific external module by prefix (core.RefExternalModule).
+    `deny` wins; bare identifiers still must resolve to a component/group/special.
+  - Follow-up slices: teach `explain <from> <to>` to resolve a bare external
+    module target; wildcard module patterns (`golang.org/x/*`); surface module
+    refs distinctly in `--format json` (currently rendered as plain strings).
 - **Composable/base configs.** (M) `extends:` a shared base `depdog.yaml` (or a
   named built-in preset) so orgs can factor common rules out of each repo.
 - ✅ **Shipped:** component `groups` — a named set of components (`groups: {

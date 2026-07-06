@@ -86,7 +86,10 @@ Key ideas:
   (whitelist) or `allow` (blacklist). It is optional — omit it for the strict
   `deny` default. `init` asks which you want.
 - Allow/deny entries are component names or the specials `std`, `external`,
-  `unassigned` and `"*"`.
+  `unassigned` and `"*"`. An entry that looks like an import path (contains `/`
+  or `.`) restricts a **specific external module** by prefix, e.g. `allow: [std,
+  "golang.org/x/sync"]` permits std and that one dependency; list it under `deny`
+  to forbid just that module.
 - **Groups** name a reusable set of components. Declare `groups: { inner:
   [domain, core] }`, then reference `inner` in any allow/deny list; it expands
   to its members when the config loads.

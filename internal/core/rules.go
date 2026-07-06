@@ -15,12 +15,15 @@ const (
 	RefExternal
 	RefUnassigned
 	RefAny
+	// RefExternalModule matches a specific third-party module by import-path
+	// prefix (depguard-style), e.g. "golang.org/x/sync".
+	RefExternalModule
 )
 
 // Ref is a single entry of an allow or deny list.
 type Ref struct {
 	Kind RefKind
-	Name string // component name when Kind == RefComponent
+	Name string // component name (RefComponent) or module prefix (RefExternalModule)
 }
 
 func (r Ref) String() string {

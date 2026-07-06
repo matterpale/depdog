@@ -237,10 +237,17 @@ func parseRefs(rule string, entries []string, known map[string]bool, groups map[
 				}
 				continue
 			}
-			if !known[e] {
-				return nil, fmt.Errorf("rule %q refers to unknown component or group %q", rule, e)
+			if known[e] {
+				refs = append(refs, core.Ref{Kind: core.RefComponent, Name: e})
+				continue
 			}
-			refs = append(refs, core.Ref{Kind: core.RefComponent, Name: e})
+			// A ref that is neither a component nor a group, but looks like an
+			// import path, restricts a specific external module (depguard-style).
+			if strings.ContainsAny(e, "/.") {
+				refs = append(refs, core.Ref{Kind: core.RefExternalModule, Name: e})
+				continue
+			}
+			return nil, fmt.Errorf("rule %q refers to unknown component or group %q", rule, e)
 		}
 	}
 	return refs, nil

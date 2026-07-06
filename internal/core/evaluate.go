@@ -217,6 +217,9 @@ func refMatches(r Ref, imp Import, targetComp string) bool {
 		return imp.Class == ClassInModule && targetComp == ""
 	case RefComponent:
 		return imp.Class == ClassInModule && targetComp == r.Name
+	case RefExternalModule:
+		return imp.Class == ClassExternal &&
+			(imp.Path == r.Name || strings.HasPrefix(imp.Path, r.Name+"/"))
 	}
 	return false
 }
