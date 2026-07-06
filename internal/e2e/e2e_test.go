@@ -397,3 +397,47 @@ func TestCheckBadFailOn(t *testing.T) {
 		t.Errorf("stderr should mention --fail-on:\n%s", stderr)
 	}
 }
+
+func TestGraphComponentDOT(t *testing.T) {
+	out, stderr, exit := run(t, fixture("dirty"), "graph")
+	if exit != 0 {
+		t.Fatalf("exit %d\nstderr:\n%s", exit, stderr)
+	}
+	golden(t, "graph_component_dot.golden", out)
+}
+
+func TestGraphComponentMermaid(t *testing.T) {
+	out, stderr, exit := run(t, fixture("dirty"), "graph", "--format", "mermaid")
+	if exit != 0 {
+		t.Fatalf("exit %d\nstderr:\n%s", exit, stderr)
+	}
+	golden(t, "graph_component_mermaid.golden", out)
+}
+
+func TestGraphPackageDOT(t *testing.T) {
+	out, stderr, exit := run(t, fixture("dirty"), "graph", "--level", "package")
+	if exit != 0 {
+		t.Fatalf("exit %d\nstderr:\n%s", exit, stderr)
+	}
+	golden(t, "graph_package_dot.golden", out)
+}
+
+func TestGraphBadFormat(t *testing.T) {
+	_, stderr, exit := run(t, fixture("dirty"), "graph", "--format", "svg")
+	if exit != 2 {
+		t.Fatalf("exit %d, want 2", exit)
+	}
+	if !strings.Contains(stderr, "mermaid") {
+		t.Errorf("stderr should list valid formats:\n%s", stderr)
+	}
+}
+
+func TestGraphBadLevel(t *testing.T) {
+	_, stderr, exit := run(t, fixture("dirty"), "graph", "--level", "galaxy")
+	if exit != 2 {
+		t.Fatalf("exit %d, want 2", exit)
+	}
+	if !strings.Contains(stderr, "component") {
+		t.Errorf("stderr should list valid levels:\n%s", stderr)
+	}
+}

@@ -1,0 +1,18 @@
+digraph depdog {
+  rankdir=LR;
+  node [shape=box];
+  "example.test/dirty/cmd/app";
+  "example.test/dirty/internal/domain/pricing";
+  "example.test/dirty/internal/handler/checkout";
+  "example.test/dirty/internal/repository";
+  "example.test/dirty/internal/service";
+  "example.test/dirty/internal/util";
+  "example.test/dirty/cmd/app" -> "example.test/dirty/internal/domain/pricing";
+  "example.test/dirty/cmd/app" -> "example.test/dirty/internal/handler/checkout";
+  "example.test/dirty/cmd/app" -> "example.test/dirty/internal/repository";
+  "example.test/dirty/cmd/app" -> "example.test/dirty/internal/service";
+  "example.test/dirty/internal/domain/pricing" -> "example.test/dirty/internal/repository" [color="red", penwidth=2];
+  "example.test/dirty/internal/handler/checkout" -> "example.test/dirty/internal/domain/pricing";
+  "example.test/dirty/internal/handler/checkout" -> "example.test/dirty/internal/repository" [color="red", penwidth=2];
+  "example.test/dirty/internal/handler/checkout" -> "example.test/dirty/internal/service" [color="red", penwidth=2];
+}

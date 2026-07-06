@@ -1,0 +1,18 @@
+digraph depdog {
+  rankdir=LR;
+  node [shape=box];
+  "domain";
+  "handler";
+  "main";
+  "repository";
+  "service";
+  "unassigned";
+  "domain" -> "repository" [color="red", penwidth=2];
+  "handler" -> "domain";
+  "handler" -> "repository" [color="red", penwidth=2];
+  "handler" -> "service" [color="red", penwidth=2];
+  "main" -> "domain";
+  "main" -> "handler";
+  "main" -> "repository";
+  "main" -> "service";
+}

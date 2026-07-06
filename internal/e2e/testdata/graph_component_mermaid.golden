@@ -1,0 +1,15 @@
+flowchart LR
+  domain["domain"]
+  handler["handler"]
+  main["main"]
+  repository["repository"]
+  service["service"]
+  unassigned["unassigned"]
+  domain -->|✗| repository
+  handler --> domain
+  handler -->|✗| repository
+  handler -->|✗| service
+  main --> domain
+  main --> handler
+  main --> repository
+  main --> service
