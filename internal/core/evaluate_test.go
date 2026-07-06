@@ -105,6 +105,74 @@ func TestEvaluateComponentStats(t *testing.T) {
 	}
 }
 
+func TestStanceInferredFromRule(t *testing.T) {
+	rs := &RuleSet{
+		Rules: map[string]Rule{
+			"whitelisted": {Allow: []Ref{{Kind: RefStd}}},
+			"blacklisted": {Deny: []Ref{{Kind: RefExternal}}},
+			"both":        {Allow: []Ref{{Kind: RefStd}}, Deny: []Ref{{Kind: RefExternal}}},
+			"empty":       {},
+		},
+		Policy: PolicyDeny,
+	}
+	cases := map[string]Policy{
+		"whitelisted": PolicyDeny,  // an allow list ⇒ whitelist
+		"blacklisted": PolicyAllow, // a deny-only rule ⇒ blacklist
+		"both":        PolicyDeny,  // an allow list wins the stance
+		"empty":       PolicyDeny,  // no lists ⇒ global policy
+		"norule":      PolicyDeny,  // no rule ⇒ global policy
+	}
+	for name, want := range cases {
+		if got := rs.Stance(name); got != want {
+			t.Errorf("Stance(%q) = %v, want %v", name, got, want)
+		}
+	}
+}
+
+func TestEvaluateInferredStance(t *testing.T) {
+	// Global policy is deny, but a deny-only rule must behave as a blacklist
+	// for its component (the footgun fix) while an allow list stays a whitelist.
+	rs := &RuleSet{
+		Components: []Component{
+			{Name: "domain", Patterns: []string{"internal/domain/**"}},
+			{Name: "handler", Patterns: []string{"internal/handler/**"}},
+			{Name: "service", Patterns: []string{"internal/service/**"}},
+		},
+		Rules: map[string]Rule{
+			"domain":  {Allow: []Ref{{Kind: RefStd}}},                       // whitelist: std only
+			"handler": {Deny: []Ref{{Kind: RefComponent, Name: "service"}}}, // blacklist: all but service
+		},
+		Policy: PolicyDeny,
+	}
+	g := &Graph{ModulePath: "m", Packages: []Package{
+		{ImportPath: "m/internal/handler", RelDir: "internal/handler", Imports: []Import{
+			mkImport("m/internal/domain", ClassInModule, "internal/domain", false),   // allowed (not denied)
+			mkImport("m/internal/service", ClassInModule, "internal/service", false), // denied
+		}},
+		{ImportPath: "m/internal/domain", RelDir: "internal/domain", Imports: []Import{
+			mkImport("m/internal/service", ClassInModule, "internal/service", false), // violates whitelist
+		}},
+	}}
+	res := evaluate(t, g, rs)
+
+	got := map[string]bool{}
+	for _, v := range res.Violations {
+		got[v.FromPackage+"→"+v.ImportPath] = true
+	}
+	if len(res.Violations) != 2 {
+		t.Fatalf("violations = %d, want 2: %+v", len(res.Violations), res.Violations)
+	}
+	if !got["m/internal/handler→m/internal/service"] {
+		t.Error("handler→service should be denied by the deny list")
+	}
+	if got["m/internal/handler→m/internal/domain"] {
+		t.Error("handler→domain should pass: a deny-only rule is a blacklist, not deny-all")
+	}
+	if !got["m/internal/domain→m/internal/service"] {
+		t.Error("domain→service should violate the whitelist")
+	}
+}
+
 func TestEvaluateBlacklist(t *testing.T) {
 	rs := &RuleSet{
 		Components: []Component{

@@ -72,10 +72,14 @@ Key ideas:
 - **Components** are named sets of packages, matched by recursive doublestar
   globs against module-relative package dirs. When patterns overlap, the most
   specific wins; equal specificity is an ambiguity error.
-- **policy** decides edges no rule mentions: `deny` is the whitelist stance
-  (only allowed imports pass); `allow` is the blacklist stance (everything
-  passes except what a rule denies). Both are first-class — `init` asks which
-  you want. An explicit `deny` always beats an `allow`.
+- **Stance is inferred per rule from word choice.** A rule with an `allow` list
+  is a *whitelist* (only the listed imports pass); a rule with only a `deny` list
+  is a *blacklist* (everything passes except what's listed). An explicit `deny`
+  always beats an `allow`. This lets stances mix per component — `handler:
+  { deny: [repository] }` means "anything but repository" even when other
+  components are strict whitelists.
+- **policy** is the fallback for components with no `allow`/`deny` rule: `deny`
+  (whitelist) or `allow` (blacklist). `init` asks which you want as the default.
 - Allow/deny entries are component names or the specials `std`, `external`,
   `unassigned` and `"*"`.
 - In-module packages no component claims are always reported as **warnings**,

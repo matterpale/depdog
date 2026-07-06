@@ -113,7 +113,14 @@ rules:
 Semantics (kept deliberately simple for v1):
 
 - `allow`/`deny` entries are component names or the specials `std`, `external`, `unassigned`,
-  `"*"`. `deny` wins over `allow`; `policy` decides edges neither list mentions.
+  `"*"`. `deny` always wins over `allow`.
+- **Per-rule stance is inferred from word choice.** For an edge a rule's lists don't mention,
+  the fallback is read off the rule itself: an `allow` list makes the component a *whitelist*
+  (only listed imports pass); a `deny`-only rule makes it a *blacklist* (everything passes
+  except what's listed). A component with no rule — or a rule with neither list — falls back to
+  the top-level `policy`. This lets stances mix per component and avoids the trap where a
+  `deny`-only rule under `policy: deny` silently forbade everything. `policy` is therefore the
+  default for rule-less components, not a global override.
 - Pattern matching: recursive doublestar globs against module-relative package dirs, and
   **most specific wins** when patterns overlap. Elaborate or deep trees are covered with a
   catch-all plus carve-outs instead of exhaustive per-directory patterns:

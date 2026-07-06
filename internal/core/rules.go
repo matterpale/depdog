@@ -135,6 +135,25 @@ func (rs *RuleSet) AssignComponent(relDir string) (string, error) {
 	return best, nil
 }
 
+// Stance reports the fallback for a component's edges that neither its allow
+// nor its deny list mentions. The stance is inferred from the rule's word
+// choice: an allow list makes the component a whitelist (PolicyDeny — only
+// listed imports pass); a deny-only rule makes it a blacklist (PolicyAllow —
+// everything passes except what is listed). A component with no rule, or a rule
+// with neither list, falls back to the global policy. An explicit deny always
+// wins regardless of stance.
+func (rs *RuleSet) Stance(component string) Policy {
+	r, ok := rs.Rules[component]
+	switch {
+	case ok && len(r.Allow) > 0:
+		return PolicyDeny
+	case ok && len(r.Deny) > 0:
+		return PolicyAllow
+	default:
+		return rs.Policy
+	}
+}
+
 // Skipped reports whether the package dir is excluded from analysis.
 func (rs *RuleSet) Skipped(relDir string) bool {
 	for _, pat := range rs.Skip {

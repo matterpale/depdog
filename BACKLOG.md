@@ -8,16 +8,11 @@ Improvements, refinements, and polish beyond the M0–M5 work already shipped.
 
 ## Rules & policy
 
-- **Infer whitelist/blacklist stance per rule from `allow` vs `deny`.** (M)
-  Today `policy` is global and decides every unmentioned edge, which makes a
-  `deny`-only rule under `policy: deny` mean "import nothing" instead of
-  "anything but the denied" — a footgun. Proposed: an `allow` list ⇒ whitelist
-  for that component (explicit `deny` still wins); `deny`-only ⇒ blacklist;
-  neither / no rule ⇒ fall back to the global `policy`. Behavior-invariant for
-  every wizard-generated config and depdog's own; diverges only on the footgun
-  cases. `policy` becomes "default for rule-less components" (could be optional,
-  default `deny`). Needs: both-lists disambiguation, a changelog note, and a
-  `version` bump.
+- ✅ **Shipped:** whitelist/blacklist stance is now inferred per rule from
+  `allow` vs `deny` (an `allow` list ⇒ whitelist, a `deny`-only rule ⇒
+  blacklist, otherwise the global `policy`), fixing the deny-only-under-policy-
+  deny footgun. Follow-ups: make top-level `policy` optional (default `deny`),
+  and teach the wizard to generate mixed-stance configs.
 - **Per-component external allowlists (depguard-style).** (L) Let `external`
   carry sub-rules so a component can allow only specific third-party modules
   (e.g. `external: { allow: ["github.com/google/uuid"] }`). Currently third

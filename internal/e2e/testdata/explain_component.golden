@@ -1,6 +1,6 @@
 component domain
   patterns: internal/domain/**
-  policy:   deny
+  stance:   whitelist (only allowed pass)
   allow:    [std]
   packages (1):
     example.test/dirty/internal/domain/pricing

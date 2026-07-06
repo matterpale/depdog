@@ -30,7 +30,7 @@ func explainComponent(w io.Writer, c core.Component, rs *core.RuleSet, res *core
 	var b strings.Builder
 	fmt.Fprintf(&b, "component %s\n", c.Name)
 	fmt.Fprintf(&b, "  patterns: %s\n", strings.Join(c.Patterns, ", "))
-	fmt.Fprintf(&b, "  policy:   %s\n", policyName(rs.Policy))
+	fmt.Fprintf(&b, "  stance:   %s\n", stanceName(rs.Stance(c.Name)))
 
 	rule, ok := rs.Rules[c.Name]
 	switch {
@@ -135,6 +135,15 @@ func policyName(p core.Policy) string {
 		return "allow"
 	}
 	return "deny"
+}
+
+// stanceName describes a fallback policy in whitelist/blacklist terms, matching
+// how the rules read.
+func stanceName(p core.Policy) string {
+	if p == core.PolicyAllow {
+		return "blacklist (all pass except denied)"
+	}
+	return "whitelist (only allowed pass)"
 }
 
 func refList(refs []core.Ref) string {

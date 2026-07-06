@@ -93,6 +93,7 @@ func Evaluate(g *Graph, rs *RuleSet) (*Result, error) {
 		cs := compStats[comp]
 		cs.Packages++
 		rule, hasRule := rs.Rules[comp]
+		stance := rs.Stance(comp)
 		for _, imp := range p.Imports {
 			res.Stats.Edges++
 			cs.Edges++
@@ -128,8 +129,8 @@ func Evaluate(g *Graph, rs *RuleSet) (*Result, error) {
 			if hasRule && matchAny(rule.Allow, imp, targetComp) {
 				continue
 			}
-			if rs.Policy == PolicyAllow {
-				continue
+			if stance == PolicyAllow {
+				continue // blacklist fallback: unmentioned edges pass
 			}
 			text := "policy: deny"
 			if hasRule && len(rule.Allow) > 0 {
