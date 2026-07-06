@@ -1,0 +1,111 @@
+# depdog — Backlog
+
+Improvements, refinements, and polish beyond the M0–M5 work already shipped.
+`PLAN.md` remains the design source of truth; this file is the running list of
+"what next". Rough priority within each section; effort is S/M/L.
+
+---
+
+## Rules & policy
+
+- **Infer whitelist/blacklist stance per rule from `allow` vs `deny`.** (M)
+  Today `policy` is global and decides every unmentioned edge, which makes a
+  `deny`-only rule under `policy: deny` mean "import nothing" instead of
+  "anything but the denied" — a footgun. Proposed: an `allow` list ⇒ whitelist
+  for that component (explicit `deny` still wins); `deny`-only ⇒ blacklist;
+  neither / no rule ⇒ fall back to the global `policy`. Behavior-invariant for
+  every wizard-generated config and depdog's own; diverges only on the footgun
+  cases. `policy` becomes "default for rule-less components" (could be optional,
+  default `deny`). Needs: both-lists disambiguation, a changelog note, and a
+  `version` bump.
+- **Per-component external allowlists (depguard-style).** (L) Let `external`
+  carry sub-rules so a component can allow only specific third-party modules
+  (e.g. `external: { allow: ["github.com/google/uuid"] }`). Currently third
+  parties are one opaque bucket.
+- **Composable/base configs.** (M) `extends:` a shared base `depdog.yaml` (or a
+  named built-in preset) so orgs can factor common rules out of each repo.
+- **Component aliases / groups.** (S) Let a rule reference a set of components by
+  a group name (e.g. `inner: [domain, core]`) to cut repetition.
+
+## Engine & correctness
+
+- **Component-level import-cycle detection.** (M) `go vet` catches package
+  cycles; cycles *between components* (a→b→a at the architecture level) are the
+  interesting ones and nothing surfaces them today.
+- **Build-tag / GOOS·GOARCH awareness.** (L) The loader does one metadata load;
+  edges behind build tags for other platforms are invisible. Offer
+  `--tags`/matrix loading so platform-specific imports are checked.
+- **Nested modules & `go.work`.** (L) Both are declined today with a message.
+  Support checking a workspace (each module in turn) and nested modules without
+  crashing.
+- **Loader benchmark + optional cache.** (M) The loader is the bottleneck;
+  `PLAN.md` says "measure first". Add a benchmark over a large synthetic module,
+  then decide whether a metadata cache is worth it.
+- **`replace`/vendored edge cases.** (S) Add fixtures for `replace` to a nested
+  path and a vendored tree; confirm classification stays correct.
+
+## CLI & output
+
+- **`init`: edit names/patterns, not just drop.** (M) `PLAN.md §4` wants the
+  wizard to let you rename components and tweak patterns; today the interactive
+  review can only include/exclude suggested components.
+- **`init` merge mode.** (M) When a config exists, offer to show a diff / merge
+  in newly-scanned packages instead of only refusing without `--force`.
+- **`graph` readability.** (S) Package-level labels are full import paths (noisy)
+  — trim to module-relative. Cluster packages by component (DOT `subgraph
+  cluster_*`). Add `--violations-only` and a focus filter (one component/subtree).
+- **`explain` an edge.** (S) `explain <from> <to>` to answer "why is this
+  specific import allowed/denied", showing the rule and stance that decided it.
+- **Explicit color control.** (S) `--color=auto|always|never` on `check` (and a
+  `NO_COLOR` note in help); today color is auto-detected only.
+- **Richer JSON.** (S) Include the resolved policy and each component's rule text
+  in `--format json` so consumers have full context (keep additive/stable).
+- **`config` / `--print-config` command.** (S) Dump the compiled ruleset
+  (components, resolved rules, policy) for debugging a config.
+
+## TUI
+
+- **Scrolling.** (M) Long violation/package lists overflow — wire a
+  `bubbles/viewport` so lists scroll; use the stored height for layout.
+- **Filtering & search.** (M) Filter Violations by component/rule; fuzzy-search
+  Packages. `PLAN.md §6` calls for filterable views.
+- **`$EDITOR` + re-run.** (M) `e` opens the selected file at its line in
+  `$EDITOR`; `r` re-runs the check in place (a step toward watch mode).
+- **Help overlay.** (S) `?` toggles a key legend via `bubbles/help`.
+- **Import-class legend & consistent color-coding** on the Packages screen. (S)
+
+## Adoption & baseline
+
+- **`baseline --prune`.** (S) Drop baseline entries that are no longer
+  violations, so the ratchet file doesn't accumulate stale grandfathering.
+- **Report fixed baselined violations.** (S) On `check --fail-on new`, note which
+  baselined entries now pass, nudging the user to shrink the file.
+
+## Config validation & DX
+
+- **Warn on dead patterns.** (S) A component pattern that matches zero package
+  dirs is almost always a typo — surface it (like unassigned-package warnings).
+- **Warn on empty components** referenced by rules. (S)
+- **JSON Schema for `depdog.yaml`.** (S) Ship a schema for editor autocomplete
+  and validation; link it from the docs.
+
+## Testing & CI
+
+- **Turn on formatting/lint gates.** (S) Add a `.golangci.yml` enabling `gofmt`/
+  `goimports` (and the import-order convention), and fix the pre-existing gofmt
+  drift in `internal/lang/golang/loader.go` and `internal/core/match_test.go`
+  (go1.26 struct-comment alignment). CI's default linters don't gate formatting
+  today.
+- **Cross-platform CI matrix.** (S) Add a Windows runner to exercise path
+  handling (`filepath.ToSlash`, module-relative dirs).
+- **Fuzz the parser and matcher.** (S) `go test -fuzz` for `config.Parse` and
+  `core.MatchPattern` — cheap coverage of edge cases.
+
+## Release & ecosystem (owner-gated)
+
+- **Choose a license** before any public release (deliberately deferred).
+- **goreleaser + Homebrew tap**; document `go install …/cmd/depdog@latest`.
+- **`vhs` animated demo** in the README.
+- **Second language adapter (e.g. TypeScript)** to prove the `lang` seam — the
+  strongest validation that `core` is truly language-agnostic.
+- **Editor/LSP integration** for inline architecture diagnostics.
