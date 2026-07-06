@@ -20,8 +20,8 @@ Improvements, refinements, and polish beyond the M0–M5 work already shipped.
   - Follow-up slices: teach `explain <from> <to>` to resolve a bare external
     module target; wildcard module patterns (`golang.org/x/*`); surface module
     refs distinctly in `--format json` (currently rendered as plain strings).
-- **Composable/base configs.** (M) `extends:` a shared base `depdog.yaml` (or a
-  named built-in preset) so orgs can factor common rules out of each repo.
+- ❌ **Composable/base configs (`extends:`).** Decided (owner): not building it —
+  configs stay standalone.
 - ✅ **Shipped:** component `groups` — a named set of components (`groups: {
   inner: [domain, core] }`) usable in any allow/deny list, expanded at parse
   time. Group names can't be reserved or collide with components.
@@ -31,12 +31,11 @@ Improvements, refinements, and polish beyond the M0–M5 work already shipped.
 - ✅ **Shipped:** component-level import cycles (a↔b at the architecture level,
   which need no package cycle) are detected via Tarjan SCC and reported in text
   and JSON — advisory, never fatal.
-- **Build-tag / GOOS·GOARCH awareness.** (L) The loader does one metadata load;
-  edges behind build tags for other platforms are invisible. Offer
-  `--tags`/matrix loading so platform-specific imports are checked.
-- **Nested modules & `go.work`.** (L) Both are declined today with a message.
-  Support checking a workspace (each module in turn) and nested modules without
-  crashing.
+- ✅/❌ **Build-tag / GOOS·GOARCH awareness.** Decided (owner): keep the single
+  host-config load and document the limitation (now in the README's
+  Limitations); no `--tags`/matrix loading for v1.
+- ❌ **Nested modules & `go.work`.** Decided (owner): keep declining workspaces
+  for v1 (single module only; documented in the README's Limitations).
 - **Loader cache.** (M) BenchmarkLoad now measures the loader (the bottleneck) —
   ~46ms for the small dirty fixture, dominated by `go/packages` startup. Still
   open: measure a large synthetic module, then decide whether a metadata cache

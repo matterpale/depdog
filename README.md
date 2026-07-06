@@ -150,6 +150,15 @@ the language-agnostic engine (`internal/core`) depends on the standard library
 only, language knowledge lives behind an adapter interface, and the layers above
 may only import inward. A failing architecture is a failing build.
 
+## Limitations
+
+- **One build configuration.** depdog loads packages for the host's
+  `GOOS`/`GOARCH` and default build tags. Imports guarded by other build
+  constraints (e.g. `//go:build windows` on a non-Windows machine) aren't seen.
+- **Single module.** Go workspaces (`go.work`) aren't supported: depdog checks
+  one module and declines to run inside a workspace with a clear message (set
+  `GOWORK=off` to bypass a workspace and check the module directly).
+
 ## Status
 
 Pre-release, working toward v0.1.0. The project is currently unlicensed; a
