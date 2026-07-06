@@ -463,6 +463,24 @@ func TestGraphPackageDOT(t *testing.T) {
 	golden(t, "graph_package_dot.golden", out)
 }
 
+func TestGraphFocus(t *testing.T) {
+	out, stderr, exit := run(t, fixture("dirty"), "graph", "--focus", "domain")
+	if exit != 0 {
+		t.Fatalf("exit %d\nstderr:\n%s", exit, stderr)
+	}
+	golden(t, "graph_focus_domain_dot.golden", out)
+}
+
+func TestGraphBadFocus(t *testing.T) {
+	_, stderr, exit := run(t, fixture("dirty"), "graph", "--focus", "nope")
+	if exit != 2 {
+		t.Fatalf("exit %d, want 2", exit)
+	}
+	if !strings.Contains(stderr, "nope") {
+		t.Errorf("stderr should name the missing component:\n%s", stderr)
+	}
+}
+
 func TestGraphViolationsOnly(t *testing.T) {
 	out, stderr, exit := run(t, fixture("dirty"), "graph", "--violations-only")
 	if exit != 0 {

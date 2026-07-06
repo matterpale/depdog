@@ -19,6 +19,7 @@ type GraphOptions struct {
 	Format         string // "dot" or "mermaid"
 	Level          string // "component" or "package"
 	ViolationsOnly bool   // keep only violation edges and their endpoints
+	Focus          string // keep only a component and its direct neighbours
 }
 
 func Graph(w io.Writer, module string, views []core.PackageView, violations []core.Violation, opts GraphOptions) error {
@@ -27,8 +28,11 @@ func Graph(w io.Writer, module string, views []core.PackageView, violations []co
 	default:
 		return fmt.Errorf("unknown graph --level %q (component or package)", opts.Level)
 	}
+	if opts.Focus != "" && !hasComponent(views, opts.Focus) {
+		return fmt.Errorf("no component %q to focus on", opts.Focus)
+	}
 
-	nodes, edges := graphElements(module, views, violations, opts.Level, opts.ViolationsOnly)
+	nodes, edges := graphElements(module, views, violations, opts.Level, opts.Focus, opts.ViolationsOnly)
 	cluster := opts.Level == "package"
 	switch opts.Format {
 	case "dot":
@@ -51,7 +55,18 @@ type graphEdge struct {
 	violation bool
 }
 
-func graphElements(module string, views []core.PackageView, violations []core.Violation, level string, violationsOnly bool) ([]graphNode, []graphEdge) {
+// hasComponent reports whether any package maps to the named component (with
+// "unassigned" standing in for the empty component).
+func hasComponent(views []core.PackageView, name string) bool {
+	for _, pv := range views {
+		if orUnassigned(pv.Component) == name {
+			return true
+		}
+	}
+	return false
+}
+
+func graphElements(module string, views []core.PackageView, violations []core.Violation, level, focus string, violationsOnly bool) ([]graphNode, []graphEdge) {
 	violSet := make(map[[2]string]bool, len(violations))
 	for _, v := range violations {
 		violSet[[2]string{v.FromPackage, v.ImportPath}] = true
@@ -107,10 +122,42 @@ func graphElements(module string, views []core.PackageView, violations []core.Vi
 		return edges[i].to < edges[j].to
 	})
 
+	if focus != "" {
+		nodes, edges = keepFocus(nodes, edges, focus, level)
+	}
 	if violationsOnly {
 		nodes, edges = keepViolations(nodes, edges)
 	}
 	return nodes, edges
+}
+
+// keepFocus narrows the graph to the focus component and its direct neighbours:
+// every edge touching a focus node, plus the nodes at either end. At component
+// level the focus is the node itself; at package level it is every package in
+// that component.
+func keepFocus(nodes []graphNode, edges []graphEdge, focus, level string) ([]graphNode, []graphEdge) {
+	inFocus := map[string]bool{}
+	for _, n := range nodes {
+		if (level == "component" && n.id == focus) || (level == "package" && n.component == focus) {
+			inFocus[n.id] = true
+		}
+	}
+	used := map[string]bool{}
+	ke := edges[:0]
+	for _, e := range edges {
+		if inFocus[e.from] || inFocus[e.to] {
+			ke = append(ke, e)
+			used[e.from] = true
+			used[e.to] = true
+		}
+	}
+	kn := nodes[:0]
+	for _, n := range nodes {
+		if inFocus[n.id] || used[n.id] {
+			kn = append(kn, n)
+		}
+	}
+	return kn, ke
 }
 
 // keepViolations drops every edge that is not a violation and every node left

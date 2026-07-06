@@ -93,6 +93,35 @@ func TestGraphViolationsOnly(t *testing.T) {
 	}
 }
 
+func TestGraphFocus(t *testing.T) {
+	// a->b->c, plus an unrelated x->y. Focusing b keeps a, b, c and drops x, y.
+	views := []core.PackageView{
+		{ImportPath: "m/a", Component: "a", Imports: []core.ImportView{{Path: "m/b", Class: core.ClassInModule, Component: "b"}}},
+		{ImportPath: "m/b", Component: "b", Imports: []core.ImportView{{Path: "m/c", Class: core.ClassInModule, Component: "c"}}},
+		{ImportPath: "m/x", Component: "x", Imports: []core.ImportView{{Path: "m/y", Class: core.ClassInModule, Component: "y"}}},
+		{ImportPath: "m/c", Component: "c"},
+		{ImportPath: "m/y", Component: "y"},
+	}
+	var buf bytes.Buffer
+	if err := Graph(&buf, "m", views, nil, GraphOptions{Format: "dot", Level: "component", Focus: "b"}); err != nil {
+		t.Fatal(err)
+	}
+	out := buf.String()
+	for _, want := range []string{`"a" -> "b"`, `"b" -> "c"`} {
+		if !strings.Contains(out, want) {
+			t.Errorf("focus should keep %q\n%s", want, out)
+		}
+	}
+	for _, notWant := range []string{`"x"`, `"y"`} {
+		if strings.Contains(out, notWant) {
+			t.Errorf("focus b should drop node %q\n%s", notWant, out)
+		}
+	}
+	if err := Graph(&bytes.Buffer{}, "m", views, nil, GraphOptions{Format: "dot", Level: "component", Focus: "ghost"}); err == nil || !strings.Contains(err.Error(), "ghost") {
+		t.Errorf("focus on a missing component should error, got %v", err)
+	}
+}
+
 func TestGraphErrors(t *testing.T) {
 	if err := Graph(&bytes.Buffer{}, "m", nil, nil, GraphOptions{Format: "svg", Level: "component"}); err == nil || !strings.Contains(err.Error(), "mermaid") {
 		t.Errorf("bad format should error listing formats, got %v", err)
