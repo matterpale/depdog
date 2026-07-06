@@ -73,6 +73,38 @@ func TestEvaluateWhitelist(t *testing.T) {
 	}
 }
 
+func TestEvaluateComponentStats(t *testing.T) {
+	g := &Graph{ModulePath: "m", Packages: []Package{
+		{ImportPath: "m/internal/domain/order", RelDir: "internal/domain/order", Imports: []Import{
+			mkImport("strings", ClassStd, "", false),
+			mkImport("github.com/google/uuid", ClassExternal, "", false),
+			mkImport("m/internal/repository", ClassInModule, "internal/repository", false),
+		}},
+		{ImportPath: "m/internal/handler/checkout", RelDir: "internal/handler/checkout", Imports: []Import{
+			mkImport("m/internal/domain/order", ClassInModule, "internal/domain/order", false),
+			mkImport("m/internal/service", ClassInModule, "internal/service", false),
+		}},
+	}}
+	res := evaluate(t, g, ddd())
+
+	// All declared components appear, sorted, even the empty ones.
+	want := []ComponentStat{
+		{Name: "domain", Packages: 1, Edges: 3, Violations: 2},
+		{Name: "handler", Packages: 1, Edges: 2, Violations: 1},
+		{Name: "main"},
+		{Name: "repository"},
+		{Name: "service"},
+	}
+	if len(res.Components) != len(want) {
+		t.Fatalf("components = %d, want %d: %+v", len(res.Components), len(want), res.Components)
+	}
+	for i, w := range want {
+		if res.Components[i] != w {
+			t.Errorf("component[%d] = %+v, want %+v", i, res.Components[i], w)
+		}
+	}
+}
+
 func TestEvaluateBlacklist(t *testing.T) {
 	rs := &RuleSet{
 		Components: []Component{

@@ -15,7 +15,15 @@ type jsonReport struct {
 	Module     string          `json:"module"`
 	Violations []jsonViolation `json:"violations"`
 	Warnings   []jsonWarning   `json:"warnings"`
+	Components []jsonComponent `json:"components"`
 	Stats      jsonStats       `json:"stats"`
+}
+
+type jsonComponent struct {
+	Name       string `json:"name"`
+	Packages   int    `json:"packages"`
+	Edges      int    `json:"edges"`
+	Violations int    `json:"violations"`
 }
 
 type jsonViolation struct {
@@ -50,6 +58,7 @@ func JSON(w io.Writer, res *core.Result, elapsed time.Duration) error {
 		Module:     res.ModulePath,
 		Violations: make([]jsonViolation, 0, len(res.Violations)),
 		Warnings:   make([]jsonWarning, 0, len(res.Warnings)),
+		Components: make([]jsonComponent, 0, len(res.Components)),
 		Stats: jsonStats{
 			Packages:   res.Stats.Packages,
 			Edges:      res.Stats.Edges,
@@ -73,6 +82,11 @@ func JSON(w io.Writer, res *core.Result, elapsed time.Duration) error {
 	}
 	for _, wr := range res.Warnings {
 		out.Warnings = append(out.Warnings, jsonWarning{Kind: "unassigned", Package: wr.Package, Dir: wr.RelDir})
+	}
+	for _, c := range res.Components {
+		out.Components = append(out.Components, jsonComponent{
+			Name: c.Name, Packages: c.Packages, Edges: c.Edges, Violations: c.Violations,
+		})
 	}
 	enc := json.NewEncoder(w)
 	enc.SetIndent("", "  ")

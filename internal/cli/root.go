@@ -2,8 +2,6 @@
 package cli
 
 import (
-	"fmt"
-
 	"github.com/spf13/cobra"
 )
 
@@ -20,15 +18,13 @@ declared in depdog.yaml: which components exist, and who may import whom.`,
 		SilenceUsage:  true,
 		SilenceErrors: false,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			// Bare `depdog` will open the TUI (milestone M4); guide until then.
-			fmt.Fprintln(cmd.OutOrStdout(), "The depdog TUI is not built yet (planned: milestone M4).")
-			fmt.Fprintln(cmd.OutOrStdout(), "Run `depdog init` to create a depdog.yaml, `depdog check` to verify import rules,")
-			fmt.Fprintln(cmd.OutOrStdout(), "or `depdog --help` for everything else.")
-			return nil
+			// Bare `depdog` opens the TUI on a terminal, or guides otherwise.
+			return runBare(cmd)
 		},
 	}
 	root.AddCommand(initCmd())
 	root.AddCommand(checkCmd())
 	root.AddCommand(baselineCmd())
+	root.AddCommand(tuiCmd())
 	return root
 }

@@ -9,6 +9,7 @@ components:
   golang: ["internal/lang/golang/**"] # carve-out: deeper pattern wins over lang
   report: ["internal/report/**"]
   wizard: ["internal/wizard/**"]
+  tui:    ["internal/tui/**"]
   cli:    ["internal/cli/**"]
   e2e:    ["internal/e2e/**"]
 
@@ -22,7 +23,8 @@ rules:
   golang: { allow: [core, lang, std, external] }
   report: { allow: [core, std, external] } # lipgloss styles the human output
   wizard: { allow: [core, std] } # pure heuristics: engine matcher + std only
-  cli:    { allow: [core, config, lang, golang, report, wizard, std, external] }
+  tui:    { allow: [core, std, external] } # bubbletea view over a core.Result
+  cli:    { allow: [core, config, lang, golang, report, wizard, tui, std, external] }
   e2e:    { allow: [std] }
 
 options:

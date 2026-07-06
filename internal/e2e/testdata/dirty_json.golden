@@ -69,6 +69,38 @@
       "dir": "internal/util"
     }
   ],
+  "components": [
+    {
+      "name": "domain",
+      "packages": 1,
+      "edges": 2,
+      "violations": 2
+    },
+    {
+      "name": "handler",
+      "packages": 1,
+      "edges": 4,
+      "violations": 2
+    },
+    {
+      "name": "main",
+      "packages": 1,
+      "edges": 5,
+      "violations": 0
+    },
+    {
+      "name": "repository",
+      "packages": 1,
+      "edges": 1,
+      "violations": 0
+    },
+    {
+      "name": "service",
+      "packages": 1,
+      "edges": 2,
+      "violations": 0
+    }
+  ],
   "stats": {
     "packages": 6,
     "edges": 14,
