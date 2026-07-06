@@ -1,0 +1,16 @@
+depdog check — example.test/dirty
+
+✗ domain: allow [std]  (2 violations)
+    example.test/dirty/internal/domain/pricing
+      → example.test/dirty/internal/repository  internal/domain/pricing/discount.go:3 (+1 more)
+      → example.test/extlib                     internal/domain/pricing/pricing.go:6
+
+✗ handler: allow [domain, std]  (2 violations)
+    example.test/dirty/internal/handler/checkout
+      → example.test/dirty/internal/repository  internal/handler/checkout/checkout_test.go:6 [test]
+      → example.test/dirty/internal/service     internal/handler/checkout/checkout.go:5
+
+! 1 package not covered by any component:
+    example.test/dirty/internal/util  (internal/util)
+
+4 violations · 1 warning · 6 packages · 14 edges checked in X

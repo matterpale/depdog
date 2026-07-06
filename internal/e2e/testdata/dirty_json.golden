@@ -1,0 +1,77 @@
+{
+  "module": "example.test/dirty",
+  "violations": [
+    {
+      "from_package": "example.test/dirty/internal/domain/pricing",
+      "from_component": "domain",
+      "import": "example.test/dirty/internal/repository",
+      "target": "repository",
+      "rule": "domain: allow [std]",
+      "test_only": false,
+      "positions": [
+        {
+          "file": "internal/domain/pricing/discount.go",
+          "line": 3
+        },
+        {
+          "file": "internal/domain/pricing/pricing.go",
+          "line": 5
+        }
+      ]
+    },
+    {
+      "from_package": "example.test/dirty/internal/domain/pricing",
+      "from_component": "domain",
+      "import": "example.test/extlib",
+      "target": "external",
+      "rule": "domain: allow [std]",
+      "test_only": false,
+      "positions": [
+        {
+          "file": "internal/domain/pricing/pricing.go",
+          "line": 6
+        }
+      ]
+    },
+    {
+      "from_package": "example.test/dirty/internal/handler/checkout",
+      "from_component": "handler",
+      "import": "example.test/dirty/internal/repository",
+      "target": "repository",
+      "rule": "handler: allow [domain, std]",
+      "test_only": true,
+      "positions": [
+        {
+          "file": "internal/handler/checkout/checkout_test.go",
+          "line": 6
+        }
+      ]
+    },
+    {
+      "from_package": "example.test/dirty/internal/handler/checkout",
+      "from_component": "handler",
+      "import": "example.test/dirty/internal/service",
+      "target": "service",
+      "rule": "handler: allow [domain, std]",
+      "test_only": false,
+      "positions": [
+        {
+          "file": "internal/handler/checkout/checkout.go",
+          "line": 5
+        }
+      ]
+    }
+  ],
+  "warnings": [
+    {
+      "kind": "unassigned",
+      "package": "example.test/dirty/internal/util",
+      "dir": "internal/util"
+    }
+  ],
+  "stats": {
+    "packages": 6,
+    "edges": 14,
+    "duration_ms": 0
+  }
+}

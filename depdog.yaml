@@ -1,0 +1,27 @@
+# depdog's own architecture, checked by depdog itself in CI (dogfood).
+version: 1
+
+components:
+  main:   ["cmd/**"]
+  core:   ["internal/core/**"]
+  config: ["internal/config/**"]
+  lang:   ["internal/lang/**"]
+  golang: ["internal/lang/golang/**"] # carve-out: deeper pattern wins over lang
+  report: ["internal/report/**"]
+  cli:    ["internal/cli/**"]
+  e2e:    ["internal/e2e/**"]
+
+policy: deny
+
+rules:
+  main:   { allow: ["*"] }
+  core:   { allow: [std] } # the domain layer: standard library only
+  config: { allow: [core, std, external] }
+  lang:   { allow: [core, std] }
+  golang: { allow: [core, lang, std, external] }
+  report: { allow: [core, std] }
+  cli:    { allow: [core, config, lang, golang, report, std, external] }
+  e2e:    { allow: [std] }
+
+options:
+  test_files: hybrid

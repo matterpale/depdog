@@ -1,0 +1,6 @@
+depdog check — example.test/clean
+
+! 1 package not covered by any component:
+    example.test/clean/internal/util  (internal/util)
+
+✓ no violations · 1 warning · 6 packages · 15 edges checked in X

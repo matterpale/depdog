@@ -1,0 +1,13 @@
+# Blacklist style: everything is allowed except what is explicitly denied.
+version: 1
+
+components:
+  domain:  ["internal/domain/**"]
+  handler: ["internal/handler/**"]
+  service: ["internal/service/**"]
+
+policy: allow
+
+rules:
+  handler: { deny: [service] }
+  domain:  { deny: [handler, service, external] }

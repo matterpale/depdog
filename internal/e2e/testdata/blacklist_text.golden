@@ -1,0 +1,7 @@
+depdog check — example.test/blacklist
+
+✗ handler: deny [service]  (1 violation)
+    example.test/blacklist/internal/handler
+      → example.test/blacklist/internal/service  internal/handler/handler.go:5
+
+1 violation · 3 packages · 3 edges checked in X

@@ -1,0 +1,17 @@
+version: 1
+
+components:
+  main:       ["cmd/**"]
+  domain:     ["internal/domain/**"]
+  handler:    ["internal/handler/**"]
+  service:    ["internal/service/**"]
+  repository: ["internal/repository/**"]
+
+policy: deny
+
+rules:
+  main:       { allow: ["*"] }
+  domain:     { allow: [std] }
+  handler:    { allow: [domain, std] }
+  service:    { allow: [domain, std] }
+  repository: { allow: [domain, std, external] }
