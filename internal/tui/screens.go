@@ -88,14 +88,29 @@ func (m Model) violationsView() string {
 		return styleGood.Render("✓ no violations")
 	}
 	var b strings.Builder
-	start, end, above, below := window(len(m.res.Violations), m.selected, m.listRows())
+	if m.filtering || m.filter != "" {
+		hint := "  (esc clears)"
+		if m.filtering {
+			hint = "▊"
+		}
+		b.WriteString(styleWarn.Render("filter: "+m.filter) + styleDim.Render(hint) + "\n\n")
+	}
+
+	vs := m.filteredViolations()
+	if len(vs) == 0 {
+		b.WriteString(styleDim.Render("no violations match the filter"))
+		return b.String()
+	}
+	sel := clamp(m.selected, len(vs))
+
+	start, end, above, below := window(len(vs), sel, m.listRows())
 	if above > 0 {
 		b.WriteString(moreLine("▲", above) + "\n")
 	}
 	for i := start; i < end; i++ {
-		v := m.res.Violations[i]
+		v := vs[i]
 		line := fmt.Sprintf("%s → %s", v.FromComponent, v.ImportPath)
-		if i == m.selected {
+		if i == sel {
 			b.WriteString(styleSelected.Render("▸ " + line))
 		} else {
 			b.WriteString("  " + line)
@@ -106,7 +121,7 @@ func (m Model) violationsView() string {
 		b.WriteString(moreLine("▼", below) + "\n")
 	}
 
-	v := m.res.Violations[m.selected]
+	v := vs[sel]
 	b.WriteString("\n")
 	b.WriteString(styleDim.Render("── detail ──"))
 	b.WriteString("\n")

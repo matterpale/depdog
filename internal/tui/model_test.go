@@ -226,6 +226,52 @@ func TestViolationsScroll(t *testing.T) {
 	}
 }
 
+func TestViolationFilter(t *testing.T) {
+	res := &core.Result{ModulePath: "m", Violations: []core.Violation{
+		{FromComponent: "domain", FromPackage: "m/domain", ImportPath: "m/repo", Rule: "domain: allow [std]", Positions: []core.Position{{File: "d.go", Line: 1}}},
+		{FromComponent: "handler", FromPackage: "m/handler", ImportPath: "m/service", Rule: "handler: allow [domain]", Positions: []core.Position{{File: "h.go", Line: 2}}},
+		{FromComponent: "handler", FromPackage: "m/handler", ImportPath: "m/repo", Rule: "handler: allow [domain]", Positions: []core.Position{{File: "h.go", Line: 3}}},
+	}}
+	m := update(New(res, nil), runes("2")) // Violations screen
+
+	m = update(m, runes("/"))
+	if !m.filtering {
+		t.Fatal("/ should enter filter mode on the Violations screen")
+	}
+	// Keys that are normally commands become filter text while filtering.
+	for _, r := range "handler" {
+		m = update(m, runes(string(r)))
+	}
+	if m.quitting {
+		t.Fatal("typing while filtering must not trigger commands")
+	}
+	if m.filter != "handler" {
+		t.Fatalf("filter = %q, want handler", m.filter)
+	}
+
+	v := m.View()
+	if !strings.Contains(v, "filter: handler") {
+		t.Errorf("active filter indicator missing:\n%s", v)
+	}
+	if !strings.Contains(v, "handler → m/service") {
+		t.Errorf("matching violation should show:\n%s", v)
+	}
+	if strings.Contains(v, "domain → m/repo") {
+		t.Errorf("non-matching violation should be filtered out:\n%s", v)
+	}
+
+	// Enter accepts and keeps the filter; esc (via a fresh entry) clears it.
+	m = update(m, tea.KeyMsg{Type: tea.KeyEnter})
+	if m.filtering || m.filter != "handler" {
+		t.Errorf("enter should accept: filtering=%v filter=%q", m.filtering, m.filter)
+	}
+	m = update(m, runes("/"))
+	m = update(m, tea.KeyMsg{Type: tea.KeyEsc})
+	if m.filtering || m.filter != "" {
+		t.Errorf("esc should clear: filtering=%v filter=%q", m.filtering, m.filter)
+	}
+}
+
 func TestProgramLifecycle(t *testing.T) {
 	tm := teatest.NewTestModel(t, New(fixtureResult(), fixturePkgs()), teatest.WithInitialTermSize(90, 30))
 	teatest.WaitFor(t, tm.Output(), func(b []byte) bool {

@@ -63,8 +63,8 @@ Improvements, refinements, and polish beyond the M0–M5 work already shipped.
 - ✅ **Shipped:** the Violations and Packages lists now scroll — a height-aware
   window follows the selection with `▲/▼ N more` markers. (Custom windowing over
   the manual render, not `bubbles/viewport`.)
-- **Filtering & search.** (M) Filter Violations by component/rule; fuzzy-search
-  Packages. `PLAN.md §6` calls for filterable views.
+- **Search Packages.** (S) The Violations screen now filters with `/` (substring
+  over component/import/rule). Still open: fuzzy-search on the Packages screen.
 - **`$EDITOR` + re-run.** (M) `e` opens the selected file at its line in
   `$EDITOR`; `r` re-runs the check in place (a step toward watch mode).
 - **Help overlay.** (S) `?` toggles a key legend via `bubbles/help`.

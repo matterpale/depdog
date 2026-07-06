@@ -53,6 +53,8 @@ type Model struct {
 	active    tab
 	selected  int // highlighted violation on the Violations screen
 	selPkg    int // highlighted package on the Packages screen
+	filter    string
+	filtering bool // capturing keystrokes into filter on the Violations screen
 	width     int
 	height    int
 	quitting  bool
@@ -81,6 +83,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
 	case tea.KeyMsg:
+		if m.filtering {
+			return m.updateFilter(msg)
+		}
 		switch msg.String() {
 		case "q", "ctrl+c", "esc":
 			m.quitting = true
@@ -95,6 +100,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.active = tabViolations
 		case "3":
 			m.active = tabPackages
+		case "/":
+			if m.active == tabViolations {
+				m.filtering = true
+			}
 		case "up", "k":
 			m.moveSelection(-1)
 		case "down", "j":
@@ -104,15 +113,58 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+// updateFilter captures keystrokes into the Violations filter. Enter accepts,
+// esc clears and exits, backspace edits. Each edit resets the selection.
+func (m Model) updateFilter(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.Type {
+	case tea.KeyEnter:
+		m.filtering = false
+	case tea.KeyEsc:
+		m.filtering = false
+		m.filter = ""
+		m.selected = 0
+	case tea.KeyBackspace:
+		if m.filter != "" {
+			m.filter = m.filter[:len(m.filter)-1]
+			m.selected = 0
+		}
+	case tea.KeyCtrlC:
+		m.quitting = true
+		return m, tea.Quit
+	case tea.KeyRunes:
+		m.filter += string(msg.Runes)
+		m.selected = 0
+	}
+	return m, nil
+}
+
 // moveSelection moves the highlighted row on whichever list-bearing screen is
 // active, clamped to its bounds.
 func (m *Model) moveSelection(d int) {
 	switch m.active {
 	case tabViolations:
-		m.selected = clamp(m.selected+d, len(m.res.Violations))
+		m.selected = clamp(m.selected+d, len(m.filteredViolations()))
 	case tabPackages:
 		m.selPkg = clamp(m.selPkg+d, len(m.pkgs))
 	}
+}
+
+// filteredViolations returns the violations matching the active filter (a
+// case-insensitive substring over component, import and rule), or all of them
+// when no filter is set.
+func (m Model) filteredViolations() []core.Violation {
+	if m.filter == "" {
+		return m.res.Violations
+	}
+	f := strings.ToLower(m.filter)
+	var out []core.Violation
+	for _, v := range m.res.Violations {
+		hay := strings.ToLower(v.FromComponent + " " + v.ImportPath + " " + v.Rule)
+		if strings.Contains(hay, f) {
+			out = append(out, v)
+		}
+	}
+	return out
 }
 
 func clamp(i, n int) int {
@@ -169,6 +221,12 @@ func (m Model) header() string {
 }
 
 func (m Model) footer() string {
+	if m.filtering {
+		return styleDim.Render("type to filter · enter accept · esc clear")
+	}
+	if m.active == tabViolations {
+		return styleDim.Render("tab/1-3 switch · ↑/↓ move · / filter · q quit")
+	}
 	return styleDim.Render("tab/1-3 switch · ↑/↓ move · q quit")
 }
 
