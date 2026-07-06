@@ -8,13 +8,36 @@ import (
 	"strings"
 	"time"
 
+	"github.com/charmbracelet/lipgloss"
+
 	"github.com/matterpale/depdog/internal/core"
 )
+
+// styles carries the palette for the human report. It is built from a
+// per-writer renderer, so styles are no-ops (identical bytes) whenever the
+// destination is not a color terminal — CI logs and captured output stay
+// plain, while a real terminal gets color.
+type styles struct {
+	bad, good, warn, rule, imp, pos lipgloss.Style
+}
+
+func newStyles(w io.Writer) styles {
+	r := lipgloss.NewRenderer(w)
+	return styles{
+		bad:  r.NewStyle().Foreground(lipgloss.Color("1")).Bold(true),
+		good: r.NewStyle().Foreground(lipgloss.Color("2")).Bold(true),
+		warn: r.NewStyle().Foreground(lipgloss.Color("3")),
+		rule: r.NewStyle().Bold(true),
+		imp:  r.NewStyle().Foreground(lipgloss.Color("1")),
+		pos:  r.NewStyle().Faint(true),
+	}
+}
 
 // Text writes the human-readable report. Violations are grouped by the rule
 // that fired, in first-occurrence order, which is deterministic because the
 // Result is.
 func Text(w io.Writer, res *core.Result, elapsed time.Duration) error {
+	st := newStyles(w)
 	var b strings.Builder
 	fmt.Fprintf(&b, "depdog check — %s\n", res.ModulePath)
 
@@ -28,7 +51,7 @@ func Text(w io.Writer, res *core.Result, elapsed time.Duration) error {
 	}
 	for _, rule := range order {
 		vs := groups[rule]
-		fmt.Fprintf(&b, "\n✗ %s  (%s)\n", rule, plural(len(vs), "violation"))
+		fmt.Fprintf(&b, "\n%s %s  (%s)\n", st.bad.Render("✗"), st.rule.Render(rule), plural(len(vs), "violation"))
 		width := 0
 		for _, v := range vs {
 			if len(v.ImportPath) > width {
@@ -52,12 +75,14 @@ func Text(w io.Writer, res *core.Result, elapsed time.Duration) error {
 			if v.TestOnly {
 				marker = " [test]"
 			}
-			fmt.Fprintf(&b, "      → %-*s%s%s\n", width, v.ImportPath, pos, marker)
+			// Pad before styling so ANSI codes never throw off the column.
+			fmt.Fprintf(&b, "      → %s%s%s\n",
+				st.imp.Render(fmt.Sprintf("%-*s", width, v.ImportPath)), st.pos.Render(pos), marker)
 		}
 	}
 
 	if len(res.Warnings) > 0 {
-		fmt.Fprintf(&b, "\n! %s not covered by any component:\n", plural(len(res.Warnings), "package"))
+		fmt.Fprintf(&b, "\n%s %s not covered by any component:\n", st.warn.Render("!"), plural(len(res.Warnings), "package"))
 		for _, wr := range res.Warnings {
 			fmt.Fprintf(&b, "    %s  (%s)\n", wr.Package, wr.RelDir)
 		}
@@ -65,9 +90,9 @@ func Text(w io.Writer, res *core.Result, elapsed time.Duration) error {
 
 	b.WriteString("\n")
 	if len(res.Violations) == 0 {
-		b.WriteString("✓ no violations")
+		b.WriteString(st.good.Render("✓ no violations"))
 	} else {
-		b.WriteString(plural(len(res.Violations), "violation"))
+		b.WriteString(st.bad.Render(plural(len(res.Violations), "violation")))
 	}
 	if len(res.Warnings) > 0 {
 		fmt.Fprintf(&b, " · %s", plural(len(res.Warnings), "warning"))

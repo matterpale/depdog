@@ -20,7 +20,7 @@ rules:
   config: { allow: [core, std, external] }
   lang:   { allow: [core, std] }
   golang: { allow: [core, lang, std, external] }
-  report: { allow: [core, std] }
+  report: { allow: [core, std, external] } # lipgloss styles the human output
   wizard: { allow: [core, std] } # pure heuristics: engine matcher + std only
   cli:    { allow: [core, config, lang, golang, report, wizard, std, external] }
   e2e:    { allow: [std] }
