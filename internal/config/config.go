@@ -121,12 +121,12 @@ func Parse(data []byte) (*core.RuleSet, error) {
 	}
 
 	switch f.Policy {
-	case "deny":
+	case "deny", "":
+		// Optional: absent policy defaults to the strict whitelist stance.
+		// Rules still infer their own stance from allow vs deny.
 		rs.Policy = core.PolicyDeny
 	case "allow":
 		rs.Policy = core.PolicyAllow
-	case "":
-		return nil, errors.New(`missing "policy": set "deny" (whitelist style: only allowed imports pass) or "allow" (blacklist style: only denied imports fail)`)
 	default:
 		return nil, fmt.Errorf("policy must be %q or %q, not %q", "deny", "allow", f.Policy)
 	}

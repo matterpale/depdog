@@ -40,6 +40,17 @@ func TestParseValid(t *testing.T) {
 	}
 }
 
+func TestParseDefaultPolicy(t *testing.T) {
+	// policy is optional; absent it defaults to the strict deny stance.
+	rs, err := Parse([]byte("version: 1\ncomponents: {a: [\"x/**\"]}\nrules: {a: {allow: [std]}}\n"))
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	if rs.Policy != core.PolicyDeny {
+		t.Errorf("default policy = %v, want deny", rs.Policy)
+	}
+}
+
 func TestParseScalarPattern(t *testing.T) {
 	rs, err := Parse([]byte("version: 1\ncomponents:\n  main: cmd/**\npolicy: deny\n"))
 	if err != nil {
@@ -60,7 +71,6 @@ func TestParseErrors(t *testing.T) {
 		{"reserved name", "version: 1\ncomponents: {std: [\"x/**\"]}\npolicy: deny", "reserved"},
 		{"empty patterns", "version: 1\ncomponents: {a: []}\npolicy: deny", "no patterns"},
 		{"bad glob", "version: 1\ncomponents: {a: [\"x/[bad/**\"]}\npolicy: deny", "segment"},
-		{"missing policy", "version: 1\ncomponents: {a: [\"x/**\"]}", `missing "policy"`},
 		{"bad policy", "version: 1\ncomponents: {a: [\"x/**\"]}\npolicy: strict", "policy must be"},
 		{"rule for unknown", "version: 1\ncomponents: {a: [\"x/**\"]}\npolicy: deny\nrules: {b: {allow: [std]}}", `unknown component "b"`},
 		{"unknown ref", "version: 1\ncomponents: {a: [\"x/**\"]}\npolicy: deny\nrules: {a: {allow: [nope]}}", `unknown component "nope"`},

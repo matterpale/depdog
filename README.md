@@ -79,7 +79,8 @@ Key ideas:
   { deny: [repository] }` means "anything but repository" even when other
   components are strict whitelists.
 - **policy** is the fallback for components with no `allow`/`deny` rule: `deny`
-  (whitelist) or `allow` (blacklist). `init` asks which you want as the default.
+  (whitelist) or `allow` (blacklist). It is optional — omit it for the strict
+  `deny` default. `init` asks which you want.
 - Allow/deny entries are component names or the specials `std`, `external`,
   `unassigned` and `"*"`.
 - In-module packages no component claims are always reported as **warnings**,

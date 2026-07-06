@@ -11,8 +11,8 @@ Improvements, refinements, and polish beyond the M0–M5 work already shipped.
 - ✅ **Shipped:** whitelist/blacklist stance is now inferred per rule from
   `allow` vs `deny` (an `allow` list ⇒ whitelist, a `deny`-only rule ⇒
   blacklist, otherwise the global `policy`), fixing the deny-only-under-policy-
-  deny footgun. Follow-ups: make top-level `policy` optional (default `deny`),
-  and teach the wizard to generate mixed-stance configs.
+  deny footgun. Top-level `policy` is now optional (defaults to `deny`).
+  Follow-up: teach the wizard to generate mixed-stance configs.
 - **Per-component external allowlists (depguard-style).** (L) Let `external`
   carry sub-rules so a component can allow only specific third-party modules
   (e.g. `external: { allow: ["github.com/google/uuid"] }`). Currently third
