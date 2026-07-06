@@ -1,0 +1,12 @@
+# depdog baseline — tolerated violations; shrink this over time.
+# Written by `depdog baseline`; `depdog check --fail-on new` ignores these.
+version: 1
+violations:
+  - from:   example.test/dirty/internal/domain/pricing
+    import: example.test/dirty/internal/repository
+  - from:   example.test/dirty/internal/domain/pricing
+    import: example.test/extlib
+  - from:   example.test/dirty/internal/handler/checkout
+    import: example.test/dirty/internal/repository
+  - from:   example.test/dirty/internal/handler/checkout
+    import: example.test/dirty/internal/service

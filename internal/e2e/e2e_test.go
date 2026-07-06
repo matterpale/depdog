@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"flag"
 	"fmt"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -283,5 +284,116 @@ func TestInitNeedsTTYWithoutYes(t *testing.T) {
 	}
 	if !strings.Contains(stderr, "--yes") {
 		t.Errorf("stderr should point at --yes:\n%s", stderr)
+	}
+}
+
+func copyTree(t *testing.T, src, dst string) {
+	t.Helper()
+	err := filepath.WalkDir(src, func(p string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		rel, rerr := filepath.Rel(src, p)
+		if rerr != nil {
+			return rerr
+		}
+		target := filepath.Join(dst, rel)
+		if d.IsDir() {
+			return os.MkdirAll(target, 0o755)
+		}
+		data, rerr := os.ReadFile(p)
+		if rerr != nil {
+			return rerr
+		}
+		return os.WriteFile(target, data, 0o644)
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+// dirtyModule copies the dirty fixture and its extlib sibling into a temp dir,
+// preserving the ../extlib replace target so the module loads, and returns the
+// dirty module dir. Baseline tests write into it without touching the committed
+// fixtures.
+func dirtyModule(t *testing.T) string {
+	t.Helper()
+	base := t.TempDir()
+	copyTree(t, fixture("dirty"), filepath.Join(base, "dirty"))
+	copyTree(t, fixture("extlib"), filepath.Join(base, "extlib"))
+	return filepath.Join(base, "dirty")
+}
+
+func readFile(t *testing.T, path string) string {
+	t.Helper()
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("reading %s: %v", path, err)
+	}
+	return string(data)
+}
+
+func TestBaselineWrite(t *testing.T) {
+	dir := dirtyModule(t)
+	out, stderr, exit := run(t, dir, "baseline")
+	if exit != 0 {
+		t.Fatalf("exit %d\nstdout:\n%s\nstderr:\n%s", exit, out, stderr)
+	}
+	golden(t, "dirty_baseline.golden", readFile(t, filepath.Join(dir, "depdog.baseline.yaml")))
+	if !strings.Contains(out, "depdog.baseline.yaml") {
+		t.Errorf("stdout should name the file:\n%s", out)
+	}
+}
+
+func TestFailOnNewSuppressesBaselined(t *testing.T) {
+	dir := dirtyModule(t)
+	if _, stderr, exit := run(t, dir, "baseline"); exit != 0 {
+		t.Fatalf("baseline exit %d\n%s", exit, stderr)
+	}
+	out, stderr, exit := run(t, dir, "check", "--fail-on", "new")
+	if exit != 0 {
+		t.Fatalf("exit %d, want 0\nstdout:\n%s\nstderr:\n%s", exit, out, stderr)
+	}
+	if !strings.Contains(out, "✓ no violations") {
+		t.Errorf("all violations should be suppressed:\n%s", out)
+	}
+	if !strings.Contains(stderr, "4 baselined") {
+		t.Errorf("stderr should note the suppression:\n%s", stderr)
+	}
+}
+
+func TestFailOnNewFlagsNewViolation(t *testing.T) {
+	dir := dirtyModule(t)
+	// A baseline covering only two of the four violations; the other two are
+	// new and must fail the run.
+	partial := "version: 1\nviolations:\n" +
+		"  - from: example.test/dirty/internal/domain/pricing\n    import: example.test/dirty/internal/repository\n" +
+		"  - from: example.test/dirty/internal/domain/pricing\n    import: example.test/extlib\n"
+	if err := os.WriteFile(filepath.Join(dir, "depdog.baseline.yaml"), []byte(partial), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	_, stderr, exit := run(t, dir, "check", "--fail-on", "new")
+	if exit != 1 {
+		t.Fatalf("exit %d, want 1 (two new violations)", exit)
+	}
+	if !strings.Contains(stderr, "2 baselined") {
+		t.Errorf("stderr should note two suppressed:\n%s", stderr)
+	}
+}
+
+func TestFailOnNewWithoutBaseline(t *testing.T) {
+	dir := dirtyModule(t)
+	if _, _, exit := run(t, dir, "check", "--fail-on", "new"); exit != 1 {
+		t.Fatalf("exit %d, want 1 (no baseline: every violation is new)", exit)
+	}
+}
+
+func TestCheckBadFailOn(t *testing.T) {
+	_, stderr, exit := run(t, fixture("clean"), "check", "--fail-on", "sometimes")
+	if exit != 2 {
+		t.Fatalf("exit %d, want 2", exit)
+	}
+	if !strings.Contains(stderr, "fail-on") {
+		t.Errorf("stderr should mention --fail-on:\n%s", stderr)
 	}
 }
