@@ -1,0 +1,9 @@
+component domain
+  patterns: internal/domain/**
+  policy:   deny
+  allow:    [std]
+  packages (1):
+    example.test/dirty/internal/domain/pricing
+  violations (2):
+    example.test/dirty/internal/domain/pricing → example.test/dirty/internal/repository  (domain: allow [std])
+    example.test/dirty/internal/domain/pricing → example.test/extlib  (domain: allow [std])

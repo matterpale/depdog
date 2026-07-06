@@ -441,3 +441,29 @@ func TestGraphBadLevel(t *testing.T) {
 		t.Errorf("stderr should list valid levels:\n%s", stderr)
 	}
 }
+
+func TestExplainComponent(t *testing.T) {
+	out, stderr, exit := run(t, fixture("dirty"), "explain", "domain")
+	if exit != 0 {
+		t.Fatalf("exit %d\nstderr:\n%s", exit, stderr)
+	}
+	golden(t, "explain_component.golden", out)
+}
+
+func TestExplainPackage(t *testing.T) {
+	out, stderr, exit := run(t, fixture("dirty"), "explain", "internal/domain/pricing")
+	if exit != 0 {
+		t.Fatalf("exit %d\nstderr:\n%s", exit, stderr)
+	}
+	golden(t, "explain_package.golden", out)
+}
+
+func TestExplainUnknown(t *testing.T) {
+	_, stderr, exit := run(t, fixture("dirty"), "explain", "nope")
+	if exit != 2 {
+		t.Fatalf("exit %d, want 2", exit)
+	}
+	if !strings.Contains(stderr, "nope") {
+		t.Errorf("stderr should name the missing target:\n%s", stderr)
+	}
+}

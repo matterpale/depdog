@@ -1,0 +1,11 @@
+package example.test/dirty/internal/domain/pricing
+  component: domain
+  imports (2):
+    ✗ example.test/dirty/internal/repository  [repository]  (domain: allow [std])
+        internal/domain/pricing/discount.go:3
+        internal/domain/pricing/pricing.go:5
+    ✗ example.test/extlib  [external]  (domain: allow [std])
+        internal/domain/pricing/pricing.go:6
+  imported by (2):
+    example.test/dirty/cmd/app
+    example.test/dirty/internal/handler/checkout
