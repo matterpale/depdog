@@ -73,8 +73,8 @@ Improvements, refinements, and polish beyond the M0–M5 work already shipped.
 
 - **`baseline --prune`.** (S) Drop baseline entries that are no longer
   violations, so the ratchet file doesn't accumulate stale grandfathering.
-- **Report fixed baselined violations.** (S) On `check --fail-on new`, note which
-  baselined entries now pass, nudging the user to shrink the file.
+- ✅ **Shipped:** `check --fail-on new` now reports how many baselined entries
+  are resolved and nudges the user to rerun `depdog baseline` to shrink the file.
 
 ## Config validation & DX
 

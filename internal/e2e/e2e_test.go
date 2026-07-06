@@ -381,6 +381,26 @@ func TestFailOnNewFlagsNewViolation(t *testing.T) {
 	}
 }
 
+func TestFailOnNewReportsFixed(t *testing.T) {
+	dir := dirtyModule(t)
+	if _, stderr, exit := run(t, dir, "baseline"); exit != 0 {
+		t.Fatalf("baseline exit %d\n%s", exit, stderr)
+	}
+	// Append an entry no current violation matches — a resolved one.
+	bl := filepath.Join(dir, "depdog.baseline.yaml")
+	extra := "  - from: example.test/dirty/internal/gone\n    import: example.test/dirty/internal/repository\n"
+	if err := os.WriteFile(bl, []byte(readFile(t, bl)+extra), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	_, stderr, exit := run(t, dir, "check", "--fail-on", "new")
+	if exit != 0 {
+		t.Fatalf("exit %d, want 0 (all real violations baselined)\n%s", exit, stderr)
+	}
+	if !strings.Contains(stderr, "now fixed") {
+		t.Errorf("stderr should report the resolved baseline entry:\n%s", stderr)
+	}
+}
+
 func TestFailOnNewWithoutBaseline(t *testing.T) {
 	dir := dirtyModule(t)
 	if _, _, exit := run(t, dir, "check", "--fail-on", "new"); exit != 1 {

@@ -38,6 +38,31 @@ func TestBaselineFromAndFilter(t *testing.T) {
 	}
 }
 
+func TestBaselineFixed(t *testing.T) {
+	base := &Baseline{Entries: []BaselineEntry{
+		{FromPackage: "m/a", Import: "m/b"}, // still violating
+		{FromPackage: "m/a", Import: "m/c"}, // resolved
+		{FromPackage: "m/d", Import: "m/b"}, // resolved
+	}}
+	res := &Result{Violations: []Violation{
+		{FromPackage: "m/a", ImportPath: "m/b"},
+		{FromPackage: "m/x", ImportPath: "m/y"}, // new, not in baseline
+	}}
+	fixed := base.Fixed(res)
+	want := []BaselineEntry{
+		{FromPackage: "m/a", Import: "m/c"},
+		{FromPackage: "m/d", Import: "m/b"},
+	}
+	if len(fixed) != len(want) {
+		t.Fatalf("fixed = %+v, want %+v", fixed, want)
+	}
+	for i, w := range want {
+		if fixed[i] != w {
+			t.Errorf("fixed[%d] = %+v, want %+v", i, fixed[i], w)
+		}
+	}
+}
+
 func TestBaselineFromDeduplicates(t *testing.T) {
 	// Two violations sharing (from, import) collapse to one entry.
 	res := &Result{Violations: []Violation{

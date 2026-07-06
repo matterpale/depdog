@@ -45,6 +45,24 @@ func (b *Baseline) Sort() {
 	})
 }
 
+// Fixed returns the baseline entries that no longer match a current violation
+// — grandfathered problems that have since been resolved, so the baseline can
+// be shrunk. res must be the unfiltered result. Order follows the (sorted)
+// baseline.
+func (b *Baseline) Fixed(res *Result) []BaselineEntry {
+	current := make(map[BaselineEntry]bool, len(res.Violations))
+	for _, v := range res.Violations {
+		current[BaselineEntry{FromPackage: v.FromPackage, Import: v.ImportPath}] = true
+	}
+	var fixed []BaselineEntry
+	for _, e := range b.Entries {
+		if !current[e] {
+			fixed = append(fixed, e)
+		}
+	}
+	return fixed
+}
+
 // Filter returns a copy of res that keeps only violations absent from the
 // baseline, together with the number suppressed. Warnings and stats are
 // carried over unchanged.

@@ -9,6 +9,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/matterpale/depdog/internal/config"
+	"github.com/matterpale/depdog/internal/core"
 	"github.com/matterpale/depdog/internal/report"
 )
 
@@ -42,11 +43,13 @@ Exit codes: 0 clean, 1 violations found, 2 configuration or usage error.`,
 			res := ev.Result
 
 			suppressed := 0
+			var fixed []core.BaselineEntry
 			if failOn == "new" {
 				base, err := config.LoadBaselineOrEmpty(filepath.Join(filepath.Dir(ev.ConfigPath), config.BaselineName))
 				if err != nil {
 					return err
 				}
+				fixed = base.Fixed(res)
 				res, suppressed = base.Filter(res)
 			}
 			elapsed := time.Since(start)
@@ -70,6 +73,11 @@ Exit codes: 0 clean, 1 violations found, 2 configuration or usage error.`,
 			if suppressed > 0 {
 				fmt.Fprintf(cmd.ErrOrStderr(), "depdog: %d baselined violation(s) suppressed (%s)\n",
 					suppressed, config.BaselineName)
+			}
+			if len(fixed) > 0 {
+				fmt.Fprintf(cmd.ErrOrStderr(),
+					"depdog: %d baselined violation(s) now fixed — run `depdog baseline` to shrink %s\n",
+					len(fixed), config.BaselineName)
 			}
 
 			if len(res.Violations) > 0 {
