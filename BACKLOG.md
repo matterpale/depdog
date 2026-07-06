@@ -73,7 +73,8 @@ Improvements, refinements, and polish beyond the M0–M5 work already shipped.
   `$EDITOR`; `r` re-runs the check in place (a step toward watch mode).
 - ✅ **Shipped:** `?` toggles a full-screen key legend (custom overlay; swallows
   navigation until closed with `?`/esc).
-- **Import-class legend & consistent color-coding** on the Packages screen. (S)
+- ✅ **Shipped:** the Packages screen shows a legend explaining the
+  `[std]`/`[external]`/`[name]`/`✗` import tags.
 
 ## Adoption & baseline
 

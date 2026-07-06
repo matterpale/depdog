@@ -201,6 +201,8 @@ func (m Model) packagesView() string {
 			b.WriteString("    " + m.short(imp) + "\n")
 		}
 	}
+	b.WriteString("\n")
+	b.WriteString(styleDim.Render("[std] std-lib · [external] third-party · [name] component · ✗ violates a rule"))
 	return strings.TrimRight(b.String(), "\n")
 }
 

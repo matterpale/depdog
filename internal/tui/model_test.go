@@ -128,6 +128,7 @@ func TestPackagesView(t *testing.T) {
 	for _, want := range []string{
 		"Packages", "▸ domain", "▸ handler", "internal/domain",
 		"imports:", "[repository]", "✗", "imported by:",
+		"[external] third-party", // the class legend
 	} {
 		if !strings.Contains(v, want) {
 			t.Errorf("packages view missing %q\n%s", want, v)
