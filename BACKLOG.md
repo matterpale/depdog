@@ -93,8 +93,10 @@ Improvements, refinements, and polish beyond the M0–M5 work already shipped.
   today.
 - **Cross-platform CI matrix.** (S) Add a Windows runner to exercise path
   handling (`filepath.ToSlash`, module-relative dirs).
-- **Fuzz the parser and matcher.** (S) `go test -fuzz` for `config.Parse` and
-  `core.MatchPattern` — cheap coverage of edge cases.
+- ✅ **Shipped:** fuzz tests for `config.Parse` (FuzzParse) and
+  `core.MatchPattern` (FuzzMatchPattern), with seed corpora that run under
+  normal `go test`. Ran clean at ~200k+ execs each; assert real invariants
+  (accepted configs have components; validated patterns match without error).
 
 ## Release & ecosystem (owner-gated)
 
