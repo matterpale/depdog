@@ -67,6 +67,10 @@ options:
   skip: ["internal/legacy/**"]    # package dirs excluded from analysis
 ```
 
+An editor JSON Schema ships at
+[`schema/depdog.schema.json`](schema/depdog.schema.json) for autocomplete and
+validation (a test keeps it in lockstep with the parser).
+
 Key ideas:
 
 - **Components** are named sets of packages, matched by recursive doublestar

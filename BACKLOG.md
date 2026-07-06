@@ -85,8 +85,10 @@ Improvements, refinements, and polish beyond the M0–M5 work already shipped.
 
 - ✅ **Shipped:** components whose patterns match no package are now flagged as
   `empty-component` warnings (never fatal), in both text and JSON output.
-- **JSON Schema for `depdog.yaml`.** (S) Ship a schema for editor autocomplete
-  and validation; link it from the docs.
+- ✅ **Shipped:** schema/depdog.schema.json (draft-07) for editor autocomplete
+  and validation, linked from the README. A test reflects over the parser's
+  file struct so the schema's top-level properties can't drift, and checks
+  every fixture config conforms.
 
 ## Testing & CI
 
