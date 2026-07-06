@@ -24,13 +24,13 @@ rules on a codebase that does not pass yet. Shrink the file over time.
 Exit codes: 0 written, 2 configuration or usage error.`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			res, cfgPath, err := evaluateModule(cmd, configPath, args)
+			ev, err := evaluateModule(cmd, configPath, args)
 			if err != nil {
 				return err
 			}
-			b := core.BaselineFrom(res)
+			b := core.BaselineFrom(ev.Result)
 
-			path := filepath.Join(filepath.Dir(cfgPath), config.BaselineName)
+			path := filepath.Join(filepath.Dir(ev.ConfigPath), config.BaselineName)
 			f, err := os.Create(path)
 			if err != nil {
 				return err

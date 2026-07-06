@@ -3,6 +3,8 @@ package tui
 import (
 	"fmt"
 	"strings"
+
+	"github.com/matterpale/depdog/internal/core"
 )
 
 func (m Model) dashboardView() string {
@@ -73,4 +75,85 @@ func (m Model) violationsView() string {
 		b.WriteString(styleDim.Render(fmt.Sprintf("  %s:%d", p.File, p.Line)) + "\n")
 	}
 	return strings.TrimRight(b.String(), "\n")
+}
+
+func (m Model) packagesView() string {
+	if len(m.pkgs) == 0 {
+		return styleDim.Render("no packages")
+	}
+	var b strings.Builder
+
+	lastComp := "\x00"
+	for i, p := range m.pkgs {
+		comp := p.Component
+		if comp == "" {
+			comp = "unassigned"
+		}
+		if comp != lastComp {
+			b.WriteString(styleDim.Render("▸ "+comp) + "\n")
+			lastComp = comp
+		}
+		name := "  " + m.short(p.ImportPath)
+		if i == m.selPkg {
+			b.WriteString(styleSelected.Render(name))
+		} else {
+			b.WriteString(name)
+		}
+		b.WriteString("\n")
+	}
+
+	p := m.pkgs[m.selPkg]
+	b.WriteString("\n")
+	b.WriteString(styleDim.Render("── " + p.ImportPath + " ──"))
+	b.WriteString("\n")
+	if len(p.Imports) == 0 {
+		b.WriteString(styleDim.Render("  (no imports)") + "\n")
+	} else {
+		b.WriteString(styleDim.Render("imports:") + "\n")
+		for _, iv := range p.Imports {
+			b.WriteString(m.renderImport(p.ImportPath, iv) + "\n")
+		}
+	}
+	if len(p.Importers) > 0 {
+		b.WriteString(styleDim.Render("imported by:") + "\n")
+		for _, imp := range p.Importers {
+			b.WriteString("    " + m.short(imp) + "\n")
+		}
+	}
+	return strings.TrimRight(b.String(), "\n")
+}
+
+// renderImport shows one outgoing edge: the import path, a [class] or
+// [component] tag, a test marker, and a red ✗ prefix when the edge violates a
+// rule.
+func (m Model) renderImport(from string, iv core.ImportView) string {
+	tag := iv.Class.String()
+	if iv.Class == core.ClassInModule {
+		if iv.Component != "" {
+			tag = iv.Component
+		} else {
+			tag = "unassigned"
+		}
+	}
+	line := iv.Path + "  " + styleDim.Render("["+tag+"]")
+	if iv.TestOnly {
+		line += styleDim.Render(" [test]")
+	}
+	if m.violEdges[[2]string{from, iv.Path}] {
+		return styleBad.Render("  ✗ ") + line
+	}
+	return "    " + line
+}
+
+// short trims the module path prefix for readable package labels.
+func (m Model) short(path string) string {
+	mod := m.res.ModulePath
+	switch {
+	case path == mod:
+		return "."
+	case strings.HasPrefix(path, mod+"/"):
+		return strings.TrimPrefix(path, mod+"/")
+	default:
+		return path
+	}
 }

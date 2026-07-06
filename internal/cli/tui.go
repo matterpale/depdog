@@ -8,6 +8,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/matterpale/depdog/internal/config"
+	"github.com/matterpale/depdog/internal/core"
 	"github.com/matterpale/depdog/internal/tui"
 )
 
@@ -25,15 +26,24 @@ Exit codes: 0 on quit, 2 configuration or usage error.`,
 			if !isInteractive(cmd) {
 				return errors.New("depdog tui needs an interactive terminal; use `depdog check` for non-interactive output")
 			}
-			res, _, err := evaluateModule(cmd, configPath, args)
+			ev, err := evaluateModule(cmd, configPath, args)
 			if err != nil {
 				return err
 			}
-			return tui.Run(res)
+			return launch(ev)
 		},
 	}
 	cmd.Flags().StringVar(&configPath, "config", "", "path to depdog.yaml (default: found next to go.mod)")
 	return cmd
+}
+
+// launch builds the package-navigation views and opens the UI.
+func launch(ev *evaluation) error {
+	pkgs, err := core.BuildPackageViews(ev.Graph, ev.Rules)
+	if err != nil {
+		return err
+	}
+	return tui.Run(ev.Result, pkgs)
 }
 
 // runBare backs a plain `depdog` invocation: it opens the TUI when a terminal
@@ -43,11 +53,11 @@ func runBare(cmd *cobra.Command) error {
 	if isInteractive(cmd) {
 		if cwd, err := os.Getwd(); err == nil {
 			if _, _, ferr := config.Find(cwd); ferr == nil {
-				res, _, eerr := evaluateModule(cmd, "", nil)
+				ev, eerr := evaluateModule(cmd, "", nil)
 				if eerr != nil {
 					return eerr
 				}
-				return tui.Run(res)
+				return launch(ev)
 			}
 		}
 	}

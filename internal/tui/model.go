@@ -6,6 +6,7 @@ package tui
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -19,6 +20,7 @@ type tab int
 const (
 	tabDashboard tab = iota
 	tabViolations
+	tabPackages
 	numTabs
 )
 
@@ -26,6 +28,8 @@ func (t tab) title() string {
 	switch t {
 	case tabViolations:
 		return "Violations"
+	case tabPackages:
+		return "Packages"
 	default:
 		return "Dashboard"
 	}
@@ -43,15 +47,31 @@ var (
 
 // Model is depdog's root Bubble Tea model.
 type Model struct {
-	res      *core.Result
-	active   tab
-	selected int // highlighted violation on the Violations screen
-	width    int
-	quitting bool
+	res       *core.Result
+	pkgs      []core.PackageView // sorted by component, then import path
+	violEdges map[[2]string]bool // (from package, import) of every violation
+	active    tab
+	selected  int // highlighted violation on the Violations screen
+	selPkg    int // highlighted package on the Packages screen
+	width     int
+	quitting  bool
 }
 
-// New builds the model over a check result.
-func New(res *core.Result) Model { return Model{res: res} }
+// New builds the model over a check result and its package views.
+func New(res *core.Result, pkgs []core.PackageView) Model {
+	sorted := append([]core.PackageView(nil), pkgs...)
+	sort.SliceStable(sorted, func(i, j int) bool {
+		if sorted[i].Component != sorted[j].Component {
+			return sorted[i].Component < sorted[j].Component
+		}
+		return sorted[i].ImportPath < sorted[j].ImportPath
+	})
+	edges := make(map[[2]string]bool, len(res.Violations))
+	for _, v := range res.Violations {
+		edges[[2]string{v.FromPackage, v.ImportPath}] = true
+	}
+	return Model{res: res, pkgs: sorted, violEdges: edges}
+}
 
 func (m Model) Init() tea.Cmd { return nil }
 
@@ -72,17 +92,37 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.active = tabDashboard
 		case "2":
 			m.active = tabViolations
+		case "3":
+			m.active = tabPackages
 		case "up", "k":
-			if m.active == tabViolations && m.selected > 0 {
-				m.selected--
-			}
+			m.moveSelection(-1)
 		case "down", "j":
-			if m.active == tabViolations && m.selected < len(m.res.Violations)-1 {
-				m.selected++
-			}
+			m.moveSelection(1)
 		}
 	}
 	return m, nil
+}
+
+// moveSelection moves the highlighted row on whichever list-bearing screen is
+// active, clamped to its bounds.
+func (m *Model) moveSelection(d int) {
+	switch m.active {
+	case tabViolations:
+		m.selected = clamp(m.selected+d, len(m.res.Violations))
+	case tabPackages:
+		m.selPkg = clamp(m.selPkg+d, len(m.pkgs))
+	}
+}
+
+func clamp(i, n int) int {
+	switch {
+	case n == 0 || i < 0:
+		return 0
+	case i >= n:
+		return n - 1
+	default:
+		return i
+	}
 }
 
 func (m Model) View() string {
@@ -95,6 +135,8 @@ func (m Model) View() string {
 	switch m.active {
 	case tabViolations:
 		b.WriteString(m.violationsView())
+	case tabPackages:
+		b.WriteString(m.packagesView())
 	default:
 		b.WriteString(m.dashboardView())
 	}
@@ -126,7 +168,7 @@ func (m Model) header() string {
 }
 
 func (m Model) footer() string {
-	return styleDim.Render("tab/1-2 switch · ↑/↓ move · q quit")
+	return styleDim.Render("tab/1-3 switch · ↑/↓ move · q quit")
 }
 
 func plural(n int, word string) string {

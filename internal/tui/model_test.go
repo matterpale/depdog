@@ -46,6 +46,19 @@ func fixtureResult() *core.Result {
 	}
 }
 
+func fixturePkgs() []core.PackageView {
+	return []core.PackageView{
+		{ImportPath: "example.test/shop/internal/domain", Component: "domain", Imports: []core.ImportView{
+			{Path: "fmt", Class: core.ClassStd},
+			{Path: "example.test/shop/internal/repo", Class: core.ClassInModule, Component: "repository"},
+		}, Importers: []string{"example.test/shop/internal/handler"}},
+		{ImportPath: "example.test/shop/internal/handler", Component: "handler", Imports: []core.ImportView{
+			{Path: "example.test/shop/internal/domain", Class: core.ClassInModule, Component: "domain"},
+			{Path: "example.test/shop/internal/service", Class: core.ClassInModule, Component: "service"},
+		}},
+	}
+}
+
 func runes(s string) tea.KeyMsg { return tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(s)} }
 
 func update(m Model, msg tea.Msg) Model {
@@ -54,7 +67,7 @@ func update(m Model, msg tea.Msg) Model {
 }
 
 func TestDashboardView(t *testing.T) {
-	m := update(New(fixtureResult()), tea.WindowSizeMsg{Width: 80, Height: 24})
+	m := update(New(fixtureResult(), fixturePkgs()), tea.WindowSizeMsg{Width: 80, Height: 24})
 	v := m.View()
 	for _, want := range []string{
 		"depdog", "example.test/shop", "Dashboard", "Violations",
@@ -70,7 +83,7 @@ func TestDashboardView(t *testing.T) {
 }
 
 func TestSwitchToViolations(t *testing.T) {
-	m := update(New(fixtureResult()), runes("2"))
+	m := update(New(fixtureResult(), fixturePkgs()), runes("2"))
 	v := m.View()
 	if !strings.Contains(v, "domain → example.test/shop/internal/repo") {
 		t.Errorf("violations list missing entry:\n%s", v)
@@ -81,7 +94,7 @@ func TestSwitchToViolations(t *testing.T) {
 }
 
 func TestViolationSelectionMoves(t *testing.T) {
-	m := update(New(fixtureResult()), runes("2"))
+	m := update(New(fixtureResult(), fixturePkgs()), runes("2"))
 	if !strings.Contains(m.View(), "internal/domain/x.go:4") {
 		t.Errorf("detail should show the first violation's position:\n%s", m.View())
 	}
@@ -99,19 +112,51 @@ func TestViolationSelectionMoves(t *testing.T) {
 }
 
 func TestTabWraps(t *testing.T) {
-	m := New(fixtureResult())
-	m = update(m, tea.KeyMsg{Type: tea.KeyTab})
-	if m.active != tabViolations {
-		t.Fatalf("tab did not advance: active = %d", m.active)
+	m := New(fixtureResult(), fixturePkgs())
+	for _, want := range []tab{tabViolations, tabPackages, tabDashboard} {
+		m = update(m, tea.KeyMsg{Type: tea.KeyTab})
+		if m.active != want {
+			t.Fatalf("tab sequence: active = %d, want %d", m.active, want)
+		}
 	}
-	m = update(m, tea.KeyMsg{Type: tea.KeyTab})
-	if m.active != tabDashboard {
-		t.Errorf("tab did not wrap back to dashboard: active = %d", m.active)
+}
+
+func TestPackagesView(t *testing.T) {
+	m := update(New(fixtureResult(), fixturePkgs()), runes("3"))
+	v := m.View()
+	for _, want := range []string{
+		"Packages", "▸ domain", "▸ handler", "internal/domain",
+		"imports:", "[repository]", "✗", "imported by:",
+	} {
+		if !strings.Contains(v, want) {
+			t.Errorf("packages view missing %q\n%s", want, v)
+		}
+	}
+	if strings.Contains(v, "\x1b") {
+		t.Errorf("ANSI leaked into forced-plain view:\n%q", v)
+	}
+}
+
+func TestPackageSelectionMoves(t *testing.T) {
+	m := update(New(fixtureResult(), fixturePkgs()), runes("3"))
+	if m.selPkg != 0 {
+		t.Fatalf("selPkg = %d, want 0", m.selPkg)
+	}
+	m = update(m, runes("j"))
+	if m.selPkg != 1 {
+		t.Fatalf("selPkg = %d, want 1 after down", m.selPkg)
+	}
+	if !strings.Contains(m.View(), "example.test/shop/internal/service") {
+		t.Errorf("detail should show the handler package's imports:\n%s", m.View())
+	}
+	m = update(m, runes("j")) // clamp at the last package
+	if m.selPkg != 1 {
+		t.Errorf("selPkg past end = %d, want clamp at 1", m.selPkg)
 	}
 }
 
 func TestQuit(t *testing.T) {
-	next, cmd := New(fixtureResult()).Update(runes("q"))
+	next, cmd := New(fixtureResult(), fixturePkgs()).Update(runes("q"))
 	if cmd == nil {
 		t.Fatal("q should return a quit command")
 	}
@@ -125,7 +170,7 @@ func TestQuit(t *testing.T) {
 }
 
 func TestProgramLifecycle(t *testing.T) {
-	tm := teatest.NewTestModel(t, New(fixtureResult()), teatest.WithInitialTermSize(90, 30))
+	tm := teatest.NewTestModel(t, New(fixtureResult(), fixturePkgs()), teatest.WithInitialTermSize(90, 30))
 	teatest.WaitFor(t, tm.Output(), func(b []byte) bool {
 		return bytes.Contains(b, []byte("Dashboard")) && bytes.Contains(b, []byte("domain"))
 	}, teatest.WithDuration(3*time.Second))

@@ -35,14 +35,15 @@ Exit codes: 0 clean, 1 violations found, 2 configuration or usage error.`,
 			}
 			start := time.Now()
 
-			res, cfgPath, err := evaluateModule(cmd, configPath, args)
+			ev, err := evaluateModule(cmd, configPath, args)
 			if err != nil {
 				return err
 			}
+			res := ev.Result
 
 			suppressed := 0
 			if failOn == "new" {
-				base, err := config.LoadBaselineOrEmpty(filepath.Join(filepath.Dir(cfgPath), config.BaselineName))
+				base, err := config.LoadBaselineOrEmpty(filepath.Join(filepath.Dir(ev.ConfigPath), config.BaselineName))
 				if err != nil {
 					return err
 				}
