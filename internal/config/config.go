@@ -26,6 +26,7 @@ type file struct {
 	Version    int                   `yaml:"version"`
 	Module     string                `yaml:"module"`
 	Components map[string]stringList `yaml:"components"`
+	Groups     map[string]stringList `yaml:"groups"`
 	Policy     string                `yaml:"policy"`
 	Rules      map[string]ruleYAML   `yaml:"rules"`
 	Options    optionsYAML           `yaml:"options"`
@@ -135,6 +136,12 @@ func Parse(data []byte) (*core.RuleSet, error) {
 	for name := range f.Components {
 		known[name] = true
 	}
+
+	groups, err := parseGroups(f.Groups, known, names)
+	if err != nil {
+		return nil, err
+	}
+
 	ruleNames := make([]string, 0, len(f.Rules))
 	for name := range f.Rules {
 		ruleNames = append(ruleNames, name)
@@ -145,11 +152,11 @@ func Parse(data []byte) (*core.RuleSet, error) {
 			return nil, fmt.Errorf("rule for unknown component %q (known: %s)", name, strings.Join(names, ", "))
 		}
 		r := f.Rules[name]
-		allow, err := parseRefs(name, r.Allow, known)
+		allow, err := parseRefs(name, r.Allow, known, groups)
 		if err != nil {
 			return nil, err
 		}
-		deny, err := parseRefs(name, r.Deny, known)
+		deny, err := parseRefs(name, r.Deny, known, groups)
 		if err != nil {
 			return nil, err
 		}
@@ -176,7 +183,42 @@ func Parse(data []byte) (*core.RuleSet, error) {
 	return rs, nil
 }
 
-func parseRefs(rule string, entries []string, known map[string]bool) ([]core.Ref, error) {
+// parseGroups validates the optional `groups` map (each a named set of
+// components) and returns name -> member components. A group may not use a
+// reserved name or collide with a component, and every member must be a known
+// component.
+func parseGroups(raw map[string]stringList, known map[string]bool, componentNames []string) (map[string][]string, error) {
+	if len(raw) == 0 {
+		return nil, nil
+	}
+	groups := make(map[string][]string, len(raw))
+	gnames := make([]string, 0, len(raw))
+	for name := range raw {
+		gnames = append(gnames, name)
+	}
+	sort.Strings(gnames)
+	for _, name := range gnames {
+		if reserved[name] {
+			return nil, fmt.Errorf("group name %q is reserved", name)
+		}
+		if known[name] {
+			return nil, fmt.Errorf("group %q collides with a component of the same name", name)
+		}
+		members := raw[name]
+		if len(members) == 0 {
+			return nil, fmt.Errorf("group %q has no members", name)
+		}
+		for _, m := range members {
+			if !known[m] {
+				return nil, fmt.Errorf("group %q member %q is not a known component (known: %s)", name, m, strings.Join(componentNames, ", "))
+			}
+		}
+		groups[name] = members
+	}
+	return groups, nil
+}
+
+func parseRefs(rule string, entries []string, known map[string]bool, groups map[string][]string) ([]core.Ref, error) {
 	refs := make([]core.Ref, 0, len(entries))
 	for _, e := range entries {
 		switch e {
@@ -189,8 +231,14 @@ func parseRefs(rule string, entries []string, known map[string]bool) ([]core.Ref
 		case "unassigned":
 			refs = append(refs, core.Ref{Kind: core.RefUnassigned})
 		default:
+			if members, ok := groups[e]; ok {
+				for _, m := range members {
+					refs = append(refs, core.Ref{Kind: core.RefComponent, Name: m})
+				}
+				continue
+			}
 			if !known[e] {
-				return nil, fmt.Errorf("rule %q refers to unknown component %q", rule, e)
+				return nil, fmt.Errorf("rule %q refers to unknown component or group %q", rule, e)
 			}
 			refs = append(refs, core.Ref{Kind: core.RefComponent, Name: e})
 		}

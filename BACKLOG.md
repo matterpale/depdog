@@ -19,8 +19,9 @@ Improvements, refinements, and polish beyond the M0–M5 work already shipped.
   parties are one opaque bucket.
 - **Composable/base configs.** (M) `extends:` a shared base `depdog.yaml` (or a
   named built-in preset) so orgs can factor common rules out of each repo.
-- **Component aliases / groups.** (S) Let a rule reference a set of components by
-  a group name (e.g. `inner: [domain, core]`) to cut repetition.
+- ✅ **Shipped:** component `groups` — a named set of components (`groups: {
+  inner: [domain, core] }`) usable in any allow/deny list, expanded at parse
+  time. Group names can't be reserved or collide with components.
 
 ## Engine & correctness
 

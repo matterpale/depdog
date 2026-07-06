@@ -51,6 +51,37 @@ func TestParseDefaultPolicy(t *testing.T) {
 	}
 }
 
+func TestParseGroups(t *testing.T) {
+	rs, err := Parse([]byte(`
+version: 1
+components:
+  ui:     ["internal/ui/**"]
+  app:    ["internal/app/**"]
+  domain: ["internal/domain/**"]
+groups:
+  inner: [app, domain]
+policy: deny
+rules:
+  ui: { allow: [inner, std] }
+`))
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	allow := rs.Rules["ui"].Allow
+	got := map[string]bool{}
+	for _, r := range allow {
+		got[r.String()] = true
+	}
+	for _, want := range []string{"app", "domain", "std"} {
+		if !got[want] {
+			t.Errorf("ui allow should expand the group to include %q: %+v", want, allow)
+		}
+	}
+	if len(allow) != 3 {
+		t.Errorf("ui allow = %d refs, want 3 (app, domain, std)", len(allow))
+	}
+}
+
 func TestParseScalarPattern(t *testing.T) {
 	rs, err := Parse([]byte("version: 1\ncomponents:\n  main: cmd/**\npolicy: deny\n"))
 	if err != nil {
@@ -73,7 +104,10 @@ func TestParseErrors(t *testing.T) {
 		{"bad glob", "version: 1\ncomponents: {a: [\"x/[bad/**\"]}\npolicy: deny", "segment"},
 		{"bad policy", "version: 1\ncomponents: {a: [\"x/**\"]}\npolicy: strict", "policy must be"},
 		{"rule for unknown", "version: 1\ncomponents: {a: [\"x/**\"]}\npolicy: deny\nrules: {b: {allow: [std]}}", `unknown component "b"`},
-		{"unknown ref", "version: 1\ncomponents: {a: [\"x/**\"]}\npolicy: deny\nrules: {a: {allow: [nope]}}", `unknown component "nope"`},
+		{"unknown ref", "version: 1\ncomponents: {a: [\"x/**\"]}\npolicy: deny\nrules: {a: {allow: [nope]}}", `unknown component or group "nope"`},
+		{"group unknown member", "version: 1\ncomponents: {a: [\"x/**\"]}\ngroups: {g: [nope]}\npolicy: deny", "not a known component"},
+		{"group collides", "version: 1\ncomponents: {a: [\"x/**\"]}\ngroups: {a: [a]}\npolicy: deny", "collides"},
+		{"group reserved", "version: 1\ncomponents: {a: [\"x/**\"]}\ngroups: {std: [a]}\npolicy: deny", "reserved"},
 		{"bad test_files", "version: 1\ncomponents: {a: [\"x/**\"]}\npolicy: deny\noptions: {test_files: never}", "test_files"},
 		{"typo field", "version: 1\ncomponents: {a: [\"x/**\"]}\npolicy: deny\nrulez: {}", "rulez"},
 	}

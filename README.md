@@ -83,6 +83,9 @@ Key ideas:
   `deny` default. `init` asks which you want.
 - Allow/deny entries are component names or the specials `std`, `external`,
   `unassigned` and `"*"`.
+- **Groups** name a reusable set of components. Declare `groups: { inner:
+  [domain, core] }`, then reference `inner` in any allow/deny list; it expands
+  to its members when the config loads.
 - In-module packages no component claims are always reported as **warnings**,
   but never fail the build on their own — unmapped packages are how rule sets
   rot, so they stay visible without blocking adoption. A component whose
