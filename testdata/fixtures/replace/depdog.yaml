@@ -1,0 +1,6 @@
+version: 1
+components:
+  app: ["internal/app/**"]
+policy: deny
+rules:
+  app: { allow: [std] }

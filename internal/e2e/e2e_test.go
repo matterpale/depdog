@@ -200,6 +200,22 @@ func TestCheckCycle(t *testing.T) {
 	golden(t, "cycle_text.golden", reTextDur.ReplaceAllString(out, "checked in X"))
 }
 
+func TestCheckReplaceClassifiesExternal(t *testing.T) {
+	// A dependency replaced with a nested local module must still classify as
+	// external (a distinct module path), not in-module. app allows only std, so
+	// importing it is a violation whose target must be "external".
+	out, stderr, exit := run(t, fixture("replace"), "check", "--format", "json")
+	if exit != 1 {
+		t.Fatalf("exit %d, want 1\nstdout:\n%s\nstderr:\n%s", exit, out, stderr)
+	}
+	if !strings.Contains(out, `"import": "example.test/vendored/lib"`) {
+		t.Errorf("expected the replaced import in output:\n%s", out)
+	}
+	if !strings.Contains(out, `"target": "external"`) {
+		t.Errorf("a nested-module replace should classify as external:\n%s", out)
+	}
+}
+
 func TestCheckMissingConfig(t *testing.T) {
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, "go.mod"), []byte("module example.test/naked\n\ngo 1.21\n"), 0o644); err != nil {

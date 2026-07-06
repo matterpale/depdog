@@ -37,8 +37,9 @@ Improvements, refinements, and polish beyond the M0–M5 work already shipped.
 - **Loader benchmark + optional cache.** (M) The loader is the bottleneck;
   `PLAN.md` says "measure first". Add a benchmark over a large synthetic module,
   then decide whether a metadata cache is worth it.
-- **`replace`/vendored edge cases.** (S) Add fixtures for `replace` to a nested
-  path and a vendored tree; confirm classification stays correct.
+- ✅ **Shipped:** a `replace` fixture whose dependency is a nested local module
+  (replace => ./vendored) confirms the loader still classifies it as external.
+  (A full vendor-tree fixture could still be added.)
 
 ## CLI & output
 
