@@ -69,7 +69,8 @@ Improvements, refinements, and polish beyond the M0–M5 work already shipped.
   (substring; the shared filter state applies to whichever list is active).
 - **`$EDITOR` + re-run.** (M) `e` opens the selected file at its line in
   `$EDITOR`; `r` re-runs the check in place (a step toward watch mode).
-- **Help overlay.** (S) `?` toggles a key legend via `bubbles/help`.
+- ✅ **Shipped:** `?` toggles a full-screen key legend (custom overlay; swallows
+  navigation until closed with `?`/esc).
 - **Import-class legend & consistent color-coding** on the Packages screen. (S)
 
 ## Adoption & baseline

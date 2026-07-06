@@ -301,6 +301,41 @@ func TestPackageFilter(t *testing.T) {
 	}
 }
 
+func TestHelpOverlay(t *testing.T) {
+	m := update(New(fixtureResult(), fixturePkgs()), runes("?"))
+	if !m.showHelp {
+		t.Fatal("? should open the help overlay")
+	}
+	v := m.View()
+	for _, want := range []string{"Keys", "next / previous screen", "toggle this help", "? or esc to close"} {
+		if !strings.Contains(v, want) {
+			t.Errorf("help overlay missing %q\n%s", want, v)
+		}
+	}
+	// Navigation is swallowed while the overlay is open.
+	before := m.active
+	m = update(m, runes("2"))
+	if m.active != before {
+		t.Errorf("navigation should be ignored while help is open")
+	}
+	// ? toggles it off.
+	m = update(m, runes("?"))
+	if m.showHelp {
+		t.Error("? should close the help overlay")
+	}
+	// esc closes help without quitting.
+	m = update(m, runes("?"))
+	next, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	if closed := next.(Model); closed.showHelp || closed.quitting || cmd != nil {
+		t.Errorf("esc should close help without quitting: showHelp=%v quitting=%v", closed.showHelp, closed.quitting)
+	}
+	// q quits even with help open.
+	m = update(m, runes("?"))
+	if _, cmd := m.Update(runes("q")); cmd == nil {
+		t.Error("q should quit even from the help overlay")
+	}
+}
+
 func TestProgramLifecycle(t *testing.T) {
 	tm := teatest.NewTestModel(t, New(fixtureResult(), fixturePkgs()), teatest.WithInitialTermSize(90, 30))
 	teatest.WaitFor(t, tm.Output(), func(b []byte) bool {

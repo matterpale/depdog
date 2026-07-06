@@ -55,6 +55,7 @@ type Model struct {
 	selPkg    int // highlighted package on the Packages screen
 	filter    string
 	filtering bool // capturing keystrokes into filter on the Violations screen
+	showHelp  bool
 	width     int
 	height    int
 	quitting  bool
@@ -87,9 +88,24 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.updateFilter(msg)
 		}
 		switch msg.String() {
-		case "q", "ctrl+c", "esc":
+		case "q", "ctrl+c":
 			m.quitting = true
 			return m, tea.Quit
+		case "?":
+			m.showHelp = !m.showHelp
+			return m, nil
+		case "esc":
+			if m.showHelp {
+				m.showHelp = false
+				return m, nil
+			}
+			m.quitting = true
+			return m, tea.Quit
+		}
+		if m.showHelp {
+			return m, nil // the overlay swallows navigation until closed
+		}
+		switch msg.String() {
 		case "tab", "right", "l":
 			m.active = (m.active + 1) % numTabs
 		case "shift+tab", "left", "h":
@@ -209,17 +225,46 @@ func (m Model) View() string {
 	var b strings.Builder
 	b.WriteString(m.header())
 	b.WriteString("\n\n")
-	switch m.active {
-	case tabViolations:
-		b.WriteString(m.violationsView())
-	case tabPackages:
-		b.WriteString(m.packagesView())
-	default:
-		b.WriteString(m.dashboardView())
+	if m.showHelp {
+		b.WriteString(helpView())
+	} else {
+		switch m.active {
+		case tabViolations:
+			b.WriteString(m.violationsView())
+		case tabPackages:
+			b.WriteString(m.packagesView())
+		default:
+			b.WriteString(m.dashboardView())
+		}
 	}
 	b.WriteString("\n\n")
 	b.WriteString(m.footer())
 	return b.String()
+}
+
+// helpView renders the full key legend shown by the `?` overlay.
+func helpView() string {
+	rows := [][2]string{
+		{"tab / shift+tab", "next / previous screen"},
+		{"1 / 2 / 3", "Dashboard / Violations / Packages"},
+		{"up/down or k/j", "move the selection"},
+		{"/", "filter the list (Violations, Packages)"},
+		{"esc", "clear filter, or close this help"},
+		{"?", "toggle this help"},
+		{"q or ctrl+c", "quit"},
+	}
+	w := 0
+	for _, r := range rows {
+		if len(r[0]) > w {
+			w = len(r[0])
+		}
+	}
+	var b strings.Builder
+	b.WriteString(styleTitle.Render("Keys") + "\n")
+	for _, r := range rows {
+		fmt.Fprintf(&b, "  %-*s   %s\n", w, r[0], styleDim.Render(r[1]))
+	}
+	return strings.TrimRight(b.String(), "\n")
 }
 
 func (m Model) header() string {
@@ -248,10 +293,13 @@ func (m Model) footer() string {
 	if m.filtering {
 		return styleDim.Render("type to filter · enter accept · esc clear")
 	}
-	if m.active == tabViolations || m.active == tabPackages {
-		return styleDim.Render("tab/1-3 switch · ↑/↓ move · / filter · q quit")
+	if m.showHelp {
+		return styleDim.Render("? or esc to close")
 	}
-	return styleDim.Render("tab/1-3 switch · ↑/↓ move · q quit")
+	if m.active == tabViolations || m.active == tabPackages {
+		return styleDim.Render("tab/1-3 switch · ↑/↓ move · / filter · ? help · q quit")
+	}
+	return styleDim.Render("tab/1-3 switch · ↑/↓ move · ? help · q quit")
 }
 
 func plural(n int, word string) string {
