@@ -118,6 +118,32 @@ func TestCheckDirtyJSON(t *testing.T) {
 	golden(t, "dirty_json.golden", reJSONDur.ReplaceAllString(out, `"duration_ms": 0`))
 }
 
+func TestCheckDirtyGitHub(t *testing.T) {
+	out, _, exit := run(t, fixture("dirty"), "check", "--format", "github")
+	if exit != 1 {
+		t.Fatalf("exit %d, want 1\n%s", exit, out)
+	}
+	golden(t, "dirty_github.golden", out)
+}
+
+func TestCheckDirtySARIF(t *testing.T) {
+	out, _, exit := run(t, fixture("dirty"), "check", "--format", "sarif")
+	if exit != 1 {
+		t.Fatalf("exit %d, want 1\n%s", exit, out)
+	}
+	golden(t, "dirty_sarif.golden", out)
+}
+
+func TestCheckBadFormat(t *testing.T) {
+	_, stderr, exit := run(t, fixture("dirty"), "check", "--format", "toml")
+	if exit != 2 {
+		t.Fatalf("exit %d, want 2", exit)
+	}
+	if !strings.Contains(stderr, "sarif") {
+		t.Errorf("stderr should list valid formats:\n%s", stderr)
+	}
+}
+
 func TestCheckBlacklist(t *testing.T) {
 	out, _, exit := run(t, fixture("blacklist"), "check")
 	if exit != 1 {

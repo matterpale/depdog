@@ -74,8 +74,12 @@ Exit codes: 0 clean, 1 violations found, 2 configuration or usage error.`,
 				err = report.Text(out, res, elapsed)
 			case "json":
 				err = report.JSON(out, res, elapsed)
+			case "github":
+				err = report.GitHub(out, res)
+			case "sarif":
+				err = report.SARIF(out, res, Version)
 			default:
-				return fmt.Errorf("unknown --format %q (text or json)", format)
+				return fmt.Errorf("unknown --format %q (text, json, github or sarif)", format)
 			}
 			if err != nil {
 				return err
@@ -90,6 +94,6 @@ Exit codes: 0 clean, 1 violations found, 2 configuration or usage error.`,
 		},
 	}
 	cmd.Flags().StringVar(&configPath, "config", "", "path to depdog.yaml (default: found next to go.mod)")
-	cmd.Flags().StringVarP(&format, "format", "f", "text", "output format: text or json")
+	cmd.Flags().StringVarP(&format, "format", "f", "text", "output format: text, json, github or sarif")
 	return cmd
 }

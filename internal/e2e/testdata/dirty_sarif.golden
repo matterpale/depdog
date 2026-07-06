@@ -1,0 +1,139 @@
+{
+  "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
+  "version": "2.1.0",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "name": "depdog",
+          "informationUri": "https://github.com/matterpale/depdog",
+          "version": "0.0.0-dev",
+          "rules": [
+            {
+              "id": "domain",
+              "shortDescription": {
+                "text": "Import rules for component domain"
+              }
+            },
+            {
+              "id": "handler",
+              "shortDescription": {
+                "text": "Import rules for component handler"
+              }
+            },
+            {
+              "id": "unassigned-package",
+              "shortDescription": {
+                "text": "Package not covered by any component"
+              }
+            }
+          ]
+        }
+      },
+      "results": [
+        {
+          "ruleId": "domain",
+          "level": "error",
+          "message": {
+            "text": "domain imports example.test/dirty/internal/repository (domain: allow [std])"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "internal/domain/pricing/discount.go"
+                },
+                "region": {
+                  "startLine": 3
+                }
+              }
+            },
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "internal/domain/pricing/pricing.go"
+                },
+                "region": {
+                  "startLine": 5
+                }
+              }
+            }
+          ]
+        },
+        {
+          "ruleId": "domain",
+          "level": "error",
+          "message": {
+            "text": "domain imports example.test/extlib (domain: allow [std])"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "internal/domain/pricing/pricing.go"
+                },
+                "region": {
+                  "startLine": 6
+                }
+              }
+            }
+          ]
+        },
+        {
+          "ruleId": "handler",
+          "level": "error",
+          "message": {
+            "text": "handler imports example.test/dirty/internal/repository (handler: allow [domain, std])"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "internal/handler/checkout/checkout_test.go"
+                },
+                "region": {
+                  "startLine": 6
+                }
+              }
+            }
+          ]
+        },
+        {
+          "ruleId": "handler",
+          "level": "error",
+          "message": {
+            "text": "handler imports example.test/dirty/internal/service (handler: allow [domain, std])"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "internal/handler/checkout/checkout.go"
+                },
+                "region": {
+                  "startLine": 5
+                }
+              }
+            }
+          ]
+        },
+        {
+          "ruleId": "unassigned-package",
+          "level": "note",
+          "message": {
+            "text": "example.test/dirty/internal/util is not covered by any component"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "internal/util"
+                }
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

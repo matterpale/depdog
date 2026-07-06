@@ -1,0 +1,7 @@
+::error file=internal/domain/pricing/discount.go,line=3::domain imports example.test/dirty/internal/repository (domain: allow [std])
+::error file=internal/domain/pricing/pricing.go,line=5::domain imports example.test/dirty/internal/repository (domain: allow [std])
+::error file=internal/domain/pricing/pricing.go,line=6::domain imports example.test/extlib (domain: allow [std])
+::error file=internal/handler/checkout/checkout_test.go,line=6::handler imports example.test/dirty/internal/repository (handler: allow [domain, std]) [test]
+::error file=internal/handler/checkout/checkout.go,line=5::handler imports example.test/dirty/internal/service (handler: allow [domain, std])
+::warning::example.test/dirty/internal/util is not covered by any component (internal/util)
+depdog check — example.test/dirty · 4 violations · 6 packages
