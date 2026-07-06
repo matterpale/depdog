@@ -178,6 +178,32 @@ func (rs *RuleSet) Decide(component, target string) (allowed bool, reason string
 			}
 		}
 	}
+	return rs.fallback(component, rule, hasRule)
+}
+
+// DecideModule reports whether a component may import a specific external module
+// (by import path), and the rule or policy that decides it. Used by `explain`
+// when the target is a bare module path.
+func (rs *RuleSet) DecideModule(component, module string) (allowed bool, reason string) {
+	rule, hasRule := rs.Rules[component]
+	if hasRule {
+		for _, r := range rule.Deny {
+			if moduleRefMatches(r, module) {
+				return false, ruleText(component, "deny", rule.Deny)
+			}
+		}
+		for _, r := range rule.Allow {
+			if moduleRefMatches(r, module) {
+				return true, ruleText(component, "allow", rule.Allow)
+			}
+		}
+	}
+	return rs.fallback(component, rule, hasRule)
+}
+
+// fallback resolves an edge no allow/deny entry matched, using the component's
+// inferred stance.
+func (rs *RuleSet) fallback(component string, rule Rule, hasRule bool) (bool, string) {
 	if rs.Stance(component) == PolicyAllow {
 		if hasRule && len(rule.Deny) > 0 {
 			return true, "not denied by " + ruleText(component, "deny", rule.Deny)
@@ -202,6 +228,18 @@ func refMatchesTarget(r Ref, target string) bool {
 		return target == "unassigned"
 	case RefComponent:
 		return r.Name == target
+	}
+	return false
+}
+
+// moduleRefMatches reports whether a ref covers a specific external module: "*"
+// and "external" cover any, and an external-module ref matches by prefix.
+func moduleRefMatches(r Ref, module string) bool {
+	switch r.Kind {
+	case RefAny, RefExternal:
+		return true
+	case RefExternalModule:
+		return module == r.Name || strings.HasPrefix(module, r.Name+"/")
 	}
 	return false
 }

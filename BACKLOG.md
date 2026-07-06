@@ -13,13 +13,16 @@ Improvements, refinements, and polish beyond the M0–M5 work already shipped.
   blacklist, otherwise the global `policy`), fixing the deny-only-under-policy-
   deny footgun. Top-level `policy` is now optional (defaults to `deny`).
   Follow-up: teach the wizard to generate mixed-stance configs.
-- **Per-component external allowlists (depguard-style).** In progress.
-  - ✅ Shipped: an allow/deny entry that looks like an import path (contains `/`
-    or `.`) matches a specific external module by prefix (core.RefExternalModule).
+- ✅ **Per-component external allowlists (depguard-style).** Done.
+  - An allow/deny entry that looks like an import path (contains `/` or `.`)
+    matches a specific external module by prefix (core.RefExternalModule).
     `deny` wins; bare identifiers still must resolve to a component/group/special.
-  - Follow-up slices: teach `explain <from> <to>` to resolve a bare external
-    module target; wildcard module patterns (`golang.org/x/*`); surface module
-    refs distinctly in `--format json` (currently rendered as plain strings).
+  - `explain <from> <module>` resolves a bare external-module target and reports
+    the verdict (core.RuleSet.DecideModule).
+  - Wildcards (`golang.org/x/*`) are unnecessary — a bare prefix like
+    `golang.org/x` already matches that module and its sub-paths (but not
+    `golang.org/xyz`). JSON already renders module refs as their path (the `/`
+    distinguishes them).
 - ❌ **Composable/base configs (`extends:`).** Decided (owner): not building it —
   configs stay standalone.
 - ✅ **Shipped:** component `groups` — a named set of components (`groups: {

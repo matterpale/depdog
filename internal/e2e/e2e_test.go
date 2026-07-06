@@ -593,6 +593,17 @@ func TestExplainEdgeBadTarget(t *testing.T) {
 	}
 }
 
+func TestExplainEdgeExternalModule(t *testing.T) {
+	// dirty's domain allows only std, so importing the extlib module is denied.
+	out, stderr, exit := run(t, fixture("dirty"), "explain", "internal/domain/pricing", "example.test/extlib")
+	if exit != 0 {
+		t.Fatalf("exit %d\nstderr:\n%s", exit, stderr)
+	}
+	if !strings.Contains(out, "external module") || !strings.Contains(out, "denied by") {
+		t.Errorf("expected an external-module edge explanation:\n%s", out)
+	}
+}
+
 func TestExplainUnknown(t *testing.T) {
 	_, stderr, exit := run(t, fixture("dirty"), "explain", "nope")
 	if exit != 2 {

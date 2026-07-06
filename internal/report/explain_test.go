@@ -98,6 +98,32 @@ func TestExplainEdge(t *testing.T) {
 	}
 }
 
+func TestExplainEdgeExternalModule(t *testing.T) {
+	rs := &core.RuleSet{
+		Components: []core.Component{{Name: "domain", Patterns: []string{"internal/domain/**"}}},
+		Rules: map[string]core.Rule{
+			"domain": {Allow: []core.Ref{{Kind: core.RefStd}, {Kind: core.RefExternalModule, Name: "golang.org/x/sync"}}},
+		},
+		Policy: core.PolicyDeny,
+	}
+	views := []core.PackageView{{ImportPath: "m/internal/domain", Component: "domain"}}
+	res := &core.Result{ModulePath: "m"}
+
+	var allowed, denied bytes.Buffer
+	if err := ExplainEdge(&allowed, "m/internal/domain", "golang.org/x/sync", rs, views, res); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(allowed.String(), "allowed by") || !strings.Contains(allowed.String(), "external module") {
+		t.Errorf("the allowed module edge should be explained:\n%s", allowed.String())
+	}
+	if err := ExplainEdge(&denied, "m/internal/domain", "github.com/other/x", rs, views, res); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(denied.String(), "denied by") {
+		t.Errorf("an unlisted module should be denied under the whitelist:\n%s", denied.String())
+	}
+}
+
 func TestExplainNotFound(t *testing.T) {
 	rs, views, res := explainFixture()
 	if err := Explain(&bytes.Buffer{}, "ghost", rs, views, res); err == nil || !strings.Contains(err.Error(), "ghost") {

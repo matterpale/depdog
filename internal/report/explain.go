@@ -27,14 +27,14 @@ func Explain(w io.Writer, target string, rs *core.RuleSet, views []core.PackageV
 }
 
 // ExplainEdge answers whether the package `from` may import `to`, and which rule
-// or policy decides it. `to` may be a package, a component name, or one of std/
-// external/unassigned.
+// or policy decides it. `to` may be a package, a component name, one of std/
+// external/unassigned, or a specific external module by import path.
 func ExplainEdge(w io.Writer, from, to string, rs *core.RuleSet, views []core.PackageView, res *core.Result) error {
 	pv, ok := findPackage(views, from, res.ModulePath)
 	if !ok {
 		return fmt.Errorf("no package matches %q", from)
 	}
-	target, err := resolveTarget(to, rs, views, res.ModulePath)
+	target, isModule, err := resolveTarget(to, rs, views, res.ModulePath)
 	if err != nil {
 		return err
 	}
@@ -46,7 +46,15 @@ func ExplainEdge(w io.Writer, from, to string, rs *core.RuleSet, views []core.Pa
 		_, werr := io.WriteString(w, b.String())
 		return werr
 	}
-	allowed, reason := rs.Decide(pv.Component, target)
+	var (
+		allowed bool
+		reason  string
+	)
+	if isModule {
+		allowed, reason = rs.DecideModule(pv.Component, to)
+	} else {
+		allowed, reason = rs.Decide(pv.Component, target)
+	}
 	verdict := "denied"
 	if allowed {
 		verdict = "allowed"
@@ -56,22 +64,26 @@ func ExplainEdge(w io.Writer, from, to string, rs *core.RuleSet, views []core.Pa
 	return werr
 }
 
-// resolveTarget maps a `to` argument to a rule target: a component name, or one
-// of std/external/unassigned. A package resolves to its component.
-func resolveTarget(to string, rs *core.RuleSet, views []core.PackageView, module string) (string, error) {
+// resolveTarget maps a `to` argument to a rule target: a component name, one of
+// std/external/unassigned, or (isModule) a specific external module. A package
+// resolves to its component.
+func resolveTarget(to string, rs *core.RuleSet, views []core.PackageView, module string) (target string, isModule bool, err error) {
 	switch to {
 	case "std", "external", "unassigned":
-		return to, nil
+		return to, false, nil
 	}
 	for _, c := range rs.Components {
 		if c.Name == to {
-			return to, nil
+			return to, false, nil
 		}
 	}
 	if pv, ok := findPackage(views, to, module); ok {
-		return orUnassigned(pv.Component), nil
+		return orUnassigned(pv.Component), false, nil
 	}
-	return "", fmt.Errorf("cannot resolve %q to a component, package, or std/external", to)
+	if strings.ContainsAny(to, "/.") {
+		return "external module", true, nil
+	}
+	return "", false, fmt.Errorf("cannot resolve %q to a component, package, module, or std/external", to)
 }
 
 func explainComponent(w io.Writer, c core.Component, rs *core.RuleSet, res *core.Result, views []core.PackageView) error {

@@ -207,6 +207,34 @@ func TestDecide(t *testing.T) {
 	}
 }
 
+func TestDecideModule(t *testing.T) {
+	rs := &RuleSet{
+		Components: []Component{{Name: "domain", Patterns: []string{"d"}}},
+		Rules: map[string]Rule{
+			"domain": {Allow: []Ref{{Kind: RefStd}, {Kind: RefExternalModule, Name: "golang.org/x/sync"}}},
+		},
+		Policy: PolicyDeny,
+	}
+	if ok, _ := rs.DecideModule("domain", "golang.org/x/sync"); !ok {
+		t.Error("the exact module should be allowed")
+	}
+	if ok, _ := rs.DecideModule("domain", "golang.org/x/sync/errgroup"); !ok {
+		t.Error("a sub-path of the module should be allowed")
+	}
+	if ok, _ := rs.DecideModule("domain", "github.com/other/thing"); ok {
+		t.Error("a different module should be denied under a whitelist")
+	}
+
+	broad := &RuleSet{
+		Components: []Component{{Name: "app", Patterns: []string{"a"}}},
+		Rules:      map[string]Rule{"app": {Allow: []Ref{{Kind: RefExternal}}}},
+		Policy:     PolicyDeny,
+	}
+	if ok, _ := broad.DecideModule("app", "anything/at/all"); !ok {
+		t.Error("a broad external allow should permit any module")
+	}
+}
+
 func TestEvaluateExternalModuleAllow(t *testing.T) {
 	// Whitelist only std and one external module prefix.
 	rs := &RuleSet{
