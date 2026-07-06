@@ -54,6 +54,7 @@ type Result struct {
 	Violations []Violation
 	Warnings   []Warning
 	Components []ComponentStat // one per declared component, sorted by name
+	Cycles     [][]string      // components forming an import cycle; each sorted
 	Stats      Stats
 }
 
@@ -68,6 +69,11 @@ func Evaluate(g *Graph, rs *RuleSet) (*Result, error) {
 	for _, c := range rs.Components {
 		compStats[c.Name] = &ComponentStat{Name: c.Name}
 	}
+
+	// Component adjacency, for detecting architecture-level import cycles that
+	// go vet cannot (a package cycle is illegal Go, but a component cycle can
+	// span several acyclic package edges).
+	compEdges := make(map[string]map[string]bool, len(rs.Components))
 
 	// Components are resolved per directory, not per graph node, so import
 	// targets outside the loaded package set still classify correctly.
@@ -119,6 +125,14 @@ func Evaluate(g *Graph, rs *RuleSet) (*Result, error) {
 					continue // imports within a component are always fine
 				}
 			}
+			if targetComp != "" {
+				edge := compEdges[comp]
+				if edge == nil {
+					edge = map[string]bool{}
+					compEdges[comp] = edge
+				}
+				edge[targetComp] = true
+			}
 
 			if imp.TestOnly {
 				if rs.TestFiles == TestRelaxed {
@@ -149,6 +163,8 @@ func Evaluate(g *Graph, rs *RuleSet) (*Result, error) {
 			cs.Violations++
 		}
 	}
+
+	res.Cycles = componentCycles(compEdges)
 
 	for _, c := range rs.Components {
 		stat := compStats[c.Name]

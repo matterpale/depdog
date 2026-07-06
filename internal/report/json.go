@@ -16,6 +16,7 @@ type jsonReport struct {
 	Violations []jsonViolation `json:"violations"`
 	Warnings   []jsonWarning   `json:"warnings"`
 	Components []jsonComponent `json:"components"`
+	Cycles     [][]string      `json:"cycles"`
 	Stats      jsonStats       `json:"stats"`
 }
 
@@ -54,12 +55,22 @@ type jsonStats struct {
 	DurationMS int64 `json:"duration_ms"`
 }
 
+// emptyIfNil ensures an absent cycle list encodes as [] rather than null,
+// matching the schema convention for the other collections.
+func emptyIfNil(c [][]string) [][]string {
+	if c == nil {
+		return [][]string{}
+	}
+	return c
+}
+
 func JSON(w io.Writer, res *core.Result, elapsed time.Duration) error {
 	out := jsonReport{
 		Module:     res.ModulePath,
 		Violations: make([]jsonViolation, 0, len(res.Violations)),
 		Warnings:   make([]jsonWarning, 0, len(res.Warnings)),
 		Components: make([]jsonComponent, 0, len(res.Components)),
+		Cycles:     emptyIfNil(res.Cycles),
 		Stats: jsonStats{
 			Packages:   res.Stats.Packages,
 			Edges:      res.Stats.Edges,

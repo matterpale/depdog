@@ -190,6 +190,16 @@ func TestCheckBlacklist(t *testing.T) {
 	golden(t, "blacklist_text.golden", reTextDur.ReplaceAllString(out, "checked in X"))
 }
 
+func TestCheckCycle(t *testing.T) {
+	// A component cycle (foo <-> bar) with no package-level cycle and no
+	// violations: reported, but not fatal.
+	out, stderr, exit := run(t, fixture("cycle"), "check")
+	if exit != 0 {
+		t.Fatalf("exit %d, want 0 (cycles are advisory)\nstderr:\n%s", exit, stderr)
+	}
+	golden(t, "cycle_text.golden", reTextDur.ReplaceAllString(out, "checked in X"))
+}
+
 func TestCheckMissingConfig(t *testing.T) {
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, "go.mod"), []byte("module example.test/naked\n\ngo 1.21\n"), 0o644); err != nil {

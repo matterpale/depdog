@@ -24,9 +24,9 @@ Improvements, refinements, and polish beyond the M0–M5 work already shipped.
 
 ## Engine & correctness
 
-- **Component-level import-cycle detection.** (M) `go vet` catches package
-  cycles; cycles *between components* (a→b→a at the architecture level) are the
-  interesting ones and nothing surfaces them today.
+- ✅ **Shipped:** component-level import cycles (a↔b at the architecture level,
+  which need no package cycle) are detected via Tarjan SCC and reported in text
+  and JSON — advisory, never fatal.
 - **Build-tag / GOOS·GOARCH awareness.** (L) The loader does one metadata load;
   edges behind build tags for other platforms are invisible. Offer
   `--tags`/matrix loading so platform-specific imports are checked.

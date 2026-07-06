@@ -1,0 +1,5 @@
+version: 1
+components:
+  foo: ["internal/foo/**"]
+  bar: ["internal/bar/**"]
+policy: allow

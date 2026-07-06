@@ -1,0 +1,6 @@
+depdog check — example.test/cycle
+
+! 1 component cycle:
+    bar ↔ foo
+
+✓ no violations · 4 packages · 2 edges checked in X

@@ -353,6 +353,42 @@ func TestEvaluateEmptyComponent(t *testing.T) {
 	}
 }
 
+func TestEvaluateCycles(t *testing.T) {
+	// foo -> bar and bar -> foo at the component level, via distinct packages
+	// (no package-level cycle). policy allow, so no violations — just the cycle.
+	rs := &RuleSet{
+		Components: []Component{
+			{Name: "foo", Patterns: []string{"foo/**"}},
+			{Name: "bar", Patterns: []string{"bar/**"}},
+		},
+		Policy: PolicyAllow,
+	}
+	g := &Graph{ModulePath: "m", Packages: []Package{
+		{ImportPath: "m/foo/x", RelDir: "foo/x", Imports: []Import{mkImport("m/bar/p", ClassInModule, "bar/p", false)}},
+		{ImportPath: "m/bar/q", RelDir: "bar/q", Imports: []Import{mkImport("m/foo/y", ClassInModule, "foo/y", false)}},
+	}}
+	res := evaluate(t, g, rs)
+	if len(res.Violations) != 0 {
+		t.Fatalf("policy allow should yield no violations: %+v", res.Violations)
+	}
+	if len(res.Cycles) != 1 || len(res.Cycles[0]) != 2 ||
+		res.Cycles[0][0] != "bar" || res.Cycles[0][1] != "foo" {
+		t.Fatalf("cycles = %v, want [[bar foo]]", res.Cycles)
+	}
+}
+
+func TestEvaluateNoFalseCycle(t *testing.T) {
+	// A plain DAG (handler -> domain) must report no cycle.
+	res := evaluate(t, &Graph{ModulePath: "m", Packages: []Package{
+		{ImportPath: "m/internal/handler", RelDir: "internal/handler", Imports: []Import{
+			mkImport("m/internal/domain", ClassInModule, "internal/domain", false),
+		}},
+	}}, ddd())
+	if len(res.Cycles) != 0 {
+		t.Errorf("a DAG should have no cycles: %v", res.Cycles)
+	}
+}
+
 func TestEvaluateSkip(t *testing.T) {
 	rs := ddd()
 	rs.Skip = []string{"internal/legacy/**"}

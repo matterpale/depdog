@@ -111,6 +111,12 @@ func Text(w io.Writer, res *core.Result, elapsed time.Duration, color string) er
 			fmt.Fprintf(&b, "    %s\n", wr.Component)
 		}
 	}
+	if len(res.Cycles) > 0 {
+		fmt.Fprintf(&b, "\n%s %s:\n", st.warn.Render("!"), plural(len(res.Cycles), "component cycle"))
+		for _, c := range res.Cycles {
+			fmt.Fprintf(&b, "    %s\n", strings.Join(c, " ↔ "))
+		}
+	}
 
 	b.WriteString("\n")
 	if len(res.Violations) == 0 {

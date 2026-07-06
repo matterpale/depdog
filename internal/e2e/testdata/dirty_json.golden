@@ -101,6 +101,7 @@
       "violations": 0
     }
   ],
+  "cycles": [],
   "stats": {
     "packages": 6,
     "edges": 14,
