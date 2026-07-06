@@ -9,9 +9,10 @@ import (
 
 func graphCmd() *cobra.Command {
 	var (
-		configPath string
-		format     string
-		level      string
+		configPath     string
+		format         string
+		level          string
+		violationsOnly bool
 	)
 	cmd := &cobra.Command{
 		Use:   "graph [packages]",
@@ -19,6 +20,7 @@ func graphCmd() *cobra.Command {
 		Long: `graph prints the module's in-module dependency graph for READMEs and
 reviews, with violation edges highlighted. Choose the notation with --format
 (dot, mermaid) and the granularity with --level (component, package).
+--violations-only trims the graph to just the offending edges.
 
 Exit codes: 0 written, 2 configuration or usage error.`,
 		Args: cobra.MaximumNArgs(1),
@@ -31,11 +33,13 @@ Exit codes: 0 written, 2 configuration or usage error.`,
 			if err != nil {
 				return err
 			}
-			return report.Graph(cmd.OutOrStdout(), ev.Result.ModulePath, views, ev.Result.Violations, format, level)
+			return report.Graph(cmd.OutOrStdout(), ev.Result.ModulePath, views, ev.Result.Violations,
+				report.GraphOptions{Format: format, Level: level, ViolationsOnly: violationsOnly})
 		},
 	}
 	cmd.Flags().StringVar(&configPath, "config", "", "path to depdog.yaml (default: found next to go.mod)")
 	cmd.Flags().StringVarP(&format, "format", "f", "dot", "output format: dot or mermaid")
 	cmd.Flags().StringVar(&level, "level", "component", "granularity: component or package")
+	cmd.Flags().BoolVar(&violationsOnly, "violations-only", false, "show only violation edges and their endpoints")
 	return cmd
 }

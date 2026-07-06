@@ -14,22 +14,29 @@ import (
 // and external edges are omitted — this is the architecture view. Package-level
 // output shows module-relative labels and, in dot, clusters packages by
 // component. Output is deterministic given sorted package views.
-func Graph(w io.Writer, module string, views []core.PackageView, violations []core.Violation, format, level string) error {
-	switch level {
+// GraphOptions configures Graph.
+type GraphOptions struct {
+	Format         string // "dot" or "mermaid"
+	Level          string // "component" or "package"
+	ViolationsOnly bool   // keep only violation edges and their endpoints
+}
+
+func Graph(w io.Writer, module string, views []core.PackageView, violations []core.Violation, opts GraphOptions) error {
+	switch opts.Level {
 	case "component", "package":
 	default:
-		return fmt.Errorf("unknown graph --level %q (component or package)", level)
+		return fmt.Errorf("unknown graph --level %q (component or package)", opts.Level)
 	}
 
-	nodes, edges := graphElements(module, views, violations, level)
-	cluster := level == "package"
-	switch format {
+	nodes, edges := graphElements(module, views, violations, opts.Level, opts.ViolationsOnly)
+	cluster := opts.Level == "package"
+	switch opts.Format {
 	case "dot":
 		return writeDOT(w, nodes, edges, cluster)
 	case "mermaid":
 		return writeMermaid(w, nodes, edges)
 	default:
-		return fmt.Errorf("unknown graph --format %q (dot or mermaid)", format)
+		return fmt.Errorf("unknown graph --format %q (dot or mermaid)", opts.Format)
 	}
 }
 
@@ -44,7 +51,7 @@ type graphEdge struct {
 	violation bool
 }
 
-func graphElements(module string, views []core.PackageView, violations []core.Violation, level string) ([]graphNode, []graphEdge) {
+func graphElements(module string, views []core.PackageView, violations []core.Violation, level string, violationsOnly bool) ([]graphNode, []graphEdge) {
 	violSet := make(map[[2]string]bool, len(violations))
 	for _, v := range violations {
 		violSet[[2]string{v.FromPackage, v.ImportPath}] = true
@@ -99,7 +106,32 @@ func graphElements(module string, views []core.PackageView, violations []core.Vi
 		}
 		return edges[i].to < edges[j].to
 	})
+
+	if violationsOnly {
+		nodes, edges = keepViolations(nodes, edges)
+	}
 	return nodes, edges
+}
+
+// keepViolations drops every edge that is not a violation and every node left
+// with no violation edge, preserving order.
+func keepViolations(nodes []graphNode, edges []graphEdge) ([]graphNode, []graphEdge) {
+	used := map[string]bool{}
+	ve := edges[:0]
+	for _, e := range edges {
+		if e.violation {
+			ve = append(ve, e)
+			used[e.from] = true
+			used[e.to] = true
+		}
+	}
+	vn := nodes[:0]
+	for _, n := range nodes {
+		if used[n.id] {
+			vn = append(vn, n)
+		}
+	}
+	return vn, ve
 }
 
 func shortLabel(path, module string) string {

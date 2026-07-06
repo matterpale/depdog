@@ -46,9 +46,9 @@ Improvements, refinements, and polish beyond the M0–M5 work already shipped.
   review can only include/exclude suggested components.
 - **`init` merge mode.** (M) When a config exists, offer to show a diff / merge
   in newly-scanned packages instead of only refusing without `--force`.
-- **`graph` filters.** (S) Package labels are now module-relative and DOT
-  clusters packages by component. Still open: `--violations-only` and a focus
-  filter (one component / subtree).
+- **`graph` focus filter.** (S) Package labels are module-relative, DOT clusters
+  by component, and `--violations-only` trims to offending edges. Still open: a
+  focus filter to one component / subtree.
 - **`explain` an edge.** (S) `explain <from> <to>` to answer "why is this
   specific import allowed/denied", showing the rule and stance that decided it.
 - **Explicit color control.** (S) `--color=auto|always|never` on `check` (and a

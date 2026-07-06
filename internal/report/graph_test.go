@@ -20,7 +20,8 @@ func graphViews() []core.PackageView {
 
 func TestGraphDOTHighlightsViolations(t *testing.T) {
 	var buf bytes.Buffer
-	err := Graph(&buf, "m", graphViews(), []core.Violation{{FromPackage: "m/a", ImportPath: "m/b"}}, "dot", "component")
+	err := Graph(&buf, "m", graphViews(), []core.Violation{{FromPackage: "m/a", ImportPath: "m/b"}},
+		GraphOptions{Format: "dot", Level: "component"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -37,7 +38,7 @@ func TestGraphDOTHighlightsViolations(t *testing.T) {
 
 func TestGraphPackageDOTClustersAndShortens(t *testing.T) {
 	var buf bytes.Buffer
-	if err := Graph(&buf, "m", graphViews(), nil, "dot", "package"); err != nil {
+	if err := Graph(&buf, "m", graphViews(), nil, GraphOptions{Format: "dot", Level: "package"}); err != nil {
 		t.Fatal(err)
 	}
 	out := buf.String()
@@ -54,7 +55,7 @@ func TestGraphPackageDOTClustersAndShortens(t *testing.T) {
 
 func TestGraphMermaidPackage(t *testing.T) {
 	var buf bytes.Buffer
-	if err := Graph(&buf, "m", graphViews(), nil, "mermaid", "package"); err != nil {
+	if err := Graph(&buf, "m", graphViews(), nil, GraphOptions{Format: "mermaid", Level: "package"}); err != nil {
 		t.Fatal(err)
 	}
 	out := buf.String()
@@ -66,11 +67,37 @@ func TestGraphMermaidPackage(t *testing.T) {
 	}
 }
 
+func TestGraphViolationsOnly(t *testing.T) {
+	// a -> b violates; a -> c is clean. Only the violation edge and its
+	// endpoints survive; the clean-only node c is dropped.
+	views := []core.PackageView{
+		{ImportPath: "m/a", Component: "a", Imports: []core.ImportView{
+			{Path: "m/b", Class: core.ClassInModule, Component: "b"},
+			{Path: "m/c", Class: core.ClassInModule, Component: "c"},
+		}},
+		{ImportPath: "m/b", Component: "b"},
+		{ImportPath: "m/c", Component: "c"},
+	}
+	var buf bytes.Buffer
+	err := Graph(&buf, "m", views, []core.Violation{{FromPackage: "m/a", ImportPath: "m/b"}},
+		GraphOptions{Format: "dot", Level: "component", ViolationsOnly: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	out := buf.String()
+	if !strings.Contains(out, `"a" -> "b"`) {
+		t.Errorf("violation edge should be present:\n%s", out)
+	}
+	if strings.Contains(out, `-> "c"`) || strings.Contains(out, `"c";`) {
+		t.Errorf("clean-only node c should be dropped:\n%s", out)
+	}
+}
+
 func TestGraphErrors(t *testing.T) {
-	if err := Graph(&bytes.Buffer{}, "m", nil, nil, "svg", "component"); err == nil || !strings.Contains(err.Error(), "mermaid") {
+	if err := Graph(&bytes.Buffer{}, "m", nil, nil, GraphOptions{Format: "svg", Level: "component"}); err == nil || !strings.Contains(err.Error(), "mermaid") {
 		t.Errorf("bad format should error listing formats, got %v", err)
 	}
-	if err := Graph(&bytes.Buffer{}, "m", nil, nil, "dot", "galaxy"); err == nil || !strings.Contains(err.Error(), "component") {
+	if err := Graph(&bytes.Buffer{}, "m", nil, nil, GraphOptions{Format: "dot", Level: "galaxy"}); err == nil || !strings.Contains(err.Error(), "component") {
 		t.Errorf("bad level should error listing levels, got %v", err)
 	}
 }

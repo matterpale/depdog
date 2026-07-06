@@ -442,6 +442,14 @@ func TestGraphPackageDOT(t *testing.T) {
 	golden(t, "graph_package_dot.golden", out)
 }
 
+func TestGraphViolationsOnly(t *testing.T) {
+	out, stderr, exit := run(t, fixture("dirty"), "graph", "--violations-only")
+	if exit != 0 {
+		t.Fatalf("exit %d\nstderr:\n%s", exit, stderr)
+	}
+	golden(t, "graph_violations_only_dot.golden", out)
+}
+
 func TestGraphBadFormat(t *testing.T) {
 	_, stderr, exit := run(t, fixture("dirty"), "graph", "--format", "svg")
 	if exit != 2 {
