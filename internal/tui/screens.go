@@ -7,6 +7,42 @@ import (
 	"github.com/matterpale/depdog/internal/core"
 )
 
+// listRows is how many rows a scrollable list may occupy given the window
+// height, leaving room for the header, detail pane and footer. Zero means the
+// window is unsized (or huge) — render the whole list.
+func (m Model) listRows() int {
+	if m.height == 0 {
+		return 0
+	}
+	r := m.height - 14 // header (3) + spacing + detail pane + footer
+	if r < 3 {
+		r = 3
+	}
+	return r
+}
+
+// window returns the visible half-open range [start,end) of n items that keeps
+// sel in view within at most max rows, and how many items are hidden above and
+// below. max <= 0 or a list that already fits shows everything.
+func window(n, sel, max int) (start, end, above, below int) {
+	if max <= 0 || n <= max {
+		return 0, n, 0, 0
+	}
+	start = sel - max/2
+	if start < 0 {
+		start = 0
+	}
+	if start+max > n {
+		start = n - max
+	}
+	end = start + max
+	return start, end, start, n - end
+}
+
+func moreLine(prefix string, count int) string {
+	return styleDim.Render(fmt.Sprintf("  %s %d more", prefix, count))
+}
+
 func (m Model) dashboardView() string {
 	var b strings.Builder
 
@@ -52,7 +88,12 @@ func (m Model) violationsView() string {
 		return styleGood.Render("✓ no violations")
 	}
 	var b strings.Builder
-	for i, v := range m.res.Violations {
+	start, end, above, below := window(len(m.res.Violations), m.selected, m.listRows())
+	if above > 0 {
+		b.WriteString(moreLine("▲", above) + "\n")
+	}
+	for i := start; i < end; i++ {
+		v := m.res.Violations[i]
 		line := fmt.Sprintf("%s → %s", v.FromComponent, v.ImportPath)
 		if i == m.selected {
 			b.WriteString(styleSelected.Render("▸ " + line))
@@ -60,6 +101,9 @@ func (m Model) violationsView() string {
 			b.WriteString("  " + line)
 		}
 		b.WriteString("\n")
+	}
+	if below > 0 {
+		b.WriteString(moreLine("▼", below) + "\n")
 	}
 
 	v := m.res.Violations[m.selected]
@@ -83,8 +127,13 @@ func (m Model) packagesView() string {
 	}
 	var b strings.Builder
 
+	start, end, above, below := window(len(m.pkgs), m.selPkg, m.listRows())
+	if above > 0 {
+		b.WriteString(moreLine("▲", above) + "\n")
+	}
 	lastComp := "\x00"
-	for i, p := range m.pkgs {
+	for i := start; i < end; i++ {
+		p := m.pkgs[i]
 		comp := p.Component
 		if comp == "" {
 			comp = "unassigned"
@@ -100,6 +149,9 @@ func (m Model) packagesView() string {
 			b.WriteString(name)
 		}
 		b.WriteString("\n")
+	}
+	if below > 0 {
+		b.WriteString(moreLine("▼", below) + "\n")
 	}
 
 	p := m.pkgs[m.selPkg]

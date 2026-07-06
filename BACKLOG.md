@@ -60,8 +60,9 @@ Improvements, refinements, and polish beyond the M0–M5 work already shipped.
 
 ## TUI
 
-- **Scrolling.** (M) Long violation/package lists overflow — wire a
-  `bubbles/viewport` so lists scroll; use the stored height for layout.
+- ✅ **Shipped:** the Violations and Packages lists now scroll — a height-aware
+  window follows the selection with `▲/▼ N more` markers. (Custom windowing over
+  the manual render, not `bubbles/viewport`.)
 - **Filtering & search.** (M) Filter Violations by component/rule; fuzzy-search
   Packages. `PLAN.md §6` calls for filterable views.
 - **`$EDITOR` + re-run.** (M) `e` opens the selected file at its line in

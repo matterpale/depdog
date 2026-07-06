@@ -2,6 +2,7 @@ package tui
 
 import (
 	"bytes"
+	"fmt"
 	"os"
 	"strings"
 	"testing"
@@ -166,6 +167,62 @@ func TestQuit(t *testing.T) {
 	}
 	if m.View() != "" {
 		t.Errorf("quitting view should be empty, got %q", m.View())
+	}
+}
+
+func TestWindow(t *testing.T) {
+	cases := []struct {
+		n, sel, max              int
+		start, end, above, below int
+	}{
+		{3, 1, 0, 0, 3, 0, 0},   // unsized: everything
+		{3, 1, 5, 0, 3, 0, 0},   // fits: everything
+		{10, 0, 3, 0, 3, 0, 7},  // top
+		{10, 5, 3, 4, 7, 4, 3},  // middle, centered on sel
+		{10, 9, 3, 7, 10, 7, 0}, // bottom, clamped
+	}
+	for _, c := range cases {
+		s, e, a, b := window(c.n, c.sel, c.max)
+		if s != c.start || e != c.end || a != c.above || b != c.below {
+			t.Errorf("window(%d,%d,%d) = (%d,%d,%d,%d), want (%d,%d,%d,%d)",
+				c.n, c.sel, c.max, s, e, a, b, c.start, c.end, c.above, c.below)
+		}
+	}
+}
+
+func TestViolationsScroll(t *testing.T) {
+	var vs []core.Violation
+	for i := 0; i < 20; i++ {
+		vs = append(vs, core.Violation{
+			FromPackage: "m/from", FromComponent: "c",
+			ImportPath: fmt.Sprintf("m/pkg%02d", i), Rule: "r",
+			Positions: []core.Position{{File: "f.go", Line: i}},
+		})
+	}
+	m := New(&core.Result{ModulePath: "m", Violations: vs}, nil)
+	m = update(m, runes("2"))                               // Violations screen
+	m = update(m, tea.WindowSizeMsg{Width: 80, Height: 24}) // height 24 -> ~10 rows
+
+	v := m.View()
+	if !strings.Contains(v, "▼ 10 more") {
+		t.Errorf("expected a below-marker at the top:\n%s", v)
+	}
+	if strings.Contains(v, "▲") {
+		t.Errorf("no above-marker expected at the top:\n%s", v)
+	}
+	if strings.Contains(v, "m/pkg15") {
+		t.Errorf("item 15 should be scrolled out of view:\n%s", v)
+	}
+
+	for i := 0; i < 15; i++ { // scroll the selection down
+		m = update(m, runes("j"))
+	}
+	v = m.View()
+	if !strings.Contains(v, "▲") {
+		t.Errorf("expected an above-marker after scrolling down:\n%s", v)
+	}
+	if !strings.Contains(v, "m/pkg15") {
+		t.Errorf("the selected item should be visible after scrolling:\n%s", v)
 	}
 }
 

@@ -54,6 +54,7 @@ type Model struct {
 	selected  int // highlighted violation on the Violations screen
 	selPkg    int // highlighted package on the Packages screen
 	width     int
+	height    int
 	quitting  bool
 }
 
@@ -78,7 +79,7 @@ func (m Model) Init() tea.Cmd { return nil }
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
-		m.width = msg.Width
+		m.width, m.height = msg.Width, msg.Height
 	case tea.KeyMsg:
 		switch msg.String() {
 		case "q", "ctrl+c", "esc":
