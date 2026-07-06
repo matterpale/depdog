@@ -173,6 +173,40 @@ func TestEvaluateInferredStance(t *testing.T) {
 	}
 }
 
+func TestDecide(t *testing.T) {
+	rs := ddd() // whitelist: domain allow[std], handler allow[domain,std], main allow[*]
+	cases := []struct {
+		comp, target string
+		allow        bool
+	}{
+		{"domain", "std", true},
+		{"domain", "repository", false}, // not allowed under whitelist
+		{"handler", "domain", true},
+		{"handler", "service", false},
+		{"domain", "domain", true},   // same component
+		{"main", "repository", true}, // main allows *
+	}
+	for _, c := range cases {
+		got, reason := rs.Decide(c.comp, c.target)
+		if got != c.allow {
+			t.Errorf("Decide(%q, %q) = %v (%s), want %v", c.comp, c.target, got, reason, c.allow)
+		}
+	}
+
+	// Blacklist: a deny-only rule under policy allow.
+	bl := &RuleSet{
+		Components: []Component{{Name: "handler", Patterns: []string{"a"}}, {Name: "service", Patterns: []string{"b"}}},
+		Rules:      map[string]Rule{"handler": {Deny: []Ref{{Kind: RefComponent, Name: "service"}}}},
+		Policy:     PolicyAllow,
+	}
+	if got, _ := bl.Decide("handler", "service"); got {
+		t.Error("handler → service should be denied by the deny list")
+	}
+	if got, _ := bl.Decide("handler", "domain"); !got {
+		t.Error("handler → domain should pass under a blacklist")
+	}
+}
+
 func TestEvaluateBlacklist(t *testing.T) {
 	rs := &RuleSet{
 		Components: []Component{

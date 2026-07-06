@@ -62,6 +62,42 @@ func TestExplainPackage(t *testing.T) {
 	}
 }
 
+func TestExplainEdge(t *testing.T) {
+	rs := &core.RuleSet{
+		Components: []core.Component{
+			{Name: "domain", Patterns: []string{"internal/domain/**"}},
+			{Name: "repository", Patterns: []string{"internal/repository/**"}},
+		},
+		Rules:  map[string]core.Rule{"domain": {Allow: []core.Ref{{Kind: core.RefStd}}}},
+		Policy: core.PolicyDeny,
+	}
+	views := []core.PackageView{
+		{ImportPath: "m/internal/domain", Component: "domain"},
+		{ImportPath: "m/internal/repo", Component: "repository"},
+	}
+	res := &core.Result{ModulePath: "m"}
+
+	var denied, allowed bytes.Buffer
+	if err := ExplainEdge(&denied, "m/internal/domain", "repository", rs, views, res); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(denied.String(), "denied by domain: allow [std]") {
+		t.Errorf("expected denial by the domain rule:\n%s", denied.String())
+	}
+	if err := ExplainEdge(&allowed, "m/internal/domain", "std", rs, views, res); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(allowed.String(), "allowed by domain: allow [std]") {
+		t.Errorf("expected std to be allowed:\n%s", allowed.String())
+	}
+	if err := ExplainEdge(&bytes.Buffer{}, "m/ghost", "std", rs, views, res); err == nil {
+		t.Error("an unresolvable source should error")
+	}
+	if err := ExplainEdge(&bytes.Buffer{}, "m/internal/domain", "ghost", rs, views, res); err == nil {
+		t.Error("an unresolvable target should error")
+	}
+}
+
 func TestExplainNotFound(t *testing.T) {
 	rs, views, res := explainFixture()
 	if err := Explain(&bytes.Buffer{}, "ghost", rs, views, res); err == nil || !strings.Contains(err.Error(), "ghost") {

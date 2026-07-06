@@ -1,0 +1,2 @@
+example.test/dirty/internal/handler/checkout (handler) → internal/domain/pricing (domain)
+  allowed by handler: allow [domain, std]

@@ -26,6 +26,54 @@ func Explain(w io.Writer, target string, rs *core.RuleSet, views []core.PackageV
 	return fmt.Errorf("no component or package matches %q — pass a component name or an import path", target)
 }
 
+// ExplainEdge answers whether the package `from` may import `to`, and which rule
+// or policy decides it. `to` may be a package, a component name, or one of std/
+// external/unassigned.
+func ExplainEdge(w io.Writer, from, to string, rs *core.RuleSet, views []core.PackageView, res *core.Result) error {
+	pv, ok := findPackage(views, from, res.ModulePath)
+	if !ok {
+		return fmt.Errorf("no package matches %q", from)
+	}
+	target, err := resolveTarget(to, rs, views, res.ModulePath)
+	if err != nil {
+		return err
+	}
+
+	var b strings.Builder
+	fmt.Fprintf(&b, "%s (%s) → %s (%s)\n", pv.ImportPath, orUnassigned(pv.Component), to, target)
+	if pv.Component == "" {
+		b.WriteString("  the source package is unassigned — no rule governs its imports\n")
+		_, werr := io.WriteString(w, b.String())
+		return werr
+	}
+	allowed, reason := rs.Decide(pv.Component, target)
+	verdict := "denied"
+	if allowed {
+		verdict = "allowed"
+	}
+	fmt.Fprintf(&b, "  %s by %s\n", verdict, reason)
+	_, werr := io.WriteString(w, b.String())
+	return werr
+}
+
+// resolveTarget maps a `to` argument to a rule target: a component name, or one
+// of std/external/unassigned. A package resolves to its component.
+func resolveTarget(to string, rs *core.RuleSet, views []core.PackageView, module string) (string, error) {
+	switch to {
+	case "std", "external", "unassigned":
+		return to, nil
+	}
+	for _, c := range rs.Components {
+		if c.Name == to {
+			return to, nil
+		}
+	}
+	if pv, ok := findPackage(views, to, module); ok {
+		return orUnassigned(pv.Component), nil
+	}
+	return "", fmt.Errorf("cannot resolve %q to a component, package, or std/external", to)
+}
+
 func explainComponent(w io.Writer, c core.Component, rs *core.RuleSet, res *core.Result, views []core.PackageView) error {
 	var b strings.Builder
 	fmt.Fprintf(&b, "component %s\n", c.Name)

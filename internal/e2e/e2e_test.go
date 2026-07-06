@@ -541,6 +541,32 @@ func TestExplainPackage(t *testing.T) {
 	golden(t, "explain_package.golden", out)
 }
 
+func TestExplainEdgeDenied(t *testing.T) {
+	out, stderr, exit := run(t, fixture("dirty"), "explain", "internal/domain/pricing", "internal/repository")
+	if exit != 0 {
+		t.Fatalf("exit %d\nstderr:\n%s", exit, stderr)
+	}
+	golden(t, "explain_edge_denied.golden", out)
+}
+
+func TestExplainEdgeAllowed(t *testing.T) {
+	out, stderr, exit := run(t, fixture("dirty"), "explain", "internal/handler/checkout", "internal/domain/pricing")
+	if exit != 0 {
+		t.Fatalf("exit %d\nstderr:\n%s", exit, stderr)
+	}
+	golden(t, "explain_edge_allowed.golden", out)
+}
+
+func TestExplainEdgeBadTarget(t *testing.T) {
+	_, stderr, exit := run(t, fixture("dirty"), "explain", "internal/domain/pricing", "nope")
+	if exit != 2 {
+		t.Fatalf("exit %d, want 2", exit)
+	}
+	if !strings.Contains(stderr, "nope") {
+		t.Errorf("stderr should name the unresolvable target:\n%s", stderr)
+	}
+}
+
 func TestExplainUnknown(t *testing.T) {
 	_, stderr, exit := run(t, fixture("dirty"), "explain", "nope")
 	if exit != 2 {

@@ -100,7 +100,7 @@ Key ideas:
 | `depdog baseline` | Record current violations to `depdog.baseline.yaml` for the ratchet below. |
 | `depdog graph` | Emit the dependency graph. `--format dot\|mermaid`, `--level component\|package`, `--violations-only`, `--focus <component>`. |
 | `depdog config` | Print the compiled rule set — components, patterns, each component's inferred stance and rule, the policy and options — for debugging a config. |
-| `depdog explain <component-or-package>` | Explain why something is red (the rule that fired, with file:line) or how a component is constrained. |
+| `depdog explain <component-or-package> [import]` | Explain why something is red (the rule that fired, with file:line), how a component is constrained, or — with a second argument — whether one package may import another and which rule decides it. |
 | `depdog tui` / bare `depdog` | Interactive terminal UI: a component dashboard, a browsable violations list (`/` filters it), and per-package imports/importers. Long lists scroll. |
 
 Exit codes are a contract: **0** clean, **1** violations, **2** configuration or

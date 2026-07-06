@@ -154,6 +154,55 @@ func (rs *RuleSet) Stance(component string) Policy {
 	}
 }
 
+// Decide reports whether a component may import the given target, and the rule
+// or policy that decides it. target is a component name or one of "std",
+// "external", "unassigned". An import within the same component is always
+// allowed. This is the per-edge decision `explain` reports; it mirrors Evaluate.
+func (rs *RuleSet) Decide(component, target string) (allowed bool, reason string) {
+	if target == component {
+		return true, "same component"
+	}
+	rule, hasRule := rs.Rules[component]
+	if hasRule {
+		for _, r := range rule.Deny {
+			if refMatchesTarget(r, target) {
+				return false, ruleText(component, "deny", rule.Deny)
+			}
+		}
+		for _, r := range rule.Allow {
+			if refMatchesTarget(r, target) {
+				return true, ruleText(component, "allow", rule.Allow)
+			}
+		}
+	}
+	if rs.Stance(component) == PolicyAllow {
+		if hasRule && len(rule.Deny) > 0 {
+			return true, "not denied by " + ruleText(component, "deny", rule.Deny)
+		}
+		return true, "policy: allow"
+	}
+	if hasRule && len(rule.Allow) > 0 {
+		return false, ruleText(component, "allow", rule.Allow)
+	}
+	return false, "policy: deny"
+}
+
+func refMatchesTarget(r Ref, target string) bool {
+	switch r.Kind {
+	case RefAny:
+		return true
+	case RefStd:
+		return target == "std"
+	case RefExternal:
+		return target == "external"
+	case RefUnassigned:
+		return target == "unassigned"
+	case RefComponent:
+		return r.Name == target
+	}
+	return false
+}
+
 // Skipped reports whether the package dir is excluded from analysis.
 func (rs *RuleSet) Skipped(relDir string) bool {
 	for _, pat := range rs.Skip {

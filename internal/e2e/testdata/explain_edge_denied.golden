@@ -1,0 +1,2 @@
+example.test/dirty/internal/domain/pricing (domain) → internal/repository (repository)
+  denied by domain: allow [std]

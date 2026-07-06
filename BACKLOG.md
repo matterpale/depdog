@@ -49,8 +49,9 @@ Improvements, refinements, and polish beyond the M0–M5 work already shipped.
 - ✅ **Shipped:** `graph` now has module-relative package labels, DOT clustering
   by component, `--violations-only`, and `--focus <component>` (a component and
   its direct neighbours).
-- **`explain` an edge.** (S) `explain <from> <to>` to answer "why is this
-  specific import allowed/denied", showing the rule and stance that decided it.
+- ✅ **Shipped:** `explain <from> <to>` answers whether one package may import
+  another (or a component / std / external) and which rule or policy decides it
+  (core.RuleSet.Decide).
 - ✅ **Shipped:** `check --color=auto|always|never` — auto keeps the per-writer
   detection (honoring NO_COLOR); always/never force the profile.
 - **Richer JSON.** (S) Include the resolved policy and each component's rule text
