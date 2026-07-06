@@ -18,6 +18,7 @@ func checkCmd() *cobra.Command {
 		configPath string
 		format     string
 		failOn     string
+		color      string
 	)
 	cmd := &cobra.Command{
 		Use:   "check [packages]",
@@ -33,6 +34,11 @@ Exit codes: 0 clean, 1 violations found, 2 configuration or usage error.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if failOn != "any" && failOn != "new" {
 				return fmt.Errorf("unknown --fail-on %q (any or new)", failOn)
+			}
+			switch color {
+			case "auto", "always", "never":
+			default:
+				return fmt.Errorf("unknown --color %q (auto, always or never)", color)
 			}
 			start := time.Now()
 
@@ -57,7 +63,7 @@ Exit codes: 0 clean, 1 violations found, 2 configuration or usage error.`,
 			out := cmd.OutOrStdout()
 			switch format {
 			case "text":
-				err = report.Text(out, res, elapsed)
+				err = report.Text(out, res, elapsed, color)
 			case "json":
 				err = report.JSON(out, res, elapsed)
 			case "github":
@@ -91,5 +97,6 @@ Exit codes: 0 clean, 1 violations found, 2 configuration or usage error.`,
 	cmd.Flags().StringVar(&configPath, "config", "", "path to depdog.yaml (default: found next to go.mod)")
 	cmd.Flags().StringVarP(&format, "format", "f", "text", "output format: text, json, github or sarif")
 	cmd.Flags().StringVar(&failOn, "fail-on", "any", "which violations fail the run: any or new (honors depdog.baseline.yaml)")
+	cmd.Flags().StringVar(&color, "color", "auto", "colorize text output: auto, always or never")
 	return cmd
 }

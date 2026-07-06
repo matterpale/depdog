@@ -51,8 +51,8 @@ Improvements, refinements, and polish beyond the M0–M5 work already shipped.
   focus filter to one component / subtree.
 - **`explain` an edge.** (S) `explain <from> <to>` to answer "why is this
   specific import allowed/denied", showing the rule and stance that decided it.
-- **Explicit color control.** (S) `--color=auto|always|never` on `check` (and a
-  `NO_COLOR` note in help); today color is auto-detected only.
+- ✅ **Shipped:** `check --color=auto|always|never` — auto keeps the per-writer
+  detection (honoring NO_COLOR); always/never force the profile.
 - **Richer JSON.** (S) Include the resolved policy and each component's rule text
   in `--format json` so consumers have full context (keep additive/stable).
 - **`config` / `--print-config` command.** (S) Dump the compiled ruleset

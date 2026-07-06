@@ -29,7 +29,7 @@ func dirtyResult() *core.Result {
 // codes, so styling can never destabilize machine-read text.
 func TestTextNoANSIWhenNotTerminal(t *testing.T) {
 	var buf bytes.Buffer
-	if err := Text(&buf, dirtyResult(), 0); err != nil {
+	if err := Text(&buf, dirtyResult(), 0, "auto"); err != nil {
 		t.Fatal(err)
 	}
 	out := buf.String()
@@ -43,6 +43,22 @@ func TestTextNoANSIWhenNotTerminal(t *testing.T) {
 	}
 }
 
+func TestTextColorModes(t *testing.T) {
+	var always, never bytes.Buffer
+	if err := Text(&always, dirtyResult(), 0, "always"); err != nil {
+		t.Fatal(err)
+	}
+	if err := Text(&never, dirtyResult(), 0, "never"); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(always.String(), "\x1b") {
+		t.Errorf("--color=always should emit ANSI even to a plain buffer:\n%q", always.String())
+	}
+	if strings.Contains(never.String(), "\x1b") {
+		t.Errorf("--color=never should emit no ANSI:\n%q", never.String())
+	}
+}
+
 func TestTextEmptyComponentWarning(t *testing.T) {
 	res := &core.Result{
 		ModulePath: "example.test/m",
@@ -50,7 +66,7 @@ func TestTextEmptyComponentWarning(t *testing.T) {
 		Stats:      core.Stats{Packages: 1},
 	}
 	var buf bytes.Buffer
-	if err := Text(&buf, res, 0); err != nil {
+	if err := Text(&buf, res, 0, "auto"); err != nil {
 		t.Fatal(err)
 	}
 	out := buf.String()
@@ -66,7 +82,7 @@ func TestTextEmptyComponentWarning(t *testing.T) {
 func TestTextCleanIsPlain(t *testing.T) {
 	var buf bytes.Buffer
 	res := &core.Result{ModulePath: "example.test/m", Stats: core.Stats{Packages: 3, Edges: 5}}
-	if err := Text(&buf, res, 0); err != nil {
+	if err := Text(&buf, res, 0, "auto"); err != nil {
 		t.Fatal(err)
 	}
 	out := buf.String()

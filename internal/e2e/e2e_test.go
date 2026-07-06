@@ -145,6 +145,27 @@ func TestCheckBadFormat(t *testing.T) {
 	}
 }
 
+func TestCheckColorAlways(t *testing.T) {
+	// --color=always forces ANSI even though the run env sets NO_COLOR and pipes.
+	out, _, exit := run(t, fixture("dirty"), "check", "--color", "always")
+	if exit != 1 {
+		t.Fatalf("exit %d, want 1", exit)
+	}
+	if !strings.Contains(out, "\x1b") {
+		t.Errorf("--color=always should force ANSI:\n%q", out)
+	}
+}
+
+func TestCheckBadColor(t *testing.T) {
+	_, stderr, exit := run(t, fixture("clean"), "check", "--color", "rainbow")
+	if exit != 2 {
+		t.Fatalf("exit %d, want 2", exit)
+	}
+	if !strings.Contains(stderr, "color") {
+		t.Errorf("stderr should mention --color:\n%s", stderr)
+	}
+}
+
 func TestCheckBlacklist(t *testing.T) {
 	out, _, exit := run(t, fixture("blacklist"), "check")
 	if exit != 1 {

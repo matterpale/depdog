@@ -96,7 +96,7 @@ Key ideas:
 | Command | What it does |
 |---|---|
 | `depdog init` | Scan the module and write a starter `depdog.yaml`. `--preset ddd\|hexagonal\|layered\|flat`, `--policy deny\|allow`, `--yes` (non-interactive), `--force` (overwrite). |
-| `depdog check [packages]` | Evaluate imports against the rules. `--format text\|json\|github\|sarif`, `--fail-on any\|new`. |
+| `depdog check [packages]` | Evaluate imports against the rules. `--format text\|json\|github\|sarif`, `--fail-on any\|new`, `--color auto\|always\|never`. |
 | `depdog baseline` | Record current violations to `depdog.baseline.yaml` for the ratchet below. |
 | `depdog graph` | Emit the dependency graph. `--format dot\|mermaid`, `--level component\|package`, `--violations-only`. |
 | `depdog explain <component-or-package>` | Explain why something is red (the rule that fired, with file:line) or how a component is constrained. |

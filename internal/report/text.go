@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/charmbracelet/lipgloss"
+	"github.com/muesli/termenv"
 
 	"github.com/matterpale/depdog/internal/core"
 )
@@ -21,8 +22,17 @@ type styles struct {
 	bad, good, warn, rule, imp, pos lipgloss.Style
 }
 
-func newStyles(w io.Writer) styles {
+// newStyles builds the palette. color forces the profile: "always" emits ANSI
+// even when the writer is not a terminal, "never" suppresses it, and "auto" (or
+// "") uses the per-writer detection (which also honors NO_COLOR).
+func newStyles(w io.Writer, color string) styles {
 	r := lipgloss.NewRenderer(w)
+	switch color {
+	case "always":
+		r.SetColorProfile(termenv.ANSI)
+	case "never":
+		r.SetColorProfile(termenv.Ascii)
+	}
 	return styles{
 		bad:  r.NewStyle().Foreground(lipgloss.Color("1")).Bold(true),
 		good: r.NewStyle().Foreground(lipgloss.Color("2")).Bold(true),
@@ -36,8 +46,8 @@ func newStyles(w io.Writer) styles {
 // Text writes the human-readable report. Violations are grouped by the rule
 // that fired, in first-occurrence order, which is deterministic because the
 // Result is.
-func Text(w io.Writer, res *core.Result, elapsed time.Duration) error {
-	st := newStyles(w)
+func Text(w io.Writer, res *core.Result, elapsed time.Duration, color string) error {
+	st := newStyles(w, color)
 	var b strings.Builder
 	fmt.Fprintf(&b, "depdog check — %s\n", res.ModulePath)
 
