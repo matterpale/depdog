@@ -1,12 +1,30 @@
 digraph depdog {
   rankdir=LR;
   node [shape=box];
-  "example.test/dirty/cmd/app";
-  "example.test/dirty/internal/domain/pricing";
-  "example.test/dirty/internal/handler/checkout";
-  "example.test/dirty/internal/repository";
-  "example.test/dirty/internal/service";
-  "example.test/dirty/internal/util";
+  subgraph "cluster_domain" {
+    label="domain";
+    "example.test/dirty/internal/domain/pricing" [label="internal/domain/pricing"];
+  }
+  subgraph "cluster_handler" {
+    label="handler";
+    "example.test/dirty/internal/handler/checkout" [label="internal/handler/checkout"];
+  }
+  subgraph "cluster_main" {
+    label="main";
+    "example.test/dirty/cmd/app" [label="cmd/app"];
+  }
+  subgraph "cluster_repository" {
+    label="repository";
+    "example.test/dirty/internal/repository" [label="internal/repository"];
+  }
+  subgraph "cluster_service" {
+    label="service";
+    "example.test/dirty/internal/service" [label="internal/service"];
+  }
+  subgraph "cluster_unassigned" {
+    label="unassigned";
+    "example.test/dirty/internal/util" [label="internal/util"];
+  }
   "example.test/dirty/cmd/app" -> "example.test/dirty/internal/domain/pricing";
   "example.test/dirty/cmd/app" -> "example.test/dirty/internal/handler/checkout";
   "example.test/dirty/cmd/app" -> "example.test/dirty/internal/repository";

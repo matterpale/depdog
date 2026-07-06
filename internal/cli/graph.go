@@ -31,7 +31,7 @@ Exit codes: 0 written, 2 configuration or usage error.`,
 			if err != nil {
 				return err
 			}
-			return report.Graph(cmd.OutOrStdout(), views, ev.Result.Violations, format, level)
+			return report.Graph(cmd.OutOrStdout(), ev.Result.ModulePath, views, ev.Result.Violations, format, level)
 		},
 	}
 	cmd.Flags().StringVar(&configPath, "config", "", "path to depdog.yaml (default: found next to go.mod)")
