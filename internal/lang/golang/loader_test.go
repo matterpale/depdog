@@ -2,6 +2,8 @@ package golang
 
 import (
 	"context"
+	"fmt"
+	"os"
 	"path/filepath"
 	"testing"
 
@@ -88,6 +90,50 @@ func BenchmarkLoad(b *testing.B) {
 	ctx := context.Background()
 	if _, err := l.Load(ctx); err != nil { // fail fast before timing
 		b.Fatalf("Load: %v", err)
+	}
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if _, err := l.Load(ctx); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+// BenchmarkLoadLarge measures a metadata load of a synthetic 300-package
+// module (a chain where each package imports the previous plus std), to check
+// the loader stays well under a second on a large module — the PLAN's target,
+// and the data behind any future caching decision. Run with:
+//
+//	go test ./internal/lang/golang -bench BenchmarkLoadLarge -run '^$'
+func BenchmarkLoadLarge(b *testing.B) {
+	const n = 300
+	dir := b.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "go.mod"), []byte("module bench.test/large\n\ngo 1.21\n"), 0o644); err != nil {
+		b.Fatal(err)
+	}
+	for i := 0; i < n; i++ {
+		pkg := filepath.Join(dir, "internal", fmt.Sprintf("p%03d", i))
+		if err := os.MkdirAll(pkg, 0o755); err != nil {
+			b.Fatal(err)
+		}
+		src := fmt.Sprintf("package p%03d\n\nimport _ \"strings\"\n", i)
+		if i > 0 {
+			src = fmt.Sprintf("package p%03d\n\nimport (\n\t_ \"fmt\"\n\t_ \"bench.test/large/internal/p%03d\"\n)\n", i, i-1)
+		}
+		if err := os.WriteFile(filepath.Join(pkg, "x.go"), []byte(src), 0o644); err != nil {
+			b.Fatal(err)
+		}
+	}
+
+	b.Setenv("GOWORK", "off")
+	l := &Loader{Dir: dir}
+	ctx := context.Background()
+	g, err := l.Load(ctx)
+	if err != nil {
+		b.Fatalf("Load: %v", err)
+	}
+	if len(g.Packages) < n {
+		b.Fatalf("loaded %d packages, want >= %d", len(g.Packages), n)
 	}
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {

@@ -39,10 +39,10 @@ Improvements, refinements, and polish beyond the M0–M5 work already shipped.
   Limitations); no `--tags`/matrix loading for v1.
 - ❌ **Nested modules & `go.work`.** Decided (owner): keep declining workspaces
   for v1 (single module only; documented in the README's Limitations).
-- **Loader cache.** (M) BenchmarkLoad now measures the loader (the bottleneck) —
-  ~46ms for the small dirty fixture, dominated by `go/packages` startup. Still
-  open: measure a large synthetic module, then decide whether a metadata cache
-  is worth it.
+- ✅ **Loader benchmarks + cache decision.** BenchmarkLoad (~46ms, dirty
+  fixture) and BenchmarkLoadLarge (~165ms for a synthetic 300-package module)
+  show loads stay well under the PLAN's 1s target, so no metadata cache is
+  warranted for v1.
 - ✅ **Shipped:** a `replace` fixture whose dependency is a nested local module
   (replace => ./vendored) confirms the loader still classifies it as external.
   (A full vendor-tree fixture could still be added.)
@@ -52,8 +52,11 @@ Improvements, refinements, and polish beyond the M0–M5 work already shipped.
 - **`init`: edit names/patterns, not just drop.** (M) `PLAN.md §4` wants the
   wizard to let you rename components and tweak patterns; today the interactive
   review can only include/exclude suggested components.
-- **`init` merge mode.** (M) When a config exists, offer to show a diff / merge
-  in newly-scanned packages instead of only refusing without `--force`.
+- **`init --merge`.** (M) When a config exists, add only newly-scanned
+  components (dirs no existing pattern covers) instead of refusing. Needs
+  yaml.Node editing to preserve the user's formatting/comments — a text append
+  can't add a second `components:` block. Deferred as a careful standalone
+  effort rather than rushed into a fragile shape.
 - ✅ **Shipped:** `graph` now has module-relative package labels, DOT clustering
   by component, `--violations-only`, and `--focus <component>` (a component and
   its direct neighbours).
