@@ -125,7 +125,7 @@ func (m Model) violationsView() string {
 	b.WriteString("\n")
 	b.WriteString(styleDim.Render("── detail ──"))
 	b.WriteString("\n")
-	b.WriteString(fmt.Sprintf("%s imports %s\n", v.FromPackage, styleBad.Render(v.ImportPath)))
+	fmt.Fprintf(&b, "%s imports %s\n", v.FromPackage, styleBad.Render(v.ImportPath))
 	b.WriteString(styleDim.Render("rule: ") + v.Rule + "\n")
 	if v.TestOnly {
 		b.WriteString(styleWarn.Render("test-only import") + "\n")

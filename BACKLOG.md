@@ -103,11 +103,14 @@ Improvements, refinements, and polish beyond the M0–M5 work already shipped.
 
 ## Testing & CI
 
-- **Turn on formatting/lint gates.** (S) Add a `.golangci.yml` enabling `gofmt`/
-  `goimports` (and the import-order convention), and fix the pre-existing gofmt
-  drift in `internal/lang/golang/loader.go` and `internal/core/match_test.go`
-  (go1.26 struct-comment alignment). CI's default linters don't gate formatting
-  today.
+- ✅ **Shipped:** formatting gates via `.golangci.yml` (v2 schema, matching CI's
+  golangci-lint-action@v8) — `gofmt` + `goimports` formatters with
+  `local-prefixes: github.com/matterpale/depdog` enforcing the std → external →
+  internal import order; fixed the go1.26 struct-comment gofmt drift in
+  `internal/lang/golang/loader.go` and `internal/core/match_test.go`. Also
+  turned the (previously red) CI lint job green: the `std-error-handling`
+  exclusion preset restores the classic errcheck defaults, and the one
+  staticcheck QF1012 in `internal/tui/screens.go` was fixed in code.
 - **Cross-platform CI matrix.** (S) Add a Windows runner to exercise path
   handling (`filepath.ToSlash`, module-relative dirs).
 - ✅ **Shipped:** fuzz tests for `config.Parse` (FuzzParse) and

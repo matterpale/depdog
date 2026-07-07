@@ -58,8 +58,8 @@ func TestAssignComponent(t *testing.T) {
 		dir, want string
 	}{
 		{"internal/handler", "app"},
-		{"internal/domain", "domain"},        // deeper pattern wins over catch-all
-		{"internal/domain/order", "domain"},  // carve-out is recursive
+		{"internal/domain", "domain"},       // deeper pattern wins over catch-all
+		{"internal/domain/order", "domain"}, // carve-out is recursive
 		{"cmd/depdog", "main"},
 		{"pkg/unrelated", ""}, // unassigned
 	}

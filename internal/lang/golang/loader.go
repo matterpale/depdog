@@ -85,7 +85,7 @@ func (l *Loader) Load(ctx context.Context, patterns ...string) (*core.Graph, err
 	// and the external _test package all describe the same directory.
 	type entry struct {
 		importPath string
-		plain      bool            // importPath came from the non-test variant
+		plain      bool // importPath came from the non-test variant
 		relDir     string
 		files      map[string]bool // abs file path -> is a _test.go file
 	}
