@@ -337,6 +337,218 @@ func TestHelpOverlay(t *testing.T) {
 	}
 }
 
+func TestEditorArgv(t *testing.T) {
+	cases := []struct {
+		editor string
+		want   []string
+	}{
+		{"vim", []string{"vim", "+4", "internal/domain/x.go"}},
+		{"nvim", []string{"nvim", "+4", "internal/domain/x.go"}},
+		{"vi", []string{"vi", "+4", "internal/domain/x.go"}},
+		{"nano", []string{"nano", "+4", "internal/domain/x.go"}},
+		{"emacs", []string{"emacs", "+4", "internal/domain/x.go"}},
+		{"code", []string{"code", "--goto", "internal/domain/x.go:4", "--wait"}},
+		{"/usr/local/bin/code", []string{"/usr/local/bin/code", "--goto", "internal/domain/x.go:4", "--wait"}},
+		{"code --new-window", []string{"code", "--new-window", "--goto", "internal/domain/x.go:4", "--wait"}},
+		{"subl", []string{"subl", "internal/domain/x.go:4"}},
+		{"someeditor", []string{"someeditor", "internal/domain/x.go"}}, // unknown: file only
+	}
+	for _, c := range cases {
+		got := editorArgv(c.editor, "internal/domain/x.go", 4)
+		if strings.Join(got, "\x00") != strings.Join(c.want, "\x00") {
+			t.Errorf("editorArgv(%q) = %q, want %q", c.editor, got, c.want)
+		}
+	}
+}
+
+func TestEditMissingEditor(t *testing.T) {
+	t.Setenv("EDITOR", "")
+	m := update(New(fixtureResult(), fixturePkgs()), runes("2"))
+	next, cmd := m.Update(runes("e"))
+	m = next.(Model)
+	if cmd != nil {
+		t.Error("e without $EDITOR should not launch a process")
+	}
+	if !strings.Contains(m.status, "$EDITOR is not set") || !strings.Contains(m.status, "export EDITOR=") {
+		t.Errorf("status should tell the user to set $EDITOR, got %q", m.status)
+	}
+	if !strings.Contains(m.View(), "$EDITOR is not set") {
+		t.Errorf("footer should surface the status message:\n%s", m.View())
+	}
+	// The message clears on the next keypress.
+	m = update(m, runes("j"))
+	if m.status != "" {
+		t.Errorf("status should clear on the next key, got %q", m.status)
+	}
+}
+
+func TestEditOpensSelectedViolation(t *testing.T) {
+	t.Setenv("EDITOR", "vim")
+	m := update(New(fixtureResult(), fixturePkgs()), runes("2"))
+	m = update(m, runes("j")) // select the second violation
+	next, cmd := m.Update(runes("e"))
+	m = next.(Model)
+	if cmd == nil {
+		t.Fatal("e with $EDITOR set should return an exec command")
+	}
+	if m.status != "" {
+		t.Errorf("no status message expected on success, got %q", m.status)
+	}
+}
+
+func TestEditOnPackagesUsesViolationPosition(t *testing.T) {
+	t.Setenv("EDITOR", "vim")
+	// The domain package has a violation with a recorded position.
+	m := update(New(fixtureResult(), fixturePkgs()), runes("3"))
+	if _, cmd := m.Update(runes("e")); cmd == nil {
+		t.Error("e on a package with a known violation position should open the editor")
+	}
+
+	// A package with no violations has no known file position.
+	res := &core.Result{ModulePath: "example.test/shop"}
+	pkgs := []core.PackageView{{ImportPath: "example.test/shop/internal/clean", Component: "clean"}}
+	m2 := update(New(res, pkgs), runes("3"))
+	next, cmd := m2.Update(runes("e"))
+	m2 = next.(Model)
+	if cmd != nil {
+		t.Error("e without a known position should not launch a process")
+	}
+	if !strings.Contains(m2.status, "no known file position") {
+		t.Errorf("status should explain the missing position, got %q", m2.status)
+	}
+}
+
+func TestEditOnDashboardExplains(t *testing.T) {
+	t.Setenv("EDITOR", "vim")
+	next, cmd := New(fixtureResult(), fixturePkgs()).Update(runes("e"))
+	m := next.(Model)
+	if cmd != nil {
+		t.Error("e on the dashboard should not launch a process")
+	}
+	if m.status == "" {
+		t.Error("e on the dashboard should explain where it works")
+	}
+}
+
+func TestEditorFinishedError(t *testing.T) {
+	m := update(New(fixtureResult(), fixturePkgs()), editorFinishedMsg{err: fmt.Errorf("exit status 1")})
+	if !strings.Contains(m.status, "exit status 1") {
+		t.Errorf("editor failure should surface in the status, got %q", m.status)
+	}
+	m = update(New(fixtureResult(), fixturePkgs()), editorFinishedMsg{})
+	if m.status != "" {
+		t.Errorf("clean editor exit should not set a status, got %q", m.status)
+	}
+}
+
+func TestRerunRefreshesData(t *testing.T) {
+	fresh := &core.Result{
+		ModulePath: "example.test/shop",
+		Violations: []core.Violation{{
+			FromPackage: "example.test/shop/internal/handler", FromComponent: "handler",
+			ImportPath: "example.test/shop/internal/repo", Rule: "handler: allow [domain]",
+			Positions: []core.Position{{File: "internal/handler/h.go", Line: 9}},
+		}},
+		Components: []core.ComponentStat{{Name: "handler", Packages: 1, Edges: 1, Violations: 1}},
+		Stats:      core.Stats{Packages: 1, Edges: 1},
+	}
+	freshPkgs := []core.PackageView{{ImportPath: "example.test/shop/internal/handler", Component: "handler"}}
+	calls := 0
+	m := New(fixtureResult(), fixturePkgs(), WithRefresh(func() (*core.Result, []core.PackageView, error) {
+		calls++
+		return fresh, freshPkgs, nil
+	}))
+	m = update(m, runes("2"))
+	m = update(m, runes("j")) // selection on the second (soon out-of-range) row
+
+	next, cmd := m.Update(runes("r"))
+	m = next.(Model)
+	if cmd == nil {
+		t.Fatal("r should return a refresh command")
+	}
+	if !strings.Contains(m.status, "re-running") {
+		t.Errorf("status should show the re-run is in flight, got %q", m.status)
+	}
+
+	msg := cmd()
+	rm, ok := msg.(refreshMsg)
+	if !ok {
+		t.Fatalf("refresh command returned %T, want refreshMsg", msg)
+	}
+	if calls != 1 {
+		t.Fatalf("refresh callback called %d times, want 1", calls)
+	}
+	m = update(m, rm)
+	if len(m.res.Violations) != 1 {
+		t.Fatalf("violations = %d, want 1 after refresh", len(m.res.Violations))
+	}
+	if m.selected != 0 {
+		t.Errorf("selection should clamp to the shorter list, got %d", m.selected)
+	}
+	if !strings.Contains(m.status, "1 violation") {
+		t.Errorf("status should report the fresh count, got %q", m.status)
+	}
+	if !strings.Contains(m.View(), "handler → example.test/shop/internal/repo") {
+		t.Errorf("violations screen should show the fresh data:\n%s", m.View())
+	}
+	// The violation-edge index is rebuilt too.
+	if !m.violEdges[[2]string{"example.test/shop/internal/handler", "example.test/shop/internal/repo"}] {
+		t.Error("violEdges should reflect the fresh result")
+	}
+	if m.violEdges[[2]string{"example.test/shop/internal/domain", "example.test/shop/internal/repo"}] {
+		t.Error("stale violEdges entry should be gone")
+	}
+}
+
+func TestRerunErrorKeepsOldData(t *testing.T) {
+	m := New(fixtureResult(), fixturePkgs(), WithRefresh(func() (*core.Result, []core.PackageView, error) {
+		return nil, nil, fmt.Errorf("depdog.yaml: bad pattern")
+	}))
+	m = update(m, runes("2"))
+	next, cmd := m.Update(runes("r"))
+	m = next.(Model)
+	if cmd == nil {
+		t.Fatal("r should return a refresh command")
+	}
+	m = update(m, cmd().(refreshMsg))
+	if len(m.res.Violations) != 2 {
+		t.Errorf("old data should survive a failed re-run, got %d violations", len(m.res.Violations))
+	}
+	if !strings.Contains(m.status, "bad pattern") || !strings.Contains(m.status, "press r") {
+		t.Errorf("status should carry the error and the fix, got %q", m.status)
+	}
+}
+
+func TestRerunUnavailable(t *testing.T) {
+	next, cmd := New(fixtureResult(), fixturePkgs()).Update(runes("r"))
+	m := next.(Model)
+	if cmd != nil {
+		t.Error("r without a refresh hook should not return a command")
+	}
+	if m.status == "" {
+		t.Error("r without a refresh hook should explain itself")
+	}
+}
+
+func TestHelpListsEditAndRerun(t *testing.T) {
+	m := update(New(fixtureResult(), fixturePkgs()), runes("?"))
+	v := m.View()
+	for _, want := range []string{"$EDITOR", "re-run the check"} {
+		if !strings.Contains(v, want) {
+			t.Errorf("help overlay missing %q\n%s", want, v)
+		}
+	}
+	// The list-screen footer hints at both keys.
+	m = update(m, runes("?"))
+	m = update(m, runes("2"))
+	f := m.View()
+	for _, want := range []string{"e edit", "r re-run"} {
+		if !strings.Contains(f, want) {
+			t.Errorf("violations footer missing %q\n%s", want, f)
+		}
+	}
+}
+
 func TestProgramLifecycle(t *testing.T) {
 	tm := teatest.NewTestModel(t, New(fixtureResult(), fixturePkgs()), teatest.WithInitialTermSize(90, 30))
 	teatest.WaitFor(t, tm.Output(), func(b []byte) bool {

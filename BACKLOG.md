@@ -78,8 +78,10 @@ Improvements, refinements, and polish beyond the M0–M5 work already shipped.
   the manual render, not `bubbles/viewport`.)
 - ✅ **Shipped:** both the Violations and Packages screens filter with `/`
   (substring; the shared filter state applies to whichever list is active).
-- **`$EDITOR` + re-run.** (M) `e` opens the selected file at its line in
-  `$EDITOR`; `r` re-runs the check in place (a step toward watch mode).
+- ✅ **Shipped:** `e` opens the selection at its file:line in `$EDITOR`
+  (tea.ExecProcess; per-editor line syntax for vim/nano/code/subl, actionable
+  message when `$EDITOR` is unset); `r` re-runs the load+check pipeline
+  asynchronously and refreshes every screen in place (errors keep the old data).
 - ✅ **Shipped:** `?` toggles a full-screen key legend (custom overlay; swallows
   navigation until closed with `?`/esc).
 - ✅ **Shipped:** the Packages screen shows a legend explaining the

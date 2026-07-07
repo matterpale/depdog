@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 
 	"github.com/spf13/cobra"
 
@@ -30,20 +31,35 @@ Exit codes: 0 on quit, 2 configuration or usage error.`,
 			if err != nil {
 				return err
 			}
-			return launch(ev)
+			return launch(cmd, configPath, args, ev)
 		},
 	}
 	cmd.Flags().StringVar(&configPath, "config", "", "path to depdog.yaml (default: found next to go.mod)")
 	return cmd
 }
 
-// launch builds the package-navigation views and opens the UI.
-func launch(ev *evaluation) error {
+// launch builds the package-navigation views and opens the UI, wiring in the
+// module root (so `e` can open module-relative positions in $EDITOR) and a
+// refresh hook that re-runs the same load+check pipeline for `r`.
+func launch(cmd *cobra.Command, configPath string, args []string, ev *evaluation) error {
 	pkgs, err := core.BuildPackageViews(ev.Graph, ev.Rules)
 	if err != nil {
 		return err
 	}
-	return tui.Run(ev.Result, pkgs)
+	refresh := func() (*core.Result, []core.PackageView, error) {
+		ev, err := evaluateModule(cmd, configPath, args)
+		if err != nil {
+			return nil, nil, err
+		}
+		pkgs, err := core.BuildPackageViews(ev.Graph, ev.Rules)
+		if err != nil {
+			return nil, nil, err
+		}
+		return ev.Result, pkgs, nil
+	}
+	return tui.Run(ev.Result, pkgs,
+		tui.WithRoot(filepath.Dir(ev.ConfigPath)),
+		tui.WithRefresh(refresh))
 }
 
 // runBare backs a plain `depdog` invocation: it opens the TUI when a terminal
@@ -57,7 +73,7 @@ func runBare(cmd *cobra.Command) error {
 				if eerr != nil {
 					return eerr
 				}
-				return launch(ev)
+				return launch(cmd, "", nil, ev)
 			}
 		}
 	}

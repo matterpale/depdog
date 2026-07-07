@@ -50,6 +50,9 @@ type Model struct {
 	res       *core.Result
 	pkgs      []core.PackageView // sorted by component, then import path
 	violEdges map[[2]string]bool // (from package, import) of every violation
+	root      string             // module root; positions are relative to it
+	refresh   func() (*core.Result, []core.PackageView, error)
+	status    string // transient message shown in the footer, cleared on any key
 	active    tab
 	selected  int // highlighted violation on the Violations screen
 	selPkg    int // highlighted package on the Packages screen
@@ -61,8 +64,35 @@ type Model struct {
 	quitting  bool
 }
 
+// Option configures optional model capabilities.
+type Option func(*Model)
+
+// WithRoot sets the module root directory, so `e` can resolve the
+// module-relative file positions the engine reports.
+func WithRoot(dir string) Option {
+	return func(m *Model) { m.root = dir }
+}
+
+// WithRefresh wires the `r` key: the hook re-runs the load+check pipeline and
+// returns fresh, sorted engine output for every screen.
+func WithRefresh(f func() (*core.Result, []core.PackageView, error)) Option {
+	return func(m *Model) { m.refresh = f }
+}
+
 // New builds the model over a check result and its package views.
-func New(res *core.Result, pkgs []core.PackageView) Model {
+func New(res *core.Result, pkgs []core.PackageView, opts ...Option) Model {
+	var m Model
+	m.setData(res, pkgs)
+	for _, o := range opts {
+		o(&m)
+	}
+	return m
+}
+
+// setData installs a check run's output: package views sorted for display and
+// the violation-edge index the Packages screen marks ✗ with. Used both at
+// construction and when `r` delivers fresh results.
+func (m *Model) setData(res *core.Result, pkgs []core.PackageView) {
 	sorted := append([]core.PackageView(nil), pkgs...)
 	sort.SliceStable(sorted, func(i, j int) bool {
 		if sorted[i].Component != sorted[j].Component {
@@ -74,7 +104,7 @@ func New(res *core.Result, pkgs []core.PackageView) Model {
 	for _, v := range res.Violations {
 		edges[[2]string{v.FromPackage, v.ImportPath}] = true
 	}
-	return Model{res: res, pkgs: sorted, violEdges: edges}
+	m.res, m.pkgs, m.violEdges = res, sorted, edges
 }
 
 func (m Model) Init() tea.Cmd { return nil }
@@ -83,7 +113,21 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
+	case editorFinishedMsg:
+		if msg.err != nil {
+			m.status = fmt.Sprintf("editor exited with an error: %v", msg.err)
+		}
+	case refreshMsg:
+		if msg.err != nil {
+			m.status = fmt.Sprintf("re-run failed: %v — fix it and press r again", msg.err)
+			return m, nil
+		}
+		m.setData(msg.res, msg.pkgs)
+		m.selected = clamp(m.selected, len(m.filteredViolations()))
+		m.selPkg = clamp(m.selPkg, len(m.filteredPackages()))
+		m.status = "re-ran: " + plural(len(msg.res.Violations), "violation")
 	case tea.KeyMsg:
+		m.status = "" // any key dismisses a transient status message
 		if m.filtering {
 			return m.updateFilter(msg)
 		}
@@ -124,6 +168,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.moveSelection(-1)
 		case "down", "j":
 			m.moveSelection(1)
+		case "e":
+			return m, m.openInEditor()
+		case "r":
+			return m, m.startRefresh()
 		}
 	}
 	return m, nil
@@ -249,6 +297,8 @@ func helpView() string {
 		{"1 / 2 / 3", "Dashboard / Violations / Packages"},
 		{"up/down or k/j", "move the selection"},
 		{"/", "filter the list (Violations, Packages)"},
+		{"e", "open the selection in $EDITOR (Violations, Packages)"},
+		{"r", "re-run the check and refresh every screen"},
 		{"esc", "clear filter, or close this help"},
 		{"?", "toggle this help"},
 		{"q or ctrl+c", "quit"},
@@ -296,10 +346,13 @@ func (m Model) footer() string {
 	if m.showHelp {
 		return styleDim.Render("? or esc to close")
 	}
-	if m.active == tabViolations || m.active == tabPackages {
-		return styleDim.Render("tab/1-3 switch · ↑/↓ move · / filter · ? help · q quit")
+	if m.status != "" {
+		return styleWarn.Render(m.status)
 	}
-	return styleDim.Render("tab/1-3 switch · ↑/↓ move · ? help · q quit")
+	if m.active == tabViolations || m.active == tabPackages {
+		return styleDim.Render("tab/1-3 switch · ↑/↓ move · / filter · e edit · r re-run · ? help · q quit")
+	}
+	return styleDim.Render("tab/1-3 switch · ↑/↓ move · r re-run · ? help · q quit")
 }
 
 func plural(n int, word string) string {
