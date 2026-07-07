@@ -131,9 +131,15 @@ Improvements, refinements, and polish beyond the M0–M5 work already shipped.
 
 ## Release & ecosystem (owner-gated)
 
-- **Choose a license** before any public release (deliberately deferred).
-- **goreleaser + Homebrew tap**; document `go install …/cmd/depdog@latest`.
-- **`vhs` animated demo** in the README.
+- ✅ **Shipped:** MIT license (owner decision, 2026-07-08) — LICENSE at the
+  root, README License section, PLAN decision table updated.
+- ✅ **Shipped:** goreleaser release pipeline — `.goreleaser.yaml` (archives for
+  linux/darwin/windows × amd64/arm64, version stamped into `cli.Version`) driven
+  by `.github/workflows/release.yml` on `v*` tags. Homebrew tap config is
+  included but deliberately disabled (needs a `homebrew-tap` repo + PAT; steps
+  in the comment). README documents `go install` and the releases page.
+- ✅ **Shipped:** `vhs` demo — `docs/demo.tape` records check → explain → TUI on
+  the dirty fixture into `docs/demo.gif`, embedded at the top of the README.
 - **Second language adapter (e.g. TypeScript)** to prove the `lang` seam — the
   strongest validation that `core` is truly language-agnostic.
 - **Editor/LSP integration** for inline architecture diagnostics.

@@ -316,7 +316,7 @@ Watch mode; rule editing in the TUI; external-dependency allowlists per componen
 | Workspaces (`go.work`) | Detect & decline in v1 | Explicit message instead of misbehavior; support is post-v0.1. |
 | CLI framework | cobra + fang | Standard ecosystem + charmbracelet polish, consistent with the TUI stack. |
 | Module path | `github.com/matterpale/depdog` | Confirmed with the owner. |
-| License | None yet (private) | Decide before the first public release (M5). |
+| License | MIT | Chosen by the owner on 2026-07-08, ahead of the v0.1.0 release. |
 
 All previously open questions were resolved with the project owner on 2026-07-06 and folded
 into the decisions table above.

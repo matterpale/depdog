@@ -19,6 +19,8 @@ depdog check — github.com/acme/shop
 1 violation · 1 warning · 12 packages · 39 edges checked in 40ms
 ```
 
+![depdog demo: check, explain, and the TUI on a module with violations](docs/demo.gif)
+
 ## Install
 
 ```bash
@@ -28,6 +30,9 @@ go install github.com/matterpale/depdog/cmd/depdog@latest
 # Or build the repo directly:
 go build -o depdog ./cmd/depdog
 ```
+
+Prebuilt binaries for Linux, macOS, and Windows are on the
+[releases page](https://github.com/matterpale/depdog/releases).
 
 ## Quick start
 
@@ -168,5 +173,9 @@ may only import inward. A failing architecture is a failing build.
 
 ## Status
 
-Pre-release, working toward v0.1.0. The project is currently unlicensed; a
-license will be chosen before the first public release.
+v0.1.0 — the first tagged release. The M0–M5 roadmap in `PLAN.md` is complete;
+`BACKLOG.md` tracks what's next.
+
+## License
+
+[MIT](LICENSE)
