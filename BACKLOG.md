@@ -111,8 +111,13 @@ Improvements, refinements, and polish beyond the M0–M5 work already shipped.
   turned the (previously red) CI lint job green: the `std-error-handling`
   exclusion preset restores the classic errcheck defaults, and the one
   staticcheck QF1012 in `internal/tui/screens.go` was fixed in code.
-- **Cross-platform CI matrix.** (S) Add a Windows runner to exercise path
-  handling (`filepath.ToSlash`, module-relative dirs).
+- ✅ **Shipped:** cross-platform CI matrix — the test job now runs build/vet/test
+  on `ubuntu-latest` and `windows-latest` (`fail-fast: false`); lint and the
+  depdog self-check stay Linux-only. Windows enablers: `.gitattributes` forces
+  LF checkouts (Windows runners default to `core.autocrlf=true`, which would
+  break byte-exact golden comparisons) and the e2e harness builds the binary
+  with an `.exe` suffix on Windows. Audit found no other hazards — path
+  handling already goes through `filepath.Join`/`FromSlash`/`ToSlash`.
 - ✅ **Shipped:** fuzz tests for `config.Parse` (FuzzParse) and
   `core.MatchPattern` (FuzzMatchPattern), with seed corpora that run under
   normal `go test`. Ran clean at ~200k+ execs each; assert real invariants

@@ -1,0 +1,5 @@
+# Force LF in the working tree on every platform. Golden files
+# (internal/e2e/testdata/*.golden) are byte-compared against LF output from
+# the depdog binary, and fixture sources must hash identically everywhere;
+# Windows CI runners default to core.autocrlf=true, which this overrides.
+* text=auto eol=lf

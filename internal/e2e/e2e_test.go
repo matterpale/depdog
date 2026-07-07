@@ -11,6 +11,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -39,6 +40,11 @@ func TestMain(m *testing.M) {
 		os.Exit(1)
 	}
 	binary = filepath.Join(dir, "depdog")
+	if runtime.GOOS == "windows" {
+		// exec on Windows resolves executables by PATHEXT extension; a bare
+		// "depdog" file would build fine but never launch.
+		binary += ".exe"
+	}
 
 	build := exec.Command("go", "build", "-o", binary, "./cmd/depdog")
 	build.Dir = repoRoot
