@@ -37,7 +37,8 @@ depdog check     # enforce the rules; exit 1 on violations
 ```
 
 `init` inspects your layout, matches it against an architecture preset, and
-proposes a component mapping you confirm interactively (or accept with `--yes`).
+proposes a component mapping you refine interactively — drop, rename, or
+re-pattern components — or accept as-is with `--yes`.
 
 ## Configuration
 

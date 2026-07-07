@@ -49,9 +49,10 @@ Improvements, refinements, and polish beyond the M0–M5 work already shipped.
 
 ## CLI & output
 
-- **`init`: edit names/patterns, not just drop.** (M) `PLAN.md §4` wants the
-  wizard to let you rename components and tweak patterns; today the interactive
-  review can only include/exclude suggested components.
+- ✅ **Shipped:** `init`'s interactive review now edits, not just drops: an
+  optional per-component pass renames components (rule refs follow) and rewrites
+  their patterns, validated inline (collisions, reserved names, glob syntax) so
+  the generated file still round-trips the check validator.
 - **`init --merge`.** (M) When a config exists, add only newly-scanned
   components (dirs no existing pattern covers) instead of refusing. Needs
   yaml.Node editing to preserve the user's formatting/comments — a text append

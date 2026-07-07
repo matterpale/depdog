@@ -182,34 +182,99 @@ func askPresetPolicy(cmd *cobra.Command, preset, policy string, askPreset, askPo
 	return preset, policy, nil
 }
 
-// reviewComponents lets the user drop suggested components before writing.
+// reviewComponents lets the user drop suggested components, then rename the
+// kept ones or tweak their patterns, before writing.
 func reviewComponents(cmd *cobra.Command, cfg wizard.Config) (wizard.Config, error) {
-	if len(cfg.Components) <= 1 {
-		return cfg, nil
+	if len(cfg.Components) > 1 {
+		opts := make([]huh.Option[string], len(cfg.Components))
+		selected := make([]string, 0, len(cfg.Components))
+		for i, c := range cfg.Components {
+			opts[i] = huh.NewOption(c.Name+"  "+strings.Join(c.Patterns, ", "), c.Name).Selected(true)
+			selected = append(selected, c.Name)
+		}
+		form := huh.NewForm(huh.NewGroup(
+			huh.NewMultiSelect[string]().
+				Title("Components to include").
+				Description("Space toggles a component; unchecked ones are left out. You can still edit the file afterward.").
+				Options(opts...).
+				Validate(func(sel []string) error {
+					if len(sel) == 0 {
+						return errors.New("keep at least one component")
+					}
+					return nil
+				}).
+				Value(&selected),
+		)).WithOutput(cmd.OutOrStdout())
+		if err := form.Run(); err != nil {
+			return cfg, err
+		}
+		cfg = cfg.Keep(selected)
 	}
-	opts := make([]huh.Option[string], len(cfg.Components))
-	selected := make([]string, 0, len(cfg.Components))
-	for i, c := range cfg.Components {
-		opts[i] = huh.NewOption(c.Name+"  "+strings.Join(c.Patterns, ", "), c.Name).Selected(true)
-		selected = append(selected, c.Name)
+	return editComponents(cmd, cfg)
+}
+
+// editComponents offers an optional edit pass over the kept components: pick
+// one, change its name and patterns (validated as you type), repeat until
+// done. Rule refs to a renamed component are rewritten by wizard's Rename.
+func editComponents(cmd *cobra.Command, cfg wizard.Config) (wizard.Config, error) {
+	out := cmd.OutOrStdout()
+	for {
+		const done = ""
+		opts := make([]huh.Option[string], 0, len(cfg.Components)+1)
+		opts = append(opts, huh.NewOption("no — continue", done))
+		for _, c := range cfg.Components {
+			opts = append(opts, huh.NewOption(c.Name+"  "+strings.Join(c.Patterns, ", "), c.Name))
+		}
+		pick := done
+		form := huh.NewForm(huh.NewGroup(
+			huh.NewSelect[string]().
+				Title("Edit a component?").
+				Description("Pick a component to rename or re-pattern, or continue.").
+				Options(opts...).
+				Value(&pick),
+		)).WithOutput(out)
+		if err := form.Run(); err != nil {
+			return cfg, err
+		}
+		if pick == done {
+			return cfg, nil
+		}
+
+		cur, _ := cfg.Component(pick)
+		name := cur.Name
+		patterns := strings.Join(cur.Patterns, ", ")
+		form = huh.NewForm(huh.NewGroup(
+			huh.NewInput().
+				Title("Name").
+				Description("The component's name; rules that mention it follow the rename.").
+				Validate(func(s string) error {
+					return cfg.ValidateRename(pick, strings.TrimSpace(s))
+				}).
+				Value(&name),
+			huh.NewInput().
+				Title("Patterns").
+				Description("Comma-separated module-relative globs, e.g. internal/api/**").
+				Validate(func(s string) error {
+					_, err := wizard.ParsePatterns(s)
+					return err
+				}).
+				Value(&patterns),
+		)).WithOutput(out)
+		if err := form.Run(); err != nil {
+			return cfg, err
+		}
+
+		pats, err := wizard.ParsePatterns(patterns)
+		if err != nil {
+			return cfg, err
+		}
+		if cfg, err = cfg.SetPatterns(pick, pats); err != nil {
+			return cfg, err
+		}
+		if cfg, err = cfg.Rename(pick, strings.TrimSpace(name)); err != nil {
+			return cfg, err
+		}
 	}
-	form := huh.NewForm(huh.NewGroup(
-		huh.NewMultiSelect[string]().
-			Title("Components to include").
-			Description("Space toggles a component; unchecked ones are left out. You can still edit the file afterward.").
-			Options(opts...).
-			Validate(func(sel []string) error {
-				if len(sel) == 0 {
-					return errors.New("keep at least one component")
-				}
-				return nil
-			}).
-			Value(&selected),
-	)).WithOutput(cmd.OutOrStdout())
-	if err := form.Run(); err != nil {
-		return cfg, err
-	}
-	return cfg.Keep(selected), nil
 }
 
 // confirmWrite previews the generated file and asks for the go-ahead.
