@@ -104,6 +104,26 @@ func (c Config) Keep(names []string) Config {
 	return out
 }
 
+// ProposeMissing returns a proposed component for every scanned directory
+// group that none of the existing components claims — the same grouping,
+// naming and rule heuristics Suggest applies to unmatched directories. taken
+// lists extra names the proposals must avoid (e.g. the config's groups);
+// collisions are resolved deterministically by proposedName (the dashed group
+// key, then numeric suffixes). Results are sorted by name so `init --merge`
+// output is stable. An empty result means every directory is already covered.
+func ProposeMissing(existing []Component, taken []string, s Scan, policy string) []Component {
+	used := make(map[string]bool, len(existing)+len(taken))
+	for _, c := range existing {
+		used[c.Name] = true
+	}
+	for _, n := range taken {
+		used[n] = true
+	}
+	out := proposeComponents(existing, s, policy, used)
+	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
+	return out
+}
+
 // proposeComponents turns every scanned directory that no kept component
 // claims into a component, grouped by top-level package area.
 func proposeComponents(kept []Component, s Scan, policy string, used map[string]bool) []Component {

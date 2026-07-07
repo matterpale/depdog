@@ -53,11 +53,14 @@ Improvements, refinements, and polish beyond the M0–M5 work already shipped.
   optional per-component pass renames components (rule refs follow) and rewrites
   their patterns, validated inline (collisions, reserved names, glob syntax) so
   the generated file still round-trips the check validator.
-- **`init --merge`.** (M) When a config exists, add only newly-scanned
-  components (dirs no existing pattern covers) instead of refusing. Needs
-  yaml.Node editing to preserve the user's formatting/comments — a text append
-  can't add a second `components:` block. Deferred as a careful standalone
-  effort rather than rushed into a fragile shape.
+- ✅ **Shipped:** `init --merge` adds only newly-scanned components (dirs no
+  existing pattern covers, matched by the checker's own pattern engine) — plus
+  a starter rule under `policy: deny` — to an existing depdog.yaml. yaml.Node
+  locates the end of the `components:`/`rules:` blocks and new lines are
+  spliced into the original bytes, so comments, ordering and alignment survive
+  verbatim; anchors/aliases and flow-style mappings are refused with the fix
+  named. Name collisions rename deterministically; a no-op merge changes
+  nothing; the merged file must pass config.Parse before it is written.
 - ✅ **Shipped:** `graph` now has module-relative package labels, DOT clustering
   by component, `--violations-only`, and `--focus <component>` (a component and
   its direct neighbours).

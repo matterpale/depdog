@@ -191,3 +191,79 @@ func TestMarshalStructure(t *testing.T) {
 		t.Error("Marshal is not deterministic")
 	}
 }
+
+func TestProposeMissing(t *testing.T) {
+	existing := []Component{
+		{Name: "main", Patterns: []string{"cmd/**"}},
+		{Name: "domain", Patterns: []string{"internal/domain/**"}},
+	}
+	scan := Scan{Dirs: []string{
+		"cmd/app",
+		"internal/domain/order",
+		"internal/telemetry",
+		"pkg/util",
+	}}
+	got := ProposeMissing(existing, nil, scan, PolicyDeny)
+	if want := []string{"telemetry", "util"}; !reflect.DeepEqual(componentNames(got), want) {
+		t.Fatalf("proposed = %v, want %v (covered dirs must be skipped)", componentNames(got), want)
+	}
+	tel := got[0]
+	if want := []string{"internal/telemetry/**"}; !reflect.DeepEqual(tel.Patterns, want) {
+		t.Errorf("telemetry.Patterns = %v, want %v", tel.Patterns, want)
+	}
+	if want := []string{"std", "external"}; !reflect.DeepEqual(tel.Allow, want) {
+		t.Errorf("telemetry.Allow = %v, want %v under policy deny", tel.Allow, want)
+	}
+}
+
+func TestProposeMissingAllCovered(t *testing.T) {
+	existing := []Component{{Name: "all", Patterns: []string{"**"}}}
+	scan := Scan{Dirs: []string{"internal/a", "pkg/b"}}
+	if got := ProposeMissing(existing, nil, scan, PolicyDeny); len(got) != 0 {
+		t.Fatalf("proposed = %v, want none (everything covered)", componentNames(got))
+	}
+}
+
+func TestProposeMissingNameCollisions(t *testing.T) {
+	// "telemetry" is taken by an existing component (whose pattern does not
+	// cover internal/telemetry) and "util" by a group name: both proposals must
+	// be renamed deterministically instead of colliding.
+	existing := []Component{{Name: "telemetry", Patterns: []string{"other/**"}}}
+	scan := Scan{Dirs: []string{"internal/telemetry", "pkg/util"}}
+	got := ProposeMissing(existing, []string{"util"}, scan, PolicyDeny)
+	want := []string{"internal-telemetry", "pkg-util"}
+	if !reflect.DeepEqual(componentNames(got), want) {
+		t.Fatalf("proposed = %v, want %v", componentNames(got), want)
+	}
+}
+
+func TestProposeMissingPolicyAllowHasNoAllowRefs(t *testing.T) {
+	got := ProposeMissing(nil, nil, Scan{Dirs: []string{"pkg/util"}}, PolicyAllow)
+	if len(got) != 1 || len(got[0].Allow) != 0 || len(got[0].Deny) != 0 {
+		t.Fatalf("under policy allow a proposal is unconstrained, got %+v", got)
+	}
+	if RuleBody(got[0], PolicyAllow) != "" {
+		t.Errorf("RuleBody must be empty for an unconstrained component")
+	}
+}
+
+func TestRuleBody(t *testing.T) {
+	c := Component{Name: "web", Allow: []string{"std", "external"}, Deny: []string{"core"}}
+	if got, want := RuleBody(c, PolicyDeny), "{ allow: [std, external] }"; got != want {
+		t.Errorf("RuleBody(deny) = %q, want %q", got, want)
+	}
+	if got, want := RuleBody(c, PolicyAllow), "{ deny: [core] }"; got != want {
+		t.Errorf("RuleBody(allow) = %q, want %q", got, want)
+	}
+	if got, want := RuleBody(Component{Name: "cmd", Allow: []string{"*"}}, PolicyDeny), `{ allow: ["*"] }`; got != want {
+		t.Errorf("RuleBody(*) = %q, want %q", got, want)
+	}
+}
+
+func componentNames(cs []Component) []string {
+	out := make([]string, len(cs))
+	for i, c := range cs {
+		out[i] = c.Name
+	}
+	return out
+}

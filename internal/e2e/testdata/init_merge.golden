@@ -1,0 +1,28 @@
+# my architecture — hands off, depdog
+version: 1
+
+components:
+  main:    ["cmd/**"] # entrypoints
+  domain:  ["internal/domain/**"]
+
+  # data access
+  storage: ["internal/repository/**"]
+  handler: ["internal/handler/**"] # proposed from directory scan — review this rule
+  service: ["internal/service/**"] # proposed from directory scan — review this rule
+  telemetry: ["internal/telemetry/**"] # proposed from directory scan — review this rule
+  util:    ["pkg/util/**"] # proposed from directory scan — review this rule
+
+policy: deny
+
+# who may import whom
+rules:
+  main:    { allow: ["*"] }
+  domain:  { allow: [std] } # keep the core pure
+  storage: { allow: [domain, std, external] }
+  handler: { allow: [std, external] }
+  service: { allow: [std, external] }
+  telemetry: { allow: [std, external] }
+  util:    { allow: [std, external] }
+
+options:
+  test_files: hybrid

@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/matterpale/depdog/internal/config"
+	"github.com/matterpale/depdog/internal/core"
 	"github.com/matterpale/depdog/internal/wizard"
 )
 
@@ -68,5 +69,71 @@ func TestEditedConfigsRoundTrip(t *testing.T) {
 				}
 			})
 		}
+	}
+}
+
+// TestMergedConfigsRoundTrip extends the contract to `init --merge`: whatever
+// existing config shape and scan the merge pipeline (ProposeMissing → RuleBody
+// → MergeComponents) is handed, the merged file must satisfy the same
+// validator `depdog check` uses, and merging when everything is covered must
+// return the input untouched.
+func TestMergedConfigsRoundTrip(t *testing.T) {
+	scan := wizard.Scan{Dirs: []string{
+		"cmd/app", "internal/domain/order", "internal/handler",
+		"internal/telemetry", "pkg/util", "web/assets",
+	}}
+	existing := map[string]string{
+		"plain":      "version: 1\ncomponents:\n  main: [\"cmd/**\"]\n  domain: [\"internal/domain/**\"]\npolicy: deny\nrules:\n  domain: { allow: [std] }\n",
+		"no rules":   "version: 1\ncomponents:\n  main: [\"cmd/**\"]\npolicy: deny\n",
+		"allow":      "version: 1\ncomponents:\n  main: [\"cmd/**\"]\npolicy: allow\n",
+		"groups":     "version: 1\ncomponents:\n  main: [\"cmd/**\"]\ngroups:\n  util: [main]\npolicy: deny\nrules:\n  main: { allow: [util, std] }\n",
+		"everything": "version: 1\ncomponents:\n  all: [\"**\"]\npolicy: deny\n",
+	}
+	for name, in := range existing {
+		t.Run(name, func(t *testing.T) {
+			rs, err := config.Parse([]byte(in))
+			if err != nil {
+				t.Fatalf("fixture config does not parse: %v", err)
+			}
+			taken, err := config.DeclaredNames([]byte(in))
+			if err != nil {
+				t.Fatal(err)
+			}
+			comps := make([]wizard.Component, len(rs.Components))
+			for i, c := range rs.Components {
+				comps[i] = wizard.Component{Name: c.Name, Patterns: c.Patterns}
+			}
+			policy := wizard.PolicyDeny
+			if rs.Policy == core.PolicyAllow {
+				policy = wizard.PolicyAllow
+			}
+			proposed := wizard.ProposeMissing(comps, taken, scan, policy)
+			if name == "everything" {
+				if len(proposed) != 0 {
+					t.Fatalf("nothing is uncovered, yet proposed %d components", len(proposed))
+				}
+				return
+			}
+			add := make([]config.MergeComponent, len(proposed))
+			for i, c := range proposed {
+				add[i] = config.MergeComponent{Name: c.Name, Patterns: c.Patterns, Comment: c.Comment, Rule: wizard.RuleBody(c, policy)}
+			}
+			merged, err := config.MergeComponents([]byte(in), add)
+			if err != nil {
+				t.Fatalf("MergeComponents: %v", err)
+			}
+			if _, err := config.Parse(merged); err != nil {
+				t.Fatalf("merged config does not parse: %v\n%s", err, merged)
+			}
+			if name == "groups" {
+				// "util" is taken by a group: the pkg/util proposal must have
+				// been renamed, or Parse above would have rejected the merge.
+				for _, c := range proposed {
+					if c.Name == "util" {
+						t.Errorf("proposal %q collides with the group of the same name", c.Name)
+					}
+				}
+			}
+		})
 	}
 }

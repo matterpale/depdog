@@ -40,6 +40,12 @@ depdog check     # enforce the rules; exit 1 on violations
 proposes a component mapping you refine interactively — drop, rename, or
 re-pattern components — or accept as-is with `--yes`.
 
+When a `depdog.yaml` already exists, `init` refuses to touch it. As the code
+grows, `depdog init --merge` rescans the module and appends a component (and,
+under `policy: deny`, a starter rule) for every directory no existing pattern
+covers — editing the file in place without disturbing your comments, ordering
+or formatting. When everything is covered it changes nothing and says so.
+
 ## Configuration
 
 `depdog.yaml` lives at the repo root, next to `go.mod`:
@@ -109,7 +115,7 @@ Key ideas:
 
 | Command | What it does |
 |---|---|
-| `depdog init` | Scan the module and write a starter `depdog.yaml`. `--preset ddd\|hexagonal\|layered\|flat`, `--policy deny\|allow`, `--yes` (non-interactive), `--force` (overwrite). |
+| `depdog init` | Scan the module and write a starter `depdog.yaml`. `--preset ddd\|hexagonal\|layered\|flat`, `--policy deny\|allow`, `--yes` (non-interactive), `--force` (overwrite), `--merge` (add components for uncovered directories to an existing file, preserving its comments and formatting). |
 | `depdog check [packages]` | Evaluate imports against the rules. `--format text\|json\|github\|sarif`, `--fail-on any\|new`, `--color auto\|always\|never`. |
 | `depdog baseline` | Record current violations to `depdog.baseline.yaml` for the ratchet below. |
 | `depdog graph` | Emit the dependency graph. `--format dot\|mermaid`, `--level component\|package`, `--violations-only`, `--focus <component>`. |

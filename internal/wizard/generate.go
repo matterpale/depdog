@@ -79,6 +79,14 @@ func (c Config) Marshal() ([]byte, error) {
 	return []byte(b.String()), nil
 }
 
+// RuleBody renders the flow-form rule body for comp under the given policy
+// ("{ allow: [...] }" under deny, "{ deny: [...] }" under allow), or "" when
+// the component is unconstrained under that stance. `init --merge` uses it to
+// add a rule alongside each merged component.
+func RuleBody(comp Component, policy string) string {
+	return Config{Policy: policy}.ruleBody(comp)
+}
+
 // ruleBody renders a component's rule for the active policy, or "" when the
 // component is unconstrained (nothing to allow under deny, nothing to deny
 // under allow).

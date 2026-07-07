@@ -12,6 +12,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/matterpale/depdog/internal/config"
+	"github.com/matterpale/depdog/internal/core"
 	"github.com/matterpale/depdog/internal/wizard"
 )
 
@@ -21,6 +22,7 @@ func initCmd() *cobra.Command {
 		policy     string
 		assumeYes  bool
 		force      bool
+		merge      bool
 		outPath    string
 	)
 	cmd := &cobra.Command{
@@ -33,7 +35,15 @@ Run it with no flags for an interactive wizard, or with --yes to accept the
 suggestion non-interactively (for scripts and CI bootstrapping). --preset and
 --policy pin those choices; without them --yes defaults to ddd + deny.
 
-Exit codes: 0 written, 2 configuration or usage error.`,
+When a depdog.yaml already exists, init refuses to touch it unless you pass
+--force (overwrite it) or --merge (keep it). --merge rescans the module and
+appends a component — and, under policy deny, a starter rule — for every
+directory no existing component pattern covers, editing the file in place
+without disturbing its comments, ordering or formatting. It lists what it
+would add and asks for confirmation; --yes applies the additions
+non-interactively. When everything is already covered it changes nothing.
+
+Exit codes: 0 written (or nothing to merge), 2 configuration or usage error.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cwd, err := os.Getwd()
@@ -51,8 +61,20 @@ Exit codes: 0 written, 2 configuration or usage error.`,
 			} else if dest, err = filepath.Abs(dest); err != nil {
 				return err
 			}
+			if merge {
+				if force {
+					return errors.New("--merge and --force conflict — merge edits the existing file, force overwrites it; pick one")
+				}
+				if presetName != "" || policy != "" {
+					return errors.New("drop --preset and --policy — they have no effect with --merge; the existing file keeps its layout and policy")
+				}
+				if !assumeYes && !isInteractive(cmd) {
+					return errors.New("depdog init --merge needs an interactive terminal; pass --yes to apply the additions non-interactively")
+				}
+				return runMerge(cmd, root, dest, !assumeYes)
+			}
 			if _, err := os.Stat(dest); err == nil && !force {
-				return fmt.Errorf("%s already exists — rerun with --force to overwrite it", dest)
+				return fmt.Errorf("%s already exists — rerun with --force to overwrite it, or --merge to add newly-scanned components to it", dest)
 			}
 
 			// Reject bad flag values before scanning so the message is prompt.
@@ -135,8 +157,101 @@ Exit codes: 0 written, 2 configuration or usage error.`,
 	cmd.Flags().StringVar(&policy, "policy", "", "rule stance: deny (whitelist) or allow (blacklist)")
 	cmd.Flags().BoolVarP(&assumeYes, "yes", "y", false, "accept the suggestion without prompting")
 	cmd.Flags().BoolVar(&force, "force", false, "overwrite an existing depdog.yaml")
+	cmd.Flags().BoolVar(&merge, "merge", false, "add components for uncovered directories to an existing depdog.yaml, keeping its comments and formatting")
 	cmd.Flags().StringVar(&outPath, "config", "", "path to write (default: depdog.yaml next to go.mod)")
 	return cmd
+}
+
+// runMerge implements `init --merge`: rescan the module, propose a component
+// (plus, under policy deny, a starter rule) for every directory no existing
+// component pattern covers, and splice them into the existing file via
+// config.MergeComponents — a yaml.Node-located edit that leaves the user's
+// comments, ordering and formatting untouched. The merged bytes must pass
+// config.Parse before anything is written; when nothing is uncovered the file
+// is left alone.
+func runMerge(cmd *cobra.Command, root, dest string, interactive bool) error {
+	data, err := os.ReadFile(dest)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return fmt.Errorf("%s does not exist — run `depdog init` without --merge to create it", dest)
+		}
+		return err
+	}
+	rs, err := config.Parse(data)
+	if err != nil {
+		return fmt.Errorf("%s does not validate — fix it before merging: %w", relTo(root, dest), err)
+	}
+	taken, err := config.DeclaredNames(data)
+	if err != nil {
+		return err
+	}
+	scan, err := wizard.ScanModule(root)
+	if err != nil {
+		return err
+	}
+
+	existing := make([]wizard.Component, len(rs.Components))
+	for i, c := range rs.Components {
+		existing[i] = wizard.Component{Name: c.Name, Patterns: c.Patterns}
+	}
+	policy := wizard.PolicyDeny
+	if rs.Policy == core.PolicyAllow {
+		policy = wizard.PolicyAllow
+	}
+
+	proposed := wizard.ProposeMissing(existing, taken, scan, policy)
+	out := cmd.OutOrStdout()
+	if len(proposed) == 0 {
+		fmt.Fprintf(out, "Nothing to merge — every scanned directory is already covered by %s.\n", relTo(root, dest))
+		return nil
+	}
+
+	add := make([]config.MergeComponent, len(proposed))
+	names := make([]string, len(proposed))
+	for i, c := range proposed {
+		add[i] = config.MergeComponent{
+			Name:     c.Name,
+			Patterns: c.Patterns,
+			Comment:  c.Comment,
+			Rule:     wizard.RuleBody(c, policy),
+		}
+		names[i] = c.Name
+	}
+
+	merged, err := config.MergeComponents(data, add)
+	if err != nil {
+		return err
+	}
+	// Never write a file the checker would reject; the original stays intact.
+	if _, err := config.Parse(merged); err != nil {
+		return fmt.Errorf("internal error: merged config did not validate (%s left untouched): %w", relTo(root, dest), err)
+	}
+
+	if interactive {
+		fmt.Fprintf(out, "New components for directories no pattern covers:\n")
+		for _, c := range proposed {
+			fmt.Fprintf(out, "  + %s  %s\n", c.Name, strings.Join(c.Patterns, ", "))
+		}
+		ok, err := confirmWrite(cmd, dest, merged)
+		if err != nil {
+			return err
+		}
+		if !ok {
+			fmt.Fprintln(out, "Aborted — nothing written.")
+			return nil
+		}
+	}
+
+	if err := os.WriteFile(dest, merged, 0o644); err != nil {
+		return err
+	}
+	noun := "components"
+	if len(names) == 1 {
+		noun = "component"
+	}
+	fmt.Fprintf(out, "Added %d %s to %s: %s.\n", len(names), noun, relTo(root, dest), strings.Join(names, ", "))
+	fmt.Fprintln(out, "Review the additions, then run `depdog check`.")
+	return nil
 }
 
 // isInteractive reports whether stdin is a terminal we can drive huh with.

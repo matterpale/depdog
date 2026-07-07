@@ -619,3 +619,107 @@ func TestExplainUnknown(t *testing.T) {
 		t.Errorf("stderr should name the missing target:\n%s", stderr)
 	}
 }
+
+// mergeConfig is a hand-formatted config for the initModule layout that covers
+// only cmd, internal/domain and internal/repository, with comments and value
+// alignment a merge must preserve. handler, service, telemetry and util stay
+// uncovered.
+const mergeConfig = `# my architecture — hands off, depdog
+version: 1
+
+components:
+  main:    ["cmd/**"] # entrypoints
+  domain:  ["internal/domain/**"]
+
+  # data access
+  storage: ["internal/repository/**"]
+
+policy: deny
+
+# who may import whom
+rules:
+  main:    { allow: ["*"] }
+  domain:  { allow: [std] } # keep the core pure
+  storage: { allow: [domain, std, external] }
+
+options:
+  test_files: hybrid
+`
+
+func mergeModule(t *testing.T) string {
+	t.Helper()
+	dir := initModule(t)
+	if err := os.WriteFile(filepath.Join(dir, "depdog.yaml"), []byte(mergeConfig), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return dir
+}
+
+func TestInitMergeAddsUncovered(t *testing.T) {
+	dir := mergeModule(t)
+	out, stderr, exit := run(t, dir, "init", "--merge", "--yes")
+	if exit != 0 {
+		t.Fatalf("exit %d\nstdout:\n%s\nstderr:\n%s", exit, out, stderr)
+	}
+	for _, name := range []string{"handler", "service", "telemetry", "util"} {
+		if !strings.Contains(out, name) {
+			t.Errorf("stdout should name added component %q:\n%s", name, out)
+		}
+	}
+	golden(t, "init_merge.golden", readConfig(t, dir))
+
+	// The merged file must satisfy the same validator check uses.
+	if _, cerr, cexit := run(t, dir, "check"); cexit == 2 {
+		t.Fatalf("merged config is a config error (exit 2):\n%s", cerr)
+	}
+}
+
+func TestInitMergeNothingNew(t *testing.T) {
+	dir := initModule(t)
+	cfg := "version: 1\n\ncomponents:\n  app: [\"**\"] # everything\n\npolicy: deny\n\nrules:\n  app: { allow: [std, external] }\n"
+	if err := os.WriteFile(filepath.Join(dir, "depdog.yaml"), []byte(cfg), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	out, stderr, exit := run(t, dir, "init", "--merge", "--yes")
+	if exit != 0 {
+		t.Fatalf("exit %d\nstdout:\n%s\nstderr:\n%s", exit, out, stderr)
+	}
+	if !strings.Contains(out, "Nothing to merge") {
+		t.Errorf("stdout should say nothing changed:\n%s", out)
+	}
+	if got := readConfig(t, dir); got != cfg {
+		t.Errorf("a no-op merge must leave the file byte-for-byte intact:\n%s", got)
+	}
+}
+
+func TestInitMergeMissingConfig(t *testing.T) {
+	dir := initModule(t)
+	_, stderr, exit := run(t, dir, "init", "--merge", "--yes")
+	if exit != 2 {
+		t.Fatalf("exit %d, want 2", exit)
+	}
+	if !strings.Contains(stderr, "without --merge") {
+		t.Errorf("stderr should point at plain init:\n%s", stderr)
+	}
+}
+
+func TestInitMergeFlagConflicts(t *testing.T) {
+	dir := mergeModule(t)
+	if _, stderr, exit := run(t, dir, "init", "--merge", "--yes", "--force"); exit != 2 || !strings.Contains(stderr, "--force") {
+		t.Errorf("--merge --force: exit %d, stderr:\n%s", exit, stderr)
+	}
+	if _, stderr, exit := run(t, dir, "init", "--merge", "--yes", "--preset", "ddd"); exit != 2 || !strings.Contains(stderr, "--preset") {
+		t.Errorf("--merge --preset: exit %d, stderr:\n%s", exit, stderr)
+	}
+}
+
+func TestInitMergeNeedsTTYWithoutYes(t *testing.T) {
+	dir := mergeModule(t)
+	_, stderr, exit := run(t, dir, "init", "--merge")
+	if exit != 2 {
+		t.Fatalf("exit %d, want 2", exit)
+	}
+	if !strings.Contains(stderr, "--yes") {
+		t.Errorf("stderr should point at --yes:\n%s", stderr)
+	}
+}
