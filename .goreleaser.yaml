@@ -38,13 +38,22 @@ changelog:
       - "^docs:"
       - "^test:"
 
-brews:
+# Homebrew Cask — generated and pushed to github.com/matterpale/homebrew-tap on
+# each v* tag (needs the TAP_GITHUB_TOKEN secret, passed through release.yml).
+# Casks supersede the deprecated `brews` formulas; note they are macOS-only, so
+# Linux users install from the release archives directly.
+homebrew_casks:
   - repository:
       owner: matterpale
       name: homebrew-tap
       token: "{{ .Env.TAP_GITHUB_TOKEN }}"
     homepage: https://github.com/matterpale/depdog
     description: A Dependency Watchdog
-    license: MIT
-    test: |
-      system "#{bin}/depdog", "--version"
+    # depdog ships unsigned (CGO_ENABLED=0, not notarized); strip the quarantine
+    # attribute on install so macOS Gatekeeper doesn't block the binary.
+    hooks:
+      post:
+        install: |
+          if OS.mac?
+            system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/depdog"]
+          end
