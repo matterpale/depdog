@@ -17,32 +17,53 @@ import (
 type editorFinishedMsg struct{ err error }
 
 // refreshMsg carries a fresh load+check run back into the model: either new
-// data for every screen, or the error that kept the old data in place.
+// data for every screen (including the recompiled rule set the Config tab
+// renders), or the error that kept the old data in place.
 type refreshMsg struct {
-	res  *core.Result
-	pkgs []core.PackageView
-	err  error
+	res   *core.Result
+	pkgs  []core.PackageView
+	rules *core.RuleSet
+	err   error
 }
 
 // openInEditor builds the tea.ExecProcess command that suspends the UI and
-// opens $EDITOR at the selected file:line. It returns nil — with an actionable
-// status message set — when $EDITOR is unset or the selection has no position.
+// opens $EDITOR. On the Config tab it opens depdog.yaml itself at line 1 and
+// arms the auto-refresh flag; elsewhere it opens the selected file:line. It
+// returns nil — with an actionable status message set — when $EDITOR is unset or
+// the selection has no position.
 func (m *Model) openInEditor() tea.Cmd {
-	pos, ok := m.selectedPosition()
-	if !ok {
-		return nil // selectedPosition set the status
+	m.editedConfig = false
+	var (
+		file string
+		line int
+	)
+	if m.active == tabConfig {
+		file, line = filepath.FromSlash(m.configRel), 1
+		if file == "" {
+			m.status = "no config path known to edit — restart with `depdog tui`"
+			return nil
+		}
+	} else {
+		pos, ok := m.selectedPosition()
+		if !ok {
+			return nil // selectedPosition set the status
+		}
+		file, line = filepath.FromSlash(pos.File), pos.Line
 	}
+
 	editor := strings.TrimSpace(os.Getenv("EDITOR"))
 	if editor == "" {
 		m.status = "$EDITOR is not set — export EDITOR=vim (or your editor) and press e again"
 		return nil
 	}
-	file := filepath.FromSlash(pos.File)
 	if m.root != "" {
 		file = filepath.Join(m.root, file)
 	}
-	argv := editorArgv(editor, file, pos.Line)
+	argv := editorArgv(editor, file, line)
 	c := exec.Command(argv[0], argv[1:]...) // #nosec G204 -- $EDITOR is the user's own choice
+	if m.active == tabConfig {
+		m.editedConfig = true // its exit auto-fires the refresh pipeline
+	}
 	return tea.ExecProcess(c, func(err error) tea.Msg { return editorFinishedMsg{err: err} })
 }
 
@@ -113,7 +134,7 @@ func (m *Model) startRefresh() tea.Cmd {
 	m.status = "re-running check…"
 	refresh := m.refresh
 	return func() tea.Msg {
-		res, pkgs, err := refresh()
-		return refreshMsg{res: res, pkgs: pkgs, err: err}
+		res, pkgs, rules, err := refresh()
+		return refreshMsg{res: res, pkgs: pkgs, rules: rules, err: err}
 	}
 }

@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/matterpale/depdog/internal/core"
+	"github.com/matterpale/depdog/internal/report"
 )
 
 // listRows is how many rows a scrollable list may occupy given the window
@@ -317,6 +318,83 @@ func (m Model) renderImport(from string, iv core.ImportView) string {
 		return styleBad.Render("  ✗ ") + line
 	}
 	return "    " + line
+}
+
+// configLines renders the Config tab's document: the active config path header
+// followed by the compiled rule set (report.RuleSet — the same content as
+// `depdog config`). It is a static block of lines the view then windows; there
+// is no selection here, only a scroll offset.
+func (m Model) configLines() []string {
+	pathLabel := m.configRel
+	if pathLabel == "" {
+		pathLabel = "(config path unknown)"
+	}
+	lines := []string{styleDim.Render("config: ") + pathLabel, ""}
+	if m.rules == nil {
+		return append(lines, styleDim.Render("no compiled rule set available — restart with `depdog tui`"))
+	}
+	var buf strings.Builder
+	if err := report.RuleSet(&buf, m.rules); err != nil {
+		return append(lines, styleBad.Render("failed to render the rule set: "+err.Error()))
+	}
+	dump := strings.Split(strings.TrimRight(buf.String(), "\n"), "\n")
+	return append(lines, dump...)
+}
+
+// configLineCount is how many lines the Config document occupies — the clamp
+// bound for its scroll offset.
+func (m Model) configLineCount() int { return len(m.configLines()) }
+
+// clampScroll bounds a document scroll offset to [0, maxOffset], where maxOffset
+// is the deepest offset that still fills the window. budget <= 0 (unsized) or a
+// document that fits pins the offset at 0.
+func clampScroll(off, n, budget int) int {
+	if off < 0 {
+		return 0
+	}
+	if budget <= 0 || n <= budget {
+		return 0
+	}
+	// Reserve two rows for the ▲/▼ markers, matching what configView renders.
+	visible := budget - 2
+	if visible < 1 {
+		visible = 1
+	}
+	if max := n - visible; off > max {
+		return max
+	}
+	return off
+}
+
+// configView renders the Config document into the height-aware window, with the
+// existing `▲/▼ N more` markers when it is taller than the screen. It is a
+// document (scroll offset), not a list (no selection).
+func (m Model) configView() string {
+	lines := m.configLines()
+	budget := m.bodyRows()
+	if budget <= 0 || len(lines) <= budget {
+		return strings.Join(lines, "\n")
+	}
+
+	visible := budget - 2 // leave room for the ▲/▼ markers
+	if visible < 1 {
+		visible = 1
+	}
+	off := clampScroll(m.configScroll, len(lines), budget)
+	end := off + visible
+	if end > len(lines) {
+		end = len(lines)
+	}
+
+	var out []string
+	if off > 0 {
+		out = append(out, moreLine("▲", off))
+	}
+	out = append(out, lines[off:end]...)
+	if below := len(lines) - end; below > 0 {
+		out = append(out, moreLine("▼", below))
+	}
+	return strings.Join(out, "\n")
 }
 
 // short trims the module path prefix for readable package labels.

@@ -9,7 +9,7 @@ components:
   golang: { path: "internal/lang/golang/**", allow: [core, lang, std, external] } # carve-out: deeper pattern wins over lang
   report: { path: "internal/report/**",      allow: [core, std, external] } # lipgloss styles the human output
   wizard: { path: "internal/wizard/**",      allow: [core, std] } # pure heuristics: engine matcher + std only
-  tui:    { path: "internal/tui/**",         allow: [core, std, external] } # bubbletea view over a core.Result
+  tui:    { path: "internal/tui/**",         allow: [core, report, std, external] } # bubbletea view over core; report.RuleSet renders the Config tab
   cli:    { path: "internal/cli/**",         allow: [core, config, lang, golang, report, wizard, tui, std, external] }
   e2e:    { path: "internal/e2e/**",         allow: [std] }
 

@@ -21,6 +21,7 @@ const (
 	tabDashboard tab = iota
 	tabViolations
 	tabPackages
+	tabConfig
 	numTabs
 )
 
@@ -30,6 +31,8 @@ func (t tab) title() string {
 		return "Violations"
 	case tabPackages:
 		return "Packages"
+	case tabConfig:
+		return "Config"
 	default:
 		return "Dashboard"
 	}
@@ -49,19 +52,28 @@ var (
 type Model struct {
 	res       *core.Result
 	pkgs      []core.PackageView // sorted by component, then import path
+	rules     *core.RuleSet      // compiled config rendered on the Config tab
 	violEdges map[[2]string]bool // (from package, import) of every violation
 	root      string             // module root; positions are relative to it
-	refresh   func() (*core.Result, []core.PackageView, error)
+	configRel string             // module-relative config path (stable across refreshes)
+	refresh   func() (*core.Result, []core.PackageView, *core.RuleSet, error)
 	status    string // transient message shown in the footer, cleared on any key
 	active    tab
 	selected  int // highlighted violation on the Violations screen
 	selPkg    int // highlighted package on the Packages screen
-	filter    string
-	filtering bool // capturing keystrokes into filter on the Violations screen
-	showHelp  bool
-	width     int
-	height    int
-	quitting  bool
+	// configScroll is the document scroll offset on the Config tab. That tab is a
+	// document (a scroll offset), not a list (a selection): up/down move the window
+	// over static text, so it has no highlighted row.
+	configScroll int
+	filter       string
+	filtering    bool // capturing keystrokes into filter on the Violations screen
+	// editedConfig records that the last $EDITOR launch came from the Config tab,
+	// so its exit auto-fires the refresh pipeline.
+	editedConfig bool
+	showHelp     bool
+	width        int
+	height       int
+	quitting     bool
 }
 
 // Option configures optional model capabilities.
@@ -74,9 +86,21 @@ func WithRoot(dir string) Option {
 }
 
 // WithRefresh wires the `r` key: the hook re-runs the load+check pipeline and
-// returns fresh, sorted engine output for every screen.
-func WithRefresh(f func() (*core.Result, []core.PackageView, error)) Option {
+// returns fresh, sorted engine output for every screen — including the compiled
+// rule set the Config tab renders (core.Result does not carry it, so the hook
+// hands it back alongside).
+func WithRefresh(f func() (*core.Result, []core.PackageView, *core.RuleSet, error)) Option {
 	return func(m *Model) { m.refresh = f }
+}
+
+// WithConfig wires the Config tab: the module-relative config path (stable
+// across refreshes) and the compiled rule set to render via report.RuleSet. The
+// rule set is later replaced in place by a refresh; the path is not.
+func WithConfig(rel string, rs *core.RuleSet) Option {
+	return func(m *Model) {
+		m.configRel = rel
+		m.rules = rs
+	}
 }
 
 // New builds the model over a check result and its package views.
@@ -116,15 +140,31 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case editorFinishedMsg:
 		if msg.err != nil {
 			m.status = fmt.Sprintf("editor exited with an error: %v", msg.err)
+			m.editedConfig = false
+			return m, nil
+		}
+		// A $EDITOR launched from the Config tab edited depdog.yaml itself: fire
+		// the existing refresh so the edited rules take effect on every screen.
+		if m.editedConfig {
+			m.editedConfig = false
+			cmd := m.startRefresh()
+			if cmd != nil {
+				m.status = "config edited — re-running…"
+			}
+			return m, cmd
 		}
 	case refreshMsg:
 		if msg.err != nil {
-			m.status = fmt.Sprintf("re-run failed: %v — fix it and press r again", msg.err)
+			m.status = "re-run failed: " + oneLine(msg.err.Error()) + " — fix it and press r again"
 			return m, nil
 		}
 		m.setData(msg.res, msg.pkgs)
+		if msg.rules != nil {
+			m.rules = msg.rules
+		}
 		m.selected = clamp(m.selected, len(m.filteredViolations()))
 		m.selPkg = clamp(m.selPkg, len(m.filteredPackages()))
+		m.configScroll = 0 // the fresh document may be shorter; start at the top
 		m.status = "re-ran: " + plural(len(msg.res.Violations), "violation")
 	case tea.KeyMsg:
 		m.status = "" // any key dismisses a transient status message
@@ -160,6 +200,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.active = tabViolations
 		case "3":
 			m.active = tabPackages
+		case "4":
+			m.active = tabConfig
 		case "/":
 			if m.active == tabViolations || m.active == tabPackages {
 				m.filtering = true
@@ -210,13 +252,16 @@ func (m *Model) resetSelection() {
 }
 
 // moveSelection moves the highlighted row on whichever list-bearing screen is
-// active, clamped to its bounds.
+// active, clamped to its bounds. The Config tab is a document, not a list: the
+// same keys scroll its window, clamped to the last renderable offset.
 func (m *Model) moveSelection(d int) {
 	switch m.active {
 	case tabViolations:
 		m.selected = clamp(m.selected+d, len(m.filteredViolations()))
 	case tabPackages:
 		m.selPkg = clamp(m.selPkg+d, len(m.filteredPackages()))
+	case tabConfig:
+		m.configScroll = clampScroll(m.configScroll+d, m.configLineCount(), m.bodyRows())
 	}
 }
 
@@ -281,6 +326,8 @@ func (m Model) View() string {
 			b.WriteString(m.violationsView())
 		case tabPackages:
 			b.WriteString(m.packagesView())
+		case tabConfig:
+			b.WriteString(m.configView())
 		default:
 			b.WriteString(m.dashboardView())
 		}
@@ -294,10 +341,10 @@ func (m Model) View() string {
 func helpView() string {
 	rows := [][2]string{
 		{"tab / shift+tab", "next / previous screen"},
-		{"1 / 2 / 3", "Dashboard / Violations / Packages"},
-		{"up/down or k/j", "move the selection"},
+		{"1 / 2 / 3 / 4", "Dashboard / Violations / Packages / Config"},
+		{"up/down or k/j", "move the selection, or scroll Config"},
 		{"/", "filter the list (Violations, Packages)"},
-		{"e", "open the selection in $EDITOR (Violations, Packages)"},
+		{"e", "open $EDITOR: the selection (Violations, Packages) or depdog.yaml (Config)"},
 		{"r", "re-run the check and refresh every screen"},
 		{"esc", "clear filter, or close this help"},
 		{"?", "toggle this help"},
@@ -350,9 +397,12 @@ func (m Model) footer() string {
 		return styleWarn.Render(m.status)
 	}
 	if m.active == tabViolations || m.active == tabPackages {
-		return styleDim.Render("tab/1-3 switch · ↑/↓ move · / filter · e edit · r re-run · ? help · q quit")
+		return styleDim.Render("tab/1-4 switch · ↑/↓ move · / filter · e edit · r re-run · ? help · q quit")
 	}
-	return styleDim.Render("tab/1-3 switch · ↑/↓ move · r re-run · ? help · q quit")
+	if m.active == tabConfig {
+		return styleDim.Render("tab/1-4 switch · ↑/↓ scroll · e edit depdog.yaml · r re-run · ? help · q quit")
+	}
+	return styleDim.Render("tab/1-4 switch · ↑/↓ move · r re-run · ? help · q quit")
 }
 
 func plural(n int, word string) string {
@@ -360,4 +410,13 @@ func plural(n int, word string) string {
 		return fmt.Sprintf("1 %s", word)
 	}
 	return fmt.Sprintf("%d %ss", n, word)
+}
+
+// oneLine collapses a possibly multi-line message to its first line, so a
+// multi-line config error still fits the single-line footer.
+func oneLine(s string) string {
+	if i := strings.IndexByte(s, '\n'); i >= 0 {
+		return strings.TrimSpace(s[:i])
+	}
+	return s
 }

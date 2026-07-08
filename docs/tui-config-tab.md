@@ -1,8 +1,13 @@
 # TUI Config tab — view the compiled rules, edit via `$EDITOR`, auto re-check
 
-Status: **planned**. Evaluated with the owner on 2026-07-08: the original proposal
-was editing the YAML *inside* the TUI; that was rejected (reasons below) in favor
-of a read-only panel with an `$EDITOR` round-trip and automatic re-check.
+Status: **shipped** (2026-07-08). Evaluated with the owner on 2026-07-08: the
+original proposal was editing the YAML *inside* the TUI; that was rejected
+(reasons below) in favor of a read-only panel with an `$EDITOR` round-trip and
+automatic re-check. Delivered exactly as specified in the five implementation
+steps below — a fourth `Config` tab (key `4`), a scroll-offset document
+rendering `report.RuleSet`, an `e` round-trip that opens `depdog.yaml` at line 1
+and auto-fires the refresh on exit, a widened refresh hook carrying the compiled
+rule set, and no embedded editor.
 
 ## Problem
 

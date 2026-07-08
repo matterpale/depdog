@@ -110,16 +110,23 @@ Improvements, refinements, and polish beyond the M0–M5 work already shipped.
 
 ## TUI
 
-- **Config tab — view the compiled rules, edit via `$EDITOR`, auto re-check.**
-  (S–M) A fourth screen showing the active config path and the compiled rule
-  set (`depdog config`'s data, rendered via `report.RuleSet`); `e` there opens
-  `depdog.yaml` itself in `$EDITOR`, and the editor exiting auto-fires the
-  existing `r` refresh pipeline so the edited rules take effect on every screen
-  (an invalid config surfaces through the existing re-run error path, old data
-  kept). Deliberately **not** an embedded YAML editor — that would break the
-  TUI's "adds navigation, not data" design note and reimplement a worse editor;
-  structured rule editing stays a separate, later item. Evaluated with the
-  owner 2026-07-08; detailed plan in
+- ✅ **Shipped: Config tab — view the compiled rules, edit via `$EDITOR`, auto
+  re-check.** A fourth screen (key `4`) showing the active config path
+  (module-relative) and the compiled rule set (`depdog config`'s data, rendered
+  via `report.RuleSet` — `tui → report` added as an allowed edge in depdog's own
+  config). A document view: `↑/↓` scroll a height-aware window with the existing
+  `▲/▼ N more` markers, not a list selection. `e` there opens `depdog.yaml`
+  itself in `$EDITOR` at line 1, and the editor exiting auto-fires the existing
+  `r` refresh pipeline (status "config edited — re-running…") so the edited rules
+  take effect on every screen — an invalid config surfaces through the existing
+  re-run error path (truncated to the one-line footer), old data kept. The
+  refresh hook was widened to hand back the recompiled rule set alongside the
+  result (`core.Result` does not carry it). Deliberately **not** an embedded YAML
+  editor — that would break the TUI's "adds navigation, not data" design note and
+  reimplement a worse editor; structured rule editing stays a separate, later
+  item. Proven by model tests (tab cycling, `4` selection, scroll clamping,
+  config-tab `e` argv, auto-refresh on editor exit, re-render on a delivered rule
+  set) and two golden frames. Evaluated with the owner 2026-07-08; design in
   [docs/tui-config-tab.md](docs/tui-config-tab.md).
 
 - ✅ **Shipped:** the Violations and Packages lists now scroll — a height-aware
