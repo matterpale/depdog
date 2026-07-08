@@ -36,5 +36,11 @@ Type "j"
 Sleep 1.5s
 Type "3"
 Sleep 2.5s
+Type "4"
+Sleep 2.5s
+Type "j"
+Sleep 700ms
+Type "j"
+Sleep 1.5s
 Type "q"
 Sleep 1s

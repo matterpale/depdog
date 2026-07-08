@@ -194,4 +194,12 @@ Improvements, refinements, and polish beyond the M0–M5 work already shipped.
   the dirty fixture into `docs/demo.gif`, embedded at the top of the README.
 - **Second language adapter (e.g. TypeScript)** to prove the `lang` seam — the
   strongest validation that `core` is truly language-agnostic.
-- **Editor/LSP integration** for inline architecture diagnostics.
+- **Editor/LSP integration** for inline architecture diagnostics. (L)
+  **Design settled with the owner 2026-07-08** — detailed plan in
+  [docs/lsp.md](docs/lsp.md); ready to implement. A `depdog lsp` subcommand and
+  a new `internal/lsp` frontend (a pure consumer of the engine — no `core`
+  changes) that speaks LSP over stdio and publishes each violation as a
+  diagnostic on its import line. Settled: `go.lsp.dev/protocol`; re-check on
+  save + `depdog.yaml` change (debounced); ship the editor-agnostic server +
+  setup docs for Neovim, Helix, VS Code, and JetBrains/GoLand (no bundled
+  extension); v1 is diagnostics-only (hovers and code actions are v2).

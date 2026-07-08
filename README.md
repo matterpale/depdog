@@ -1,8 +1,8 @@
-<div align="center">
+<div>
 
 <img src="docs/logo.svg" alt="depdog" width="330">
 
-**A dependency watchdog for Go** — your architecture rules, enforced on every build.
+**A Dependency Watchdog for Go** — your architecture rules, enforced on every build.
 
 [![Go Reference](https://pkg.go.dev/badge/github.com/matterpale/depdog.svg)](https://pkg.go.dev/github.com/matterpale/depdog)
 [![CI](https://github.com/matterpale/depdog/actions/workflows/ci.yml/badge.svg)](https://github.com/matterpale/depdog/actions/workflows/ci.yml)
