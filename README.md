@@ -218,8 +218,10 @@ failing build.
 
 ## Status
 
-v0.1.0 — the first tagged release. The M0–M5 roadmap in [`PLAN.md`](PLAN.md)
-is complete; [`BACKLOG.md`](BACKLOG.md) tracks what's next.
+v0.2.0 — the current release. It brings the config v2 format (per-component
+`allow`/`deny` in one block, `default` stance) among a round of post-v0.1
+refinements. The M0–M5 roadmap in [`PLAN.md`](PLAN.md) is complete;
+[`BACKLOG.md`](BACKLOG.md) tracks what's next.
 
 ## License
 

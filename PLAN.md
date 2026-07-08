@@ -309,6 +309,7 @@ Watch mode; rule editing in the TUI; external-dependency allowlists per componen
 | CLI framework | cobra + fang | Standard ecosystem + charmbracelet polish, consistent with the TUI stack. |
 | Module path | `github.com/matterpale/depdog` | Confirmed with the owner. |
 | License | MIT | Chosen by the owner on 2026-07-08, ahead of the v0.1.0 release. |
+| Releases | Milestone-gated tags | v0.1.0 shipped the M0–M5 roadmap; v0.2.0 follows with the config v2 format and post-v0.1 refinements ([`BACKLOG.md`](BACKLOG.md)). Version is injected into `cli.Version` at build time by goreleaser. |
 
 All previously open questions were resolved with the project owner on 2026-07-06 and folded
 into the decisions table above.
