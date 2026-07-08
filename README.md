@@ -14,14 +14,14 @@
 </div>
 
 ```
-depdog check — github.com/acme/shop
+depdog check — github.com/matterpale/depdog
 
-✗ domain: allow [std]  (2 violations)
-    github.com/acme/shop/internal/domain/order
-      → github.com/acme/shop/internal/repository   internal/domain/order/order.go:7
-      → github.com/google/uuid                     internal/domain/order/order.go:9
+✗ core: allow [std]  (2 violations)
+    github.com/matterpale/depdog/internal/core
+      → github.com/matterpale/depdog/internal/report   internal/core/evaluate.go:9
+      → github.com/charmbracelet/lipgloss              internal/core/core.go:12
 
-1 violation · 1 warning · 12 packages · 39 edges checked in 40ms
+2 violations · 10 packages · 107 edges checked in 112ms
 ```
 
 <p align="center">
