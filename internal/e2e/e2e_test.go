@@ -326,7 +326,7 @@ func TestInitRefusesOverwrite(t *testing.T) {
 	if exit != 2 {
 		t.Fatalf("overwrite without --force exit %d, want 2", exit)
 	}
-	if !strings.Contains(stderr, "--force") {
+	if flat := strings.Join(strings.Fields(stderr), ""); !strings.Contains(flat, "--force") {
 		t.Errorf("stderr should mention --force:\n%s", stderr)
 	}
 	if _, stderr, exit := run(t, dir, "init", "--yes", "--force"); exit != 0 {
