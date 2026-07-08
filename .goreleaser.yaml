@@ -48,7 +48,7 @@ changelog:
 #       name: homebrew-tap
 #       token: "{{ .Env.TAP_GITHUB_TOKEN }}"
 #     homepage: https://github.com/matterpale/depdog
-#     description: Keep a Go codebase's internal dependencies pointing in the right direction
+#     description: A Dependency Watchdog
 #     license: MIT
 #     test: |
 #       system "#{bin}/depdog", "--version"

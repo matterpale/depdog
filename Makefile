@@ -5,8 +5,13 @@
 VERSION := $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 LDFLAGS := -X github.com/matterpale/depdog/internal/cli.Version=$(VERSION)
 
-.DEFAULT_GOAL := build
-.PHONY: build install test check lint
+.DEFAULT_GOAL := help
+.PHONY: help build install test check lint
+
+## help: list the available targets (this menu)
+help:
+	@echo "depdog make targets:"
+	@grep -E '^## ' $(MAKEFILE_LIST) | sed 's/^## /  /'
 
 ## build: compile everything
 build:

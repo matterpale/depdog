@@ -4,6 +4,9 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
+
 	"github.com/matterpale/depdog/internal/core"
 	"github.com/matterpale/depdog/internal/report"
 )
@@ -25,7 +28,8 @@ func (m Model) listRows() int {
 // bodyRows is how many terminal rows a screen body may fill, after the header,
 // its two surrounding blank lines and the footer. Zero means unsized — the
 // caller renders everything and lets the terminal scroll. The Packages screen
-// splits this budget between its list and detail panes so neither overflows.
+// caps its side-by-side list and detail columns to this budget so neither
+// overflows the screen height.
 func (m Model) bodyRows() int {
 	if m.height == 0 {
 		return 0
@@ -172,43 +176,103 @@ func (m Model) packagesView() string {
 	}
 	sel := clamp(m.selPkg, len(pkgs))
 
-	// Split the body budget between the list and the detail pane so neither can
-	// grow past the screen. avail == 0 means unsized: render everything.
-	avail := 0
+	legend := styleDim.Render("[std] std-lib · [external] third-party · [name] component · ✗ violates a rule")
+
+	// The list and the detail pane sit side by side, so both get the full body
+	// height, less the filter head and the full-width legend (a blank + one line)
+	// that spans under both columns. paneRows == 0 means unsized: render everything.
+	paneRows := 0
 	if body := m.bodyRows(); body > 0 {
-		if avail = body - len(head); avail < 6 {
-			avail = 6
+		if paneRows = body - len(head) - 2; paneRows < 4 {
+			paneRows = 4
 		}
 	}
-	detailMax := 0
-	if avail > 0 {
-		if detailMax = avail / 2; detailMax < 7 {
-			detailMax = 7
-		}
-		if detailMax > avail-3 {
-			detailMax = avail - 3
-		}
-		if detailMax < 5 {
-			detailMax = 5
-		}
-	}
-	detail := m.packageDetail(pkgs[sel], detailMax)
+	list := m.packageList(pkgs, sel, paneRows)
+	detail := m.packageDetail(pkgs[sel], paneRows)
 
-	listBudget := 0
-	if avail > 0 {
-		if listBudget = avail - len(detail); listBudget < 3 {
-			listBudget = 3
-		}
+	out := head
+	if m.width > 0 {
+		out = append(out, m.twoColumns(list, detail)...)
+	} else {
+		// Unsized (the first frame before a resize): there is no width to split
+		// into columns, so stack the panes and let the terminal scroll.
+		out = append(out, list...)
+		out = append(out, "")
+		out = append(out, detail...)
 	}
-
-	out := append(head, m.packageList(pkgs, sel, listBudget)...)
-	out = append(out, detail...)
+	out = append(out, "", legend)
 	// Safety net: never exceed the body budget, so the alt-screen header can't
 	// scroll off even when a tiny terminal squeezes the panes.
 	if body := m.bodyRows(); body > 0 && len(out) > body {
 		out = out[:body]
 	}
 	return strings.Join(out, "\n")
+}
+
+// twoColumns lays the package list and the detail pane side by side — the list
+// on the left, a vertical divider, the detail on the right — joining them row by
+// row. Each column is fitted to its width so a long import path can never wrap
+// and push the header off screen, and the divider runs the full height of the
+// taller column.
+func (m Model) twoColumns(left, right []string) []string {
+	const gutter = 3 // the width of the " │ " divider
+	avail := m.width - gutter
+	if avail < 2 {
+		avail = 2
+	}
+	leftW := 0
+	for _, l := range left {
+		if w := lipgloss.Width(l); w > leftW {
+			leftW = w
+		}
+	}
+	if maxLeft := avail * 2 / 5; leftW > maxLeft { // the list never takes over 40%
+		leftW = maxLeft
+	}
+	if leftW < 1 {
+		leftW = 1
+	}
+	rightW := avail - leftW
+
+	div := styleDim.Render(" │ ")
+	n := len(left)
+	if len(right) > n {
+		n = len(right)
+	}
+	out := make([]string, n)
+	for i := 0; i < n; i++ {
+		var l, r string
+		if i < len(left) {
+			l = left[i]
+		}
+		if i < len(right) {
+			r = right[i]
+		}
+		out[i] = padCell(l, leftW) + div + fitCell(r, rightW)
+	}
+	return out
+}
+
+// fitCell truncates s to at most w visible cells with an ellipsis, ANSI-aware so
+// styled text keeps its escape codes intact.
+func fitCell(s string, w int) string {
+	if w <= 0 {
+		return ""
+	}
+	if lipgloss.Width(s) > w {
+		return ansi.Truncate(s, w, "…")
+	}
+	return s
+}
+
+// padCell fits s into exactly w cells: truncated when too wide, space-padded when
+// too narrow, so the divider to its right stays vertically aligned.
+func padCell(s string, w int) string {
+	s = fitCell(s, w)
+	if d := w - lipgloss.Width(s); d > 0 {
+		return s + strings.Repeat(" ", d)
+	}
+	return s
 }
 
 // packageList renders the grouped, scrollable package list into at most budget
@@ -256,10 +320,11 @@ func (m Model) packageList(pkgs []core.PackageView, sel, budget int) []string {
 	return out
 }
 
-// packageDetail renders the selected package's detail pane: its outgoing imports,
-// incoming importers and the class legend. When max > 0 the import/importer list
-// is truncated to fit with a "… N more" summary, so the pane keeps a bounded
-// height instead of growing with the package's fan-out.
+// packageDetail renders the selected package's detail pane: a path header over
+// its outgoing imports and incoming importers. When max > 0 the import/importer
+// list is truncated to fit with a "… N more" summary, so the pane keeps a bounded
+// height instead of growing with the package's fan-out. The class legend is drawn
+// separately, full-width, under both columns.
 func (m Model) packageDetail(p core.PackageView, max int) []string {
 	var content []string
 	if len(p.Imports) == 0 {
@@ -277,10 +342,9 @@ func (m Model) packageDetail(p core.PackageView, max int) []string {
 		}
 	}
 
-	// Reserve the pane's fixed chrome: a leading blank, the path header, a
-	// trailing blank and the legend (4 lines). The rest is for content.
+	// Reserve one row for the path header; the rest is for content.
 	if max > 0 {
-		room := max - 4
+		room := max - 1
 		if room < 1 {
 			room = 1
 		}
@@ -293,9 +357,8 @@ func (m Model) packageDetail(p core.PackageView, max int) []string {
 		}
 	}
 
-	out := []string{"", styleDim.Render("── " + p.ImportPath + " ──")}
-	out = append(out, content...)
-	return append(out, "", styleDim.Render("[std] std-lib · [external] third-party · [name] component · ✗ violates a rule"))
+	out := []string{styleDim.Render("── " + p.ImportPath + " ──")}
+	return append(out, content...)
 }
 
 // renderImport shows one outgoing edge: the import path, a [class] or
