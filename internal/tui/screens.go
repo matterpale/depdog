@@ -276,29 +276,49 @@ func padCell(s string, w int) string {
 }
 
 // packageList renders the grouped, scrollable package list into at most budget
-// rows (0 == unbounded), inserting a component header at each group boundary and
-// keeping the selected package in view. Headers are flattened into the same line
-// stream as the rows, so they count against the budget and the block's height
-// stays fixed — that is what keeps the selection from skidding as it moves.
+// rows (0 == unbounded), inserting a group header at each boundary and keeping
+// the selected package in view. Offending packages are pulled into a leading
+// red "▸ violations" group (their order is set in setData); the rest keep their
+// component grouping. Headers are flattened into the same line stream as the
+// rows, so they count against the budget and the block's height stays fixed —
+// that is what keeps the selection from skidding as it moves.
 func (m Model) packageList(pkgs []core.PackageView, sel, budget int) []string {
 	var lines []string
 	selLine := 0
-	lastComp := "\x00"
+	lastGroup := "\x00"
 	for i, p := range pkgs {
-		comp := p.Component
-		if comp == "" {
-			comp = "unassigned"
+		viol := m.violPkgs[p.ImportPath]
+		// "\x00" prefixes the violations sentinel so it can never collide with a
+		// real component that happens to be named "violations".
+		group := p.Component
+		if group == "" {
+			group = "unassigned"
 		}
-		if comp != lastComp {
-			lines = append(lines, styleDim.Render("▸ "+comp))
-			lastComp = comp
+		if viol {
+			group = "\x00violations"
 		}
-		name := "  " + m.short(p.ImportPath)
+		if group != lastGroup {
+			header := "▸ " + strings.TrimPrefix(group, "\x00")
+			if viol {
+				lines = append(lines, styleBad.Render(header))
+			} else {
+				lines = append(lines, styleDim.Render(header))
+			}
+			lastGroup = group
+		}
+		label := "  " + m.short(p.ImportPath)
+		switch {
+		case i == sel && viol:
+			label = styleSelectedBad.Render(label)
+		case i == sel:
+			label = styleSelected.Render(label)
+		case viol:
+			label = styleBad.Render(label)
+		}
 		if i == sel {
 			selLine = len(lines)
-			name = styleSelected.Render(name)
 		}
-		lines = append(lines, name)
+		lines = append(lines, label)
 	}
 
 	max := budget

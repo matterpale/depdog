@@ -156,7 +156,9 @@ func TestPackagesView(t *testing.T) {
 	m := update(New(fixtureResult(), fixturePkgs()), runes("3"))
 	v := m.View()
 	for _, want := range []string{
-		"Packages", "▸ domain", "▸ handler", "internal/domain",
+		// Both fixture packages are violation sources, so they land in the
+		// leading "▸ violations" group rather than their component groups.
+		"Packages", "▸ violations", "internal/domain", "internal/handler",
 		"imports:", "[repository]", "✗", "imported by:",
 		"[external] third-party", // the class legend
 	} {
@@ -407,16 +409,58 @@ func TestPackageFilter(t *testing.T) {
 	if !strings.Contains(v, "internal/handler") {
 		t.Errorf("matching package should show:\n%s", v)
 	}
-	if strings.Contains(v, "▸ domain") {
-		t.Errorf("non-matching component group should be filtered out:\n%s", v)
+	// The filter narrows the list itself to the one matching package (the detail
+	// pane may still name domain as an import, so assert on the list, not the view).
+	if fp := m.filteredPackages(); len(fp) != 1 || fp[0].ImportPath != "example.test/shop/internal/handler" {
+		t.Errorf("filter should narrow the package list to handler, got %v", fp)
 	}
 	m = update(m, tea.KeyMsg{Type: tea.KeyEsc})
 	if m.filtering || m.filter != "" {
 		t.Errorf("esc should clear the filter: filtering=%v filter=%q", m.filtering, m.filter)
 	}
-	// After clearing, both groups are back.
-	if !strings.Contains(m.View(), "▸ domain") {
+	// After clearing, every package is back.
+	if !strings.Contains(m.View(), "internal/domain") {
 		t.Errorf("clearing the filter should restore all packages:\n%s", m.View())
+	}
+}
+
+// TestPackagesViolationsFirst pins the ordering: offending packages are pulled
+// into a leading "▸ violations" group, above the component groups of the rest.
+func TestPackagesViolationsFirst(t *testing.T) {
+	res := &core.Result{
+		ModulePath: "m",
+		Violations: []core.Violation{{
+			FromPackage: "m/a", FromComponent: "aaa",
+			ImportPath: "m/x", Rule: "aaa: allow [std]",
+			Positions: []core.Position{{File: "a.go", Line: 1}},
+		}},
+	}
+	pkgs := []core.PackageView{
+		{ImportPath: "m/a", Component: "aaa", Imports: []core.ImportView{{Path: "m/x", Class: core.ClassInModule, Component: "xxx"}}},
+		{ImportPath: "m/b", Component: "bbb"},
+		{ImportPath: "m/c", Component: "ccc"},
+	}
+	m := update(New(res, pkgs), runes("3"))
+	m = update(m, tea.WindowSizeMsg{Width: 80, Height: 24})
+	v := m.View()
+
+	vi := strings.Index(v, "▸ violations")
+	if vi < 0 {
+		t.Fatalf("offending packages should be grouped under a ▸ violations header:\n%s", v)
+	}
+	// The clean packages keep their component grouping, below the violations group.
+	for _, comp := range []string{"▸ bbb", "▸ ccc"} {
+		ci := strings.Index(v, comp)
+		if ci < 0 {
+			t.Errorf("clean component group %q should still render:\n%s", comp, v)
+		}
+		if ci >= 0 && ci < vi {
+			t.Errorf("the violations group should come before %q:\n%s", comp, v)
+		}
+	}
+	// The offending package is listed only under violations, not its own component.
+	if strings.Contains(v, "▸ aaa") {
+		t.Errorf("an offending package should not also appear under its component header:\n%s", v)
 	}
 }
 
