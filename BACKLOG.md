@@ -8,6 +8,35 @@ Improvements, refinements, and polish beyond the M0–M5 work already shipped.
 
 ## Rules & policy
 
+- **Boundaries — orthogonal mutual-exclusion groups.** (M–L) A second
+  classification axis: named sets of members (components or path globs) that may
+  not import across each other, *orthogonal* to most-specific-wins component
+  assignment — so a package sits in its layer component **and** several
+  boundaries at once. Collapses peer `deny`-list boilerplate into one
+  declaration, and makes cross-cutting isolation ("no `cmd/` service imports
+  another") expressible without O(n²) deny lists or a `**` catch-all. Symmetric by
+  default, with an opt-in `sealed: true` flag (nothing outside may import in — for
+  "shared libs must not depend on a service"). Distinct from today's `groups`
+  (which expand in allow/deny lists — kept as-is). Engine change: core membership
+  index + evaluate + all five report formats + schema. Design settled with the
+  owner 2026-07-08 (name, glob members, sealed flag, respect `test_files`,
+  orthogonal to assignment); detailed plan in
+  [docs/boundaries.md](docs/boundaries.md).
+
+- ✅ **Shipped (config v2, breaking):** merged the separate `components:` and
+  `rules:` blocks into one. Each component is now `name: { path: <glob|list>,
+  allow: [...], deny: [...] }` — rules are per-component, so the old two-block
+  layout duplicated every name. `path` takes a scalar or a list; an entry with
+  no allow/deny falls back to `default`. `version` is now `2`; a v1 config gets a
+  migration error built from the user's own first component. No dual-format
+  support (configs stay standalone, matching the `extends:` decision).
+- ✅ **Shipped (config v2, breaking):** the top-level fallback field was renamed
+  `policy` → `default` and **its default flipped**: a component with no
+  allow/deny rule now imports anything (was: nothing). "No rule = no restriction"
+  matches the non-blocking adoption ethos, and it fixes the old deny-default that
+  made rule-less components violate on every import (including std). Set
+  `default: deny` for the strict fail-closed stance. A lingering `policy:` key
+  gets an actionable rename error; the `--policy` init flag became `--default`.
 - ✅ **Shipped:** whitelist/blacklist stance is now inferred per rule from
   `allow` vs `deny` (an `allow` list ⇒ whitelist, a `deny`-only rule ⇒
   blacklist, otherwise the global `policy`), fixing the deny-only-under-policy-

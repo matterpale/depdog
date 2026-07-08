@@ -95,7 +95,7 @@ func explainComponent(w io.Writer, c core.Component, rs *core.RuleSet, res *core
 	rule, ok := rs.Rules[c.Name]
 	switch {
 	case !ok || (len(rule.Allow) == 0 && len(rule.Deny) == 0):
-		fmt.Fprintf(&b, "  rule:     none — imports fall back to policy %s\n", policyName(rs.Policy))
+		fmt.Fprintf(&b, "  rule:     none — imports fall back to default: %s\n", policyName(rs.Policy))
 	default:
 		if len(rule.Allow) > 0 {
 			fmt.Fprintf(&b, "  allow:    %s\n", refList(rule.Allow))

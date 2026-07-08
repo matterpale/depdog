@@ -1,5 +1,5 @@
-version: 1
+# No `default:` — a rule-less component imports anything (the open default).
+version: 2
 components:
-  foo: ["internal/foo/**"]
-  bar: ["internal/bar/**"]
-policy: allow
+  foo: { path: "internal/foo/**" }
+  bar: { path: "internal/bar/**" }

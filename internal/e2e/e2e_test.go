@@ -301,7 +301,7 @@ func TestInitDDDDeny(t *testing.T) {
 
 func TestInitBlacklist(t *testing.T) {
 	dir := initModule(t)
-	_, stderr, exit := run(t, dir, "init", "--yes", "--policy", "allow")
+	_, stderr, exit := run(t, dir, "init", "--yes", "--default", "allow")
 	if exit != 0 {
 		t.Fatalf("exit %d\nstderr:\n%s", exit, stderr)
 	}
@@ -625,22 +625,16 @@ func TestExplainUnknown(t *testing.T) {
 // alignment a merge must preserve. handler, service, telemetry and util stay
 // uncovered.
 const mergeConfig = `# my architecture — hands off, depdog
-version: 1
+version: 2
 
 components:
-  main:    ["cmd/**"] # entrypoints
-  domain:  ["internal/domain/**"]
+  main:    { path: "cmd/**", allow: ["*"] } # entrypoints
+  domain:  { path: "internal/domain/**", allow: [std] } # keep the core pure
 
   # data access
-  storage: ["internal/repository/**"]
+  storage: { path: "internal/repository/**", allow: [domain, std, external] }
 
-policy: deny
-
-# who may import whom
-rules:
-  main:    { allow: ["*"] }
-  domain:  { allow: [std] } # keep the core pure
-  storage: { allow: [domain, std, external] }
+default: deny
 
 options:
   test_files: hybrid
@@ -676,7 +670,7 @@ func TestInitMergeAddsUncovered(t *testing.T) {
 
 func TestInitMergeNothingNew(t *testing.T) {
 	dir := initModule(t)
-	cfg := "version: 1\n\ncomponents:\n  app: [\"**\"] # everything\n\npolicy: deny\n\nrules:\n  app: { allow: [std, external] }\n"
+	cfg := "version: 2\n\ncomponents:\n  app: { path: \"**\", allow: [std, external] } # everything\n\ndefault: deny\n"
 	if err := os.WriteFile(filepath.Join(dir, "depdog.yaml"), []byte(cfg), 0o644); err != nil {
 		t.Fatal(err)
 	}

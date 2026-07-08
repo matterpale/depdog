@@ -1,31 +1,19 @@
 # depdog's own architecture, checked by depdog itself in CI (dogfood).
-version: 1
+version: 2
 
 components:
-  main:   ["cmd/**"]
-  core:   ["internal/core/**"]
-  config: ["internal/config/**"]
-  lang:   ["internal/lang/**"]
-  golang: ["internal/lang/golang/**"] # carve-out: deeper pattern wins over lang
-  report: ["internal/report/**"]
-  wizard: ["internal/wizard/**"]
-  tui:    ["internal/tui/**"]
-  cli:    ["internal/cli/**"]
-  e2e:    ["internal/e2e/**"]
+  main:   { path: "cmd/**",                  allow: ["*"] }
+  core:   { path: "internal/core/**",        allow: [std] } # the domain layer: standard library only
+  config: { path: "internal/config/**",      allow: [core, std, external] }
+  lang:   { path: "internal/lang/**",        allow: [core, std] }
+  golang: { path: "internal/lang/golang/**", allow: [core, lang, std, external] } # carve-out: deeper pattern wins over lang
+  report: { path: "internal/report/**",      allow: [core, std, external] } # lipgloss styles the human output
+  wizard: { path: "internal/wizard/**",      allow: [core, std] } # pure heuristics: engine matcher + std only
+  tui:    { path: "internal/tui/**",         allow: [core, std, external] } # bubbletea view over a core.Result
+  cli:    { path: "internal/cli/**",         allow: [core, config, lang, golang, report, wizard, tui, std, external] }
+  e2e:    { path: "internal/e2e/**",         allow: [std] }
 
-policy: deny
-
-rules:
-  main:   { allow: ["*"] }
-  core:   { allow: [std] } # the domain layer: standard library only
-  config: { allow: [core, std, external] }
-  lang:   { allow: [core, std] }
-  golang: { allow: [core, lang, std, external] }
-  report: { allow: [core, std, external] } # lipgloss styles the human output
-  wizard: { allow: [core, std] } # pure heuristics: engine matcher + std only
-  tui:    { allow: [core, std, external] } # bubbletea view over a core.Result
-  cli:    { allow: [core, config, lang, golang, report, wizard, tui, std, external] }
-  e2e:    { allow: [std] }
+default: deny
 
 options:
   test_files: hybrid

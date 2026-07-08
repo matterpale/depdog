@@ -23,18 +23,21 @@ const DefaultName = "depdog.yaml"
 var reserved = map[string]bool{"std": true, "external": true, "unassigned": true, "*": true}
 
 type file struct {
-	Version    int                   `yaml:"version"`
-	Module     string                `yaml:"module"`
-	Components map[string]stringList `yaml:"components"`
-	Groups     map[string]stringList `yaml:"groups"`
-	Policy     string                `yaml:"policy"`
-	Rules      map[string]ruleYAML   `yaml:"rules"`
-	Options    optionsYAML           `yaml:"options"`
+	Version    int                      `yaml:"version"`
+	Module     string                   `yaml:"module"`
+	Components map[string]componentYAML `yaml:"components"`
+	Groups     map[string]stringList    `yaml:"groups"`
+	Default    string                   `yaml:"default"`
+	Options    optionsYAML              `yaml:"options"`
 }
 
-type ruleYAML struct {
-	Allow []string `yaml:"allow"`
-	Deny  []string `yaml:"deny"`
+// componentYAML is one entry of the merged components block: the patterns a
+// component claims plus, inline, the rule saying who it may (allow) or must
+// not (deny) import.
+type componentYAML struct {
+	Path  stringList `yaml:"path"`
+	Allow []string   `yaml:"allow"`
+	Deny  []string   `yaml:"deny"`
 }
 
 type optionsYAML struct {
@@ -81,6 +84,16 @@ func Load(path string) (*core.RuleSet, error) {
 
 // Parse compiles raw YAML into a validated rule set.
 func Parse(data []byte) (*core.RuleSet, error) {
+	// The v1 layout (separate components: and rules: blocks) gets a migration
+	// error built from the user's own config, not a generic decode failure.
+	if err := legacyError(data); err != nil {
+		return nil, err
+	}
+	// The stance field was renamed policy -> default (and its default flipped).
+	if err := renamedFieldError(data); err != nil {
+		return nil, err
+	}
+
 	dec := yaml.NewDecoder(bytes.NewReader(data))
 	dec.KnownFields(true)
 	var f file
@@ -91,14 +104,14 @@ func Parse(data []byte) (*core.RuleSet, error) {
 		return nil, err
 	}
 
-	if f.Version != 1 {
-		return nil, fmt.Errorf("unsupported config version %d (this depdog understands version 1)", f.Version)
+	if f.Version != 2 {
+		return nil, fmt.Errorf("unsupported config version %d (this depdog understands version 2)", f.Version)
 	}
 	if len(f.Components) == 0 {
 		return nil, errors.New(`no "components" defined — map at least one name to package patterns`)
 	}
 
-	rs := &core.RuleSet{Rules: make(map[string]core.Rule, len(f.Rules))}
+	rs := &core.RuleSet{Rules: make(map[string]core.Rule, len(f.Components))}
 
 	names := make([]string, 0, len(f.Components))
 	for name := range f.Components {
@@ -109,9 +122,9 @@ func Parse(data []byte) (*core.RuleSet, error) {
 		if reserved[name] {
 			return nil, fmt.Errorf("component name %q is reserved (std, external, unassigned and * have special meaning in rules)", name)
 		}
-		patterns := f.Components[name]
+		patterns := f.Components[name].Path
 		if len(patterns) == 0 {
-			return nil, fmt.Errorf("component %q has no patterns", name)
+			return nil, fmt.Errorf("component %q has no patterns — set path to a glob or a list of globs", name)
 		}
 		for _, p := range patterns {
 			if err := core.ValidatePattern(p); err != nil {
@@ -121,15 +134,16 @@ func Parse(data []byte) (*core.RuleSet, error) {
 		rs.Components = append(rs.Components, core.Component{Name: name, Patterns: patterns})
 	}
 
-	switch f.Policy {
-	case "deny", "":
-		// Optional: absent policy defaults to the strict whitelist stance.
-		// Rules still infer their own stance from allow vs deny.
-		rs.Policy = core.PolicyDeny
-	case "allow":
+	switch f.Default {
+	case "allow", "":
+		// Optional; absent it defaults to the open (blacklist) stance: a
+		// component with no allow/deny rule may import anything. Components
+		// still infer their own stance from allow vs deny.
 		rs.Policy = core.PolicyAllow
+	case "deny":
+		rs.Policy = core.PolicyDeny
 	default:
-		return nil, fmt.Errorf("policy must be %q or %q, not %q", "deny", "allow", f.Policy)
+		return nil, fmt.Errorf("default must be %q or %q, not %q", "allow", "deny", f.Default)
 	}
 
 	known := make(map[string]bool, len(f.Components))
@@ -142,25 +156,19 @@ func Parse(data []byte) (*core.RuleSet, error) {
 		return nil, err
 	}
 
-	ruleNames := make([]string, 0, len(f.Rules))
-	for name := range f.Rules {
-		ruleNames = append(ruleNames, name)
-	}
-	sort.Strings(ruleNames)
-	for _, name := range ruleNames {
-		if !known[name] {
-			return nil, fmt.Errorf("rule for unknown component %q (known: %s)", name, strings.Join(names, ", "))
-		}
-		r := f.Rules[name]
-		allow, err := parseRefs(name, r.Allow, known, groups)
+	for _, name := range names {
+		c := f.Components[name]
+		allow, err := parseRefs(name, c.Allow, known, groups)
 		if err != nil {
 			return nil, err
 		}
-		deny, err := parseRefs(name, r.Deny, known, groups)
+		deny, err := parseRefs(name, c.Deny, known, groups)
 		if err != nil {
 			return nil, err
 		}
-		rs.Rules[name] = core.Rule{Allow: allow, Deny: deny}
+		if len(allow) > 0 || len(deny) > 0 {
+			rs.Rules[name] = core.Rule{Allow: allow, Deny: deny}
+		}
 	}
 
 	switch f.Options.TestFiles {
@@ -218,7 +226,7 @@ func parseGroups(raw map[string]stringList, known map[string]bool, componentName
 	return groups, nil
 }
 
-func parseRefs(rule string, entries []string, known map[string]bool, groups map[string][]string) ([]core.Ref, error) {
+func parseRefs(comp string, entries []string, known map[string]bool, groups map[string][]string) ([]core.Ref, error) {
 	refs := make([]core.Ref, 0, len(entries))
 	for _, e := range entries {
 		switch e {
@@ -247,7 +255,7 @@ func parseRefs(rule string, entries []string, known map[string]bool, groups map[
 				refs = append(refs, core.Ref{Kind: core.RefExternalModule, Name: e})
 				continue
 			}
-			return nil, fmt.Errorf("rule %q refers to unknown component or group %q", rule, e)
+			return nil, fmt.Errorf("component %q refers to unknown component or group %q", comp, e)
 		}
 	}
 	return refs, nil

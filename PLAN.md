@@ -49,91 +49,81 @@ future languages.
 beyond the module root). Design goals: readable in a code review, diff-friendly, no regex
 unless asked for.
 
-Whitelist and blacklist styles are **equally first-class** — `policy` decides the fallback for
-edges no rule mentions, and each project chooses its stance (the wizard asks):
+Whitelist and blacklist styles are **equally first-class** — the top-level `default` decides the
+fallback for a component with no rule (optional, and itself defaulting to `allow`), and each
+project chooses its stance (the wizard asks):
 
-- **Whitelist style:** `policy: deny` + `allow` lists — anything not explicitly allowed is a
+- **Whitelist style:** `default: deny` + `allow` lists — anything not explicitly allowed is a
   violation.
-- **Blacklist style:** `policy: allow` + `deny` lists — everything passes except what is
-  explicitly forbidden.
+- **Blacklist style:** `default: allow` (the default, so it can be omitted) + `deny` lists —
+  everything passes except what is explicitly forbidden.
 
 They can be mixed; an explicit `deny` always beats an `allow`. Example encoding the DDD style
 from the brief (whitelist flavor):
 
 ```yaml
-version: 1
+version: 2
 
 # Module path is auto-detected from go.mod; can be overridden.
 # module: github.com/acme/shop
 
+# Each component lists its path glob(s) and, inline, who it may import.
+# Anything else inside the module that no component claims is "unassigned".
 components:
-  main:       ["cmd/**"]
-  domain:     ["internal/domain/**"]
-  handler:    ["internal/handler/**"]
-  service:    ["internal/service/**"]
-  repository: ["internal/repository/**"]
-  # Anything else inside the module that no component claims is "unassigned".
-
-policy: deny          # unmatched import edges are violations (strict mode)
-
-rules:
-  main:
-    allow: ["*"]                    # main wires everything together
-
-  domain:
-    allow: [std]                    # the DDD heart: std-lib only
-
-  handler:
-    allow: [domain, std, external]
-
-  service:
-    allow: [domain, std, external]
-
-  repository:
-    allow: [domain, std, external]
+  main:       { path: "cmd/**",                 allow: ["*"] }                   # wires everything together
+  domain:     { path: "internal/domain/**",     allow: [std] }                   # the DDD heart: std-lib only
+  handler:    { path: "internal/handler/**",    allow: [domain, std, external] }
+  service:    { path: "internal/service/**",    allow: [domain, std, external] }
+  repository: { path: "internal/repository/**", allow: [domain, std, external] }
   # handler/service/repository cannot import each other simply because
-  # they are not in each other's allow lists (policy: deny).
+  # they are not in each other's allow lists (default: deny).
+
+default: deny          # a component with no rule may import nothing (strict mode)
 
 options:
   test_files: hybrid          # default — see semantics below; also: same-rules, relaxed
   skip: ["internal/legacy/**"]  # package dirs excluded from analysis
 ```
 
-The same cross-import ban in blacklist flavor:
+The same cross-import ban in blacklist flavor (`default: allow` is the default, shown here for
+clarity):
 
 ```yaml
-policy: allow
-rules:
-  handler:    { deny: [service, repository] }
-  service:    { deny: [handler, repository] }
-  repository: { deny: [handler, service] }
-  domain:     { deny: [handler, service, repository, external, unassigned] }
+default: allow
+components:
+  handler:    { path: "internal/handler/**",    deny: [service, repository] }
+  service:    { path: "internal/service/**",    deny: [handler, repository] }
+  repository: { path: "internal/repository/**", deny: [handler, service] }
+  domain:     { path: "internal/domain/**",     deny: [handler, service, repository, external, unassigned] }
 ```
 
-Semantics (kept deliberately simple for v1):
+Semantics:
 
-- `allow`/`deny` entries are component names or the specials `std`, `external`, `unassigned`,
-  `"*"`. `deny` always wins over `allow`.
-- **Per-rule stance is inferred from word choice.** For an edge a rule's lists don't mention,
+- Each component's value is a mapping: `path` (a glob or a list of globs) plus an optional
+  `allow`/`deny` list. `allow`/`deny` entries are component names or the specials `std`,
+  `external`, `unassigned`, `"*"`. `deny` always wins over `allow`.
+- **Per-component stance is inferred from word choice.** For an edge a component's lists don't
+  mention,
   the fallback is read off the rule itself: an `allow` list makes the component a *whitelist*
   (only listed imports pass); a `deny`-only rule makes it a *blacklist* (everything passes
   except what's listed). A component with no rule — or a rule with neither list — falls back to
-  the top-level `policy`. This lets stances mix per component and avoids the trap where a
-  `deny`-only rule under `policy: deny` silently forbade everything. `policy` is therefore the
-  default for rule-less components, not a global override.
+  the top-level `default`, which is itself `allow` (open) unless set to `deny`. So an unruled
+  component imports anything by default; `default: deny` flips that to fail-closed. This lets
+  stances mix per component and avoids the trap where a `deny`-only rule silently forbade
+  everything. `default` is the fallback for rule-less components, not a global override.
 - Pattern matching: recursive doublestar globs against module-relative package dirs, and
   **most specific wins** when patterns overlap. Elaborate or deep trees are covered with a
   catch-all plus carve-outs instead of exhaustive per-directory patterns:
 
   ```yaml
   components:
-    app:    ["internal/**"]          # catch-all for everything under internal/
-    domain: ["internal/domain/**"]   # deeper pattern wins for the domain subtree
+    app:    { path: "internal/**" }          # catch-all for everything under internal/
+    domain: { path: "internal/domain/**" }   # deeper pattern wins for the domain subtree
   ```
 
   Equally specific overlapping patterns are an ambiguity error for the affected package.
 - In-module packages claimed by no component are **always listed as warnings** in `check`
-  output (any policy, any format) but never fail the build by themselves — unmapped packages
+  output (any stance, any format) but never fail the build by themselves — unmapped packages
   are how rule sets rot, so they stay visible without blocking adoption.
 - `test_files: hybrid` (the default): `_test.go` files may import any **external** module
   (testify, gomock, …) but component-to-component rules still apply — test-only coupling
@@ -306,7 +296,9 @@ Watch mode; rule editing in the TUI; external-dependency allowlists per componen
 | Decision | Choice | Rationale |
 |---|---|---|
 | Config file | `depdog.yaml`, YAML | Reviewable, commentable; the wizard writes it so hand-authoring is optional. |
-| Rule styles | Whitelist & blacklist both first-class | `policy` + `allow`/`deny` lists; the wizard asks which stance a project takes. |
+| Rule styles | Whitelist & blacklist both first-class | `default` + per-component `allow`/`deny` lists; the wizard asks which stance a project takes. |
+| Config shape | Single merged `components` block (v2) | Rules are per-component, so a separate `rules` block duplicated every name; each entry now carries `path` + inline `allow`/`deny`. Merged 2026-07-08 with the owner. Version bumped 1→2 with a migration error; no dual-format support. |
+| Fallback field | `default: allow\|deny`, defaulting to `allow` (v2) | Renamed from `policy` and flipped: a component with no rule now imports anything ("no rule = no restriction"), matching the tool's non-blocking adoption ethos and avoiding the old deny-default that made rule-less components violate on everything. `default: deny` opts into fail-closed. Owner decision 2026-07-08; also renamed the `--policy` init flag to `--default`. |
 | Bare `depdog` | Opens TUI | The TUI is the product's face; CI always says `check` explicitly anyway. |
 | Package loading | `x/tools/go/packages`, metadata mode | Correctness (build tags, module resolution) without type-checking cost. |
 | Component matching | Recursive globs, most specific wins | Catch-all + carve-out covers elaborate trees; equal specificity is an error. |

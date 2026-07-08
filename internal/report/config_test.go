@@ -28,7 +28,7 @@ func TestRuleSetDump(t *testing.T) {
 	}
 	out := buf.String()
 	for _, want := range []string{
-		"policy:     deny", "test_files: relaxed", "skip:       internal/legacy/**",
+		"default:    deny", "test_files: relaxed", "skip:       internal/legacy/**",
 		"internal/domain/**", "stance: whitelist", "allow:  [std]",
 		"stance: blacklist", "deny:   [domain]",
 	} {

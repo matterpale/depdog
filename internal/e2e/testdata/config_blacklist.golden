@@ -1,4 +1,4 @@
-policy:     allow
+default:    allow
 test_files: hybrid
 
 components:

@@ -1,6 +1,4 @@
-version: 1
+version: 2
 components:
-  app: ["internal/app/**"]
-policy: deny
-rules:
-  app: { allow: [std] }
+  app: { path: "internal/app/**", allow: [std] }
+default: deny

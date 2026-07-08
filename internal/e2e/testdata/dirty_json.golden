@@ -1,6 +1,6 @@
 {
   "module": "example.test/dirty",
-  "policy": "deny",
+  "default": "deny",
   "violations": [
     {
       "from_package": "example.test/dirty/internal/domain/pricing",

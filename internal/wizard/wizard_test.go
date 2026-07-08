@@ -180,10 +180,14 @@ func TestMarshalStructure(t *testing.T) {
 		t.Fatal(err)
 	}
 	got := string(data)
-	for _, want := range []string{"version: 1", "policy: deny", "components:", "rules:", `main:`, `{ allow: ["*"] }`} {
+	for _, want := range []string{"version: 2", "default: deny", "components:", `main:`, `path: "cmd/**"`, `allow: ["*"] }`, `path: "internal/domain/**"`} {
 		if !strings.Contains(got, want) {
 			t.Errorf("marshal output missing %q\n%s", want, got)
 		}
+	}
+	// The merged v2 format has no separate rules block.
+	if strings.Contains(got, "rules:") {
+		t.Errorf("marshal output still has a rules block\n%s", got)
 	}
 	// Determinism: marshalling twice yields identical bytes.
 	again, _ := cfg.Marshal()
@@ -242,21 +246,21 @@ func TestProposeMissingPolicyAllowHasNoAllowRefs(t *testing.T) {
 	if len(got) != 1 || len(got[0].Allow) != 0 || len(got[0].Deny) != 0 {
 		t.Fatalf("under policy allow a proposal is unconstrained, got %+v", got)
 	}
-	if RuleBody(got[0], PolicyAllow) != "" {
-		t.Errorf("RuleBody must be empty for an unconstrained component")
+	if RuleInner(got[0], PolicyAllow) != "" {
+		t.Errorf("RuleInner must be empty for an unconstrained component")
 	}
 }
 
-func TestRuleBody(t *testing.T) {
+func TestRuleInner(t *testing.T) {
 	c := Component{Name: "web", Allow: []string{"std", "external"}, Deny: []string{"core"}}
-	if got, want := RuleBody(c, PolicyDeny), "{ allow: [std, external] }"; got != want {
-		t.Errorf("RuleBody(deny) = %q, want %q", got, want)
+	if got, want := RuleInner(c, PolicyDeny), "allow: [std, external]"; got != want {
+		t.Errorf("RuleInner(deny) = %q, want %q", got, want)
 	}
-	if got, want := RuleBody(c, PolicyAllow), "{ deny: [core] }"; got != want {
-		t.Errorf("RuleBody(allow) = %q, want %q", got, want)
+	if got, want := RuleInner(c, PolicyAllow), "deny: [core]"; got != want {
+		t.Errorf("RuleInner(allow) = %q, want %q", got, want)
 	}
-	if got, want := RuleBody(Component{Name: "cmd", Allow: []string{"*"}}, PolicyDeny), `{ allow: ["*"] }`; got != want {
-		t.Errorf("RuleBody(*) = %q, want %q", got, want)
+	if got, want := RuleInner(Component{Name: "cmd", Allow: []string{"*"}}, PolicyDeny), `allow: ["*"]`; got != want {
+		t.Errorf("RuleInner(*) = %q, want %q", got, want)
 	}
 }
 

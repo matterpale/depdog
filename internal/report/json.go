@@ -13,7 +13,7 @@ import (
 
 type jsonReport struct {
 	Module     string          `json:"module"`
-	Policy     string          `json:"policy"`
+	Default    string          `json:"default"`
 	Violations []jsonViolation `json:"violations"`
 	Warnings   []jsonWarning   `json:"warnings"`
 	Components []jsonComponent `json:"components"`
@@ -84,7 +84,7 @@ func emptyIfNil(c [][]string) [][]string {
 func JSON(w io.Writer, res *core.Result, rs *core.RuleSet, elapsed time.Duration) error {
 	out := jsonReport{
 		Module:     res.ModulePath,
-		Policy:     policyName(rs.Policy),
+		Default:    policyName(rs.Policy),
 		Violations: make([]jsonViolation, 0, len(res.Violations)),
 		Warnings:   make([]jsonWarning, 0, len(res.Warnings)),
 		Components: make([]jsonComponent, 0, len(res.Components)),

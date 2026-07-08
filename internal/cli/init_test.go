@@ -73,7 +73,7 @@ func TestEditedConfigsRoundTrip(t *testing.T) {
 }
 
 // TestMergedConfigsRoundTrip extends the contract to `init --merge`: whatever
-// existing config shape and scan the merge pipeline (ProposeMissing → RuleBody
+// existing config shape and scan the merge pipeline (ProposeMissing → RuleInner
 // → MergeComponents) is handed, the merged file must satisfy the same
 // validator `depdog check` uses, and merging when everything is covered must
 // return the input untouched.
@@ -83,11 +83,11 @@ func TestMergedConfigsRoundTrip(t *testing.T) {
 		"internal/telemetry", "pkg/util", "web/assets",
 	}}
 	existing := map[string]string{
-		"plain":      "version: 1\ncomponents:\n  main: [\"cmd/**\"]\n  domain: [\"internal/domain/**\"]\npolicy: deny\nrules:\n  domain: { allow: [std] }\n",
-		"no rules":   "version: 1\ncomponents:\n  main: [\"cmd/**\"]\npolicy: deny\n",
-		"allow":      "version: 1\ncomponents:\n  main: [\"cmd/**\"]\npolicy: allow\n",
-		"groups":     "version: 1\ncomponents:\n  main: [\"cmd/**\"]\ngroups:\n  util: [main]\npolicy: deny\nrules:\n  main: { allow: [util, std] }\n",
-		"everything": "version: 1\ncomponents:\n  all: [\"**\"]\npolicy: deny\n",
+		"plain":      "version: 2\ncomponents:\n  main: { path: \"cmd/**\" }\n  domain: { path: \"internal/domain/**\", allow: [std] }\ndefault: deny\n",
+		"no rules":   "version: 2\ncomponents:\n  main: { path: \"cmd/**\" }\ndefault: deny\n",
+		"allow":      "version: 2\ncomponents:\n  main: { path: \"cmd/**\" }\ndefault: allow\n",
+		"groups":     "version: 2\ncomponents:\n  main: { path: \"cmd/**\", allow: [util, std] }\ngroups:\n  util: [main]\ndefault: deny\n",
+		"everything": "version: 2\ncomponents:\n  all: { path: \"**\" }\ndefault: deny\n",
 	}
 	for name, in := range existing {
 		t.Run(name, func(t *testing.T) {
@@ -116,7 +116,7 @@ func TestMergedConfigsRoundTrip(t *testing.T) {
 			}
 			add := make([]config.MergeComponent, len(proposed))
 			for i, c := range proposed {
-				add[i] = config.MergeComponent{Name: c.Name, Patterns: c.Patterns, Comment: c.Comment, Rule: wizard.RuleBody(c, policy)}
+				add[i] = config.MergeComponent{Name: c.Name, Patterns: c.Patterns, Comment: c.Comment, Rule: wizard.RuleInner(c, policy)}
 			}
 			merged, err := config.MergeComponents([]byte(in), add)
 			if err != nil {

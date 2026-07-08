@@ -494,7 +494,7 @@ func TestEvaluateNoRulePolicyDeny(t *testing.T) {
 		}},
 	}}
 	res := evaluate(t, g, rs)
-	if len(res.Violations) != 1 || res.Violations[0].Rule != "policy: deny" {
-		t.Fatalf("want policy: deny violation, got %+v", res.Violations)
+	if len(res.Violations) != 1 || res.Violations[0].Rule != "default: deny" {
+		t.Fatalf("want default: deny violation, got %+v", res.Violations)
 	}
 }

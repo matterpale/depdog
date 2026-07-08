@@ -1,17 +1,10 @@
-version: 1
+version: 2
 
 components:
-  main:       ["cmd/**"]
-  domain:     ["internal/domain/**"]
-  handler:    ["internal/handler/**"]
-  service:    ["internal/service/**"]
-  repository: ["internal/repository/**"]
+  main:       { path: "cmd/**",                 allow: ["*"] }
+  domain:     { path: "internal/domain/**",     allow: [std] }
+  handler:    { path: "internal/handler/**",    allow: [domain, std] }
+  service:    { path: "internal/service/**",    allow: [domain, std] }
+  repository: { path: "internal/repository/**", allow: [domain, std, external] }
 
-policy: deny
-
-rules:
-  main:       { allow: ["*"] }
-  domain:     { allow: [std] }
-  handler:    { allow: [domain, std] }
-  service:    { allow: [domain, std] }
-  repository: { allow: [domain, std, external] }
+default: deny

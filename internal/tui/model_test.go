@@ -157,6 +157,94 @@ func TestPackageSelectionMoves(t *testing.T) {
 	}
 }
 
+// manyPkgs builds n packages spread across four components, giving every fifth
+// package a wide (40-edge) fan-out so the detail pane would overflow a small
+// screen if it were not bounded.
+func manyPkgs(n int) (*core.Result, []core.PackageView) {
+	comps := []string{"a", "b", "c", "d"}
+	var pkgs []core.PackageView
+	for i := 0; i < n; i++ {
+		k := 3
+		if i%5 == 0 {
+			k = 40
+		}
+		var imports []core.ImportView
+		var importers []string
+		for j := 0; j < k; j++ {
+			imports = append(imports, core.ImportView{Path: fmt.Sprintf("m/dep%02d", j), Class: core.ClassInModule, Component: "d"})
+			importers = append(importers, fmt.Sprintf("m/imp%02d", j))
+		}
+		pkgs = append(pkgs, core.PackageView{
+			ImportPath: fmt.Sprintf("m/pkg%02d", i), Component: comps[i%len(comps)],
+			Imports: imports, Importers: importers,
+		})
+	}
+	return &core.Result{ModulePath: "m"}, pkgs
+}
+
+func lineCount(s string) int { return strings.Count(s, "\n") + 1 }
+
+// TestPackagesViewFitsHeight pins the core regression: the packages screen must
+// never render taller than the terminal, or the alt-screen header scrolls off.
+func TestPackagesViewFitsHeight(t *testing.T) {
+	res, pkgs := manyPkgs(30)
+	m := update(New(res, pkgs), runes("3"))
+	const h = 20
+	m = update(m, tea.WindowSizeMsg{Width: 80, Height: h})
+	v := m.View()
+	if got := lineCount(v); got > h {
+		t.Fatalf("packages view is %d lines, want <= %d (must fit the terminal):\n%s", got, h, v)
+	}
+	if !strings.Contains(v, "Packages") || !strings.Contains(v, "depdog") {
+		t.Errorf("the header must survive; it is what scrolls off when the body overflows:\n%s", v)
+	}
+	if !strings.Contains(v, "▼") {
+		t.Errorf("a list taller than the screen should scroll, not spill (expected a ▼ marker):\n%s", v)
+	}
+}
+
+// TestPackagesHeightStableWhileMoving is the anti-skip guarantee: moving the
+// selection down the whole list must keep every frame within the terminal, and
+// the detail pane must track the current selection.
+func TestPackagesHeightStableWhileMoving(t *testing.T) {
+	res, pkgs := manyPkgs(30)
+	m := update(New(res, pkgs), runes("3"))
+	const h = 22
+	m = update(m, tea.WindowSizeMsg{Width: 80, Height: h})
+	for i := 0; i < len(pkgs); i++ {
+		v := m.View()
+		if got := lineCount(v); got > h {
+			t.Fatalf("at selection %d the view is %d lines, want <= %d:\n%s", i, got, h, v)
+		}
+		sel := m.filteredPackages()[clamp(m.selPkg, len(pkgs))]
+		if want := "── " + sel.ImportPath + " ──"; !strings.Contains(v, want) {
+			t.Errorf("detail should track the selection %q at step %d:\n%s", want, i, v)
+		}
+		m = update(m, runes("j"))
+	}
+}
+
+// TestPackageDetailTruncates checks a wide fan-out is capped with a summary line
+// rather than spilling every edge onto the screen.
+func TestPackageDetailTruncates(t *testing.T) {
+	var imports []core.ImportView
+	for j := 0; j < 40; j++ {
+		imports = append(imports, core.ImportView{Path: fmt.Sprintf("m/dep%02d", j), Class: core.ClassInModule, Component: "d"})
+	}
+	m := update(New(&core.Result{ModulePath: "m"}, []core.PackageView{{ImportPath: "m/big", Component: "c", Imports: imports}}), runes("3"))
+	m = update(m, tea.WindowSizeMsg{Width: 80, Height: 20})
+	v := m.View()
+	if got := lineCount(v); got > 20 {
+		t.Fatalf("view overflows at %d lines:\n%s", got, v)
+	}
+	if !strings.Contains(v, "more") {
+		t.Errorf("a 40-import detail pane should be truncated with a \"… N more\" line:\n%s", v)
+	}
+	if strings.Contains(v, "m/dep39") {
+		t.Errorf("the last of 40 imports should be truncated away on a 20-row screen:\n%s", v)
+	}
+}
+
 func TestQuit(t *testing.T) {
 	next, cmd := New(fixtureResult(), fixturePkgs()).Update(runes("q"))
 	if cmd == nil {

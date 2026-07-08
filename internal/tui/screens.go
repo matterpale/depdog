@@ -21,6 +21,21 @@ func (m Model) listRows() int {
 	return r
 }
 
+// bodyRows is how many terminal rows a screen body may fill, after the header,
+// its two surrounding blank lines and the footer. Zero means unsized — the
+// caller renders everything and lets the terminal scroll. The Packages screen
+// splits this budget between its list and detail panes so neither overflows.
+func (m Model) bodyRows() int {
+	if m.height == 0 {
+		return 0
+	}
+	r := m.height - 6 // header(3) + two blank lines + footer(1)
+	if r < 4 {
+		r = 4
+	}
+	return r
+}
+
 // window returns the visible half-open range [start,end) of n items that keeps
 // sel in view within at most max rows, and how many items are hidden above and
 // below. max <= 0 or a list that already fits shows everything.
@@ -140,70 +155,146 @@ func (m Model) packagesView() string {
 	if len(m.pkgs) == 0 {
 		return styleDim.Render("no packages")
 	}
-	var b strings.Builder
+
+	var head []string
 	if m.filtering || m.filter != "" {
 		hint := "  (esc clears)"
 		if m.filtering {
 			hint = "▊"
 		}
-		b.WriteString(styleWarn.Render("filter: "+m.filter) + styleDim.Render(hint) + "\n\n")
+		head = append(head, styleWarn.Render("filter: "+m.filter)+styleDim.Render(hint), "")
 	}
 
 	pkgs := m.filteredPackages()
 	if len(pkgs) == 0 {
-		b.WriteString(styleDim.Render("no packages match the filter"))
-		return b.String()
+		return strings.Join(append(head, styleDim.Render("no packages match the filter")), "\n")
 	}
 	sel := clamp(m.selPkg, len(pkgs))
 
-	start, end, above, below := window(len(pkgs), sel, m.listRows())
-	if above > 0 {
-		b.WriteString(moreLine("▲", above) + "\n")
+	// Split the body budget between the list and the detail pane so neither can
+	// grow past the screen. avail == 0 means unsized: render everything.
+	avail := 0
+	if body := m.bodyRows(); body > 0 {
+		if avail = body - len(head); avail < 6 {
+			avail = 6
+		}
 	}
+	detailMax := 0
+	if avail > 0 {
+		if detailMax = avail / 2; detailMax < 7 {
+			detailMax = 7
+		}
+		if detailMax > avail-3 {
+			detailMax = avail - 3
+		}
+		if detailMax < 5 {
+			detailMax = 5
+		}
+	}
+	detail := m.packageDetail(pkgs[sel], detailMax)
+
+	listBudget := 0
+	if avail > 0 {
+		if listBudget = avail - len(detail); listBudget < 3 {
+			listBudget = 3
+		}
+	}
+
+	out := append(head, m.packageList(pkgs, sel, listBudget)...)
+	out = append(out, detail...)
+	// Safety net: never exceed the body budget, so the alt-screen header can't
+	// scroll off even when a tiny terminal squeezes the panes.
+	if body := m.bodyRows(); body > 0 && len(out) > body {
+		out = out[:body]
+	}
+	return strings.Join(out, "\n")
+}
+
+// packageList renders the grouped, scrollable package list into at most budget
+// rows (0 == unbounded), inserting a component header at each group boundary and
+// keeping the selected package in view. Headers are flattened into the same line
+// stream as the rows, so they count against the budget and the block's height
+// stays fixed — that is what keeps the selection from skidding as it moves.
+func (m Model) packageList(pkgs []core.PackageView, sel, budget int) []string {
+	var lines []string
+	selLine := 0
 	lastComp := "\x00"
-	for i := start; i < end; i++ {
-		p := pkgs[i]
+	for i, p := range pkgs {
 		comp := p.Component
 		if comp == "" {
 			comp = "unassigned"
 		}
 		if comp != lastComp {
-			b.WriteString(styleDim.Render("▸ "+comp) + "\n")
+			lines = append(lines, styleDim.Render("▸ "+comp))
 			lastComp = comp
 		}
 		name := "  " + m.short(p.ImportPath)
 		if i == sel {
-			b.WriteString(styleSelected.Render(name))
-		} else {
-			b.WriteString(name)
+			selLine = len(lines)
+			name = styleSelected.Render(name)
 		}
-		b.WriteString("\n")
-	}
-	if below > 0 {
-		b.WriteString(moreLine("▼", below) + "\n")
+		lines = append(lines, name)
 	}
 
-	p := pkgs[sel]
-	b.WriteString("\n")
-	b.WriteString(styleDim.Render("── " + p.ImportPath + " ──"))
-	b.WriteString("\n")
+	max := budget
+	if max > 0 && len(lines) > max {
+		if max -= 2; max < 1 { // leave room for the ▲/▼ markers
+			max = 1
+		}
+	}
+	start, end, above, below := window(len(lines), selLine, max)
+
+	var out []string
+	if above > 0 {
+		out = append(out, moreLine("▲", above))
+	}
+	out = append(out, lines[start:end]...)
+	if below > 0 {
+		out = append(out, moreLine("▼", below))
+	}
+	return out
+}
+
+// packageDetail renders the selected package's detail pane: its outgoing imports,
+// incoming importers and the class legend. When max > 0 the import/importer list
+// is truncated to fit with a "… N more" summary, so the pane keeps a bounded
+// height instead of growing with the package's fan-out.
+func (m Model) packageDetail(p core.PackageView, max int) []string {
+	var content []string
 	if len(p.Imports) == 0 {
-		b.WriteString(styleDim.Render("  (no imports)") + "\n")
+		content = append(content, styleDim.Render("  (no imports)"))
 	} else {
-		b.WriteString(styleDim.Render("imports:") + "\n")
+		content = append(content, styleDim.Render("imports:"))
 		for _, iv := range p.Imports {
-			b.WriteString(m.renderImport(p.ImportPath, iv) + "\n")
+			content = append(content, m.renderImport(p.ImportPath, iv))
 		}
 	}
 	if len(p.Importers) > 0 {
-		b.WriteString(styleDim.Render("imported by:") + "\n")
+		content = append(content, styleDim.Render("imported by:"))
 		for _, imp := range p.Importers {
-			b.WriteString("    " + m.short(imp) + "\n")
+			content = append(content, "    "+m.short(imp))
 		}
 	}
-	b.WriteString("\n")
-	b.WriteString(styleDim.Render("[std] std-lib · [external] third-party · [name] component · ✗ violates a rule"))
-	return strings.TrimRight(b.String(), "\n")
+
+	// Reserve the pane's fixed chrome: a leading blank, the path header, a
+	// trailing blank and the legend (4 lines). The rest is for content.
+	if max > 0 {
+		room := max - 4
+		if room < 1 {
+			room = 1
+		}
+		if len(content) > room {
+			keep := room - 1
+			if keep < 0 {
+				keep = 0
+			}
+			content = append(content[:keep:keep], moreLine("…", len(content)-keep))
+		}
+	}
+
+	out := []string{"", styleDim.Render("── " + p.ImportPath + " ──")}
+	out = append(out, content...)
+	return append(out, "", styleDim.Render("[std] std-lib · [external] third-party · [name] component · ✗ violates a rule"))
 }
 
 // renderImport shows one outgoing edge: the import path, a [class] or

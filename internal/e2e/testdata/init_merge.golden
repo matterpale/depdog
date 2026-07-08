@@ -1,28 +1,18 @@
 # my architecture — hands off, depdog
-version: 1
+version: 2
 
 components:
-  main:    ["cmd/**"] # entrypoints
-  domain:  ["internal/domain/**"]
+  main:    { path: "cmd/**", allow: ["*"] } # entrypoints
+  domain:  { path: "internal/domain/**", allow: [std] } # keep the core pure
 
   # data access
-  storage: ["internal/repository/**"]
-  handler: ["internal/handler/**"] # proposed from directory scan — review this rule
-  service: ["internal/service/**"] # proposed from directory scan — review this rule
-  telemetry: ["internal/telemetry/**"] # proposed from directory scan — review this rule
-  util:    ["pkg/util/**"] # proposed from directory scan — review this rule
+  storage: { path: "internal/repository/**", allow: [domain, std, external] }
+  handler: { path: "internal/handler/**", allow: [std, external] } # proposed from directory scan — review this rule
+  service: { path: "internal/service/**", allow: [std, external] } # proposed from directory scan — review this rule
+  telemetry: { path: "internal/telemetry/**", allow: [std, external] } # proposed from directory scan — review this rule
+  util:    { path: "pkg/util/**", allow: [std, external] } # proposed from directory scan — review this rule
 
-policy: deny
-
-# who may import whom
-rules:
-  main:    { allow: ["*"] }
-  domain:  { allow: [std] } # keep the core pure
-  storage: { allow: [domain, std, external] }
-  handler: { allow: [std, external] }
-  service: { allow: [std, external] }
-  telemetry: { allow: [std, external] }
-  util:    { allow: [std, external] }
+default: deny
 
 options:
   test_files: hybrid

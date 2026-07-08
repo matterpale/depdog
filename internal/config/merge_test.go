@@ -6,27 +6,21 @@ import (
 	"testing"
 )
 
-// mergeInput is a hand-formatted config exercising everything a merge must
+// mergeInput is a hand-formatted v2 config exercising everything a merge must
 // preserve: head comments, aligned values, trailing comments, a comment block
 // inside the components mapping, blank-line section breaks, and sections after
-// components (policy, rules, options).
+// components (policy, options).
 const mergeInput = `# my architecture — hands off, depdog
-version: 1
+version: 2
 
 components:
-  main:    ["cmd/**"] # entrypoints
-  domain:  ["internal/domain/**"]
+  main:    { path: "cmd/**", allow: ["*"] } # entrypoints
+  domain:  { path: "internal/domain/**", allow: [std] }
 
   # data access
-  storage: ["internal/repository/**"]
+  storage: { path: "internal/repository/**", allow: [domain, std, external] }
 
-policy: deny
-
-# who may import whom
-rules:
-  main:    { allow: ["*"] }
-  domain:  { allow: [std] } # keep the core pure
-  storage: { allow: [domain, std, external] }
+default: deny
 
 options:
   test_files: hybrid
@@ -35,34 +29,26 @@ options:
 func TestMergeComponentsPreservesFormatting(t *testing.T) {
 	add := []MergeComponent{
 		// Deliberately unsorted: MergeComponents must sort by name.
-		{Name: "util", Patterns: []string{"pkg/util/**"}, Comment: "proposed from directory scan — review this rule", Rule: "{ allow: [std, external] }"},
-		{Name: "handler", Patterns: []string{"internal/handler/**"}, Comment: "proposed from directory scan — review this rule", Rule: "{ allow: [std, external] }"},
+		{Name: "util", Patterns: []string{"pkg/util/**"}, Comment: "proposed from directory scan — review this rule", Rule: "allow: [std, external]"},
+		{Name: "handler", Patterns: []string{"internal/handler/**"}, Comment: "proposed from directory scan — review this rule", Rule: "allow: [std, external]"},
 	}
 	got, err := MergeComponents([]byte(mergeInput), add)
 	if err != nil {
 		t.Fatalf("MergeComponents: %v", err)
 	}
 	want := `# my architecture — hands off, depdog
-version: 1
+version: 2
 
 components:
-  main:    ["cmd/**"] # entrypoints
-  domain:  ["internal/domain/**"]
+  main:    { path: "cmd/**", allow: ["*"] } # entrypoints
+  domain:  { path: "internal/domain/**", allow: [std] }
 
   # data access
-  storage: ["internal/repository/**"]
-  handler: ["internal/handler/**"] # proposed from directory scan — review this rule
-  util:    ["pkg/util/**"] # proposed from directory scan — review this rule
+  storage: { path: "internal/repository/**", allow: [domain, std, external] }
+  handler: { path: "internal/handler/**", allow: [std, external] } # proposed from directory scan — review this rule
+  util:    { path: "pkg/util/**", allow: [std, external] } # proposed from directory scan — review this rule
 
-policy: deny
-
-# who may import whom
-rules:
-  main:    { allow: ["*"] }
-  domain:  { allow: [std] } # keep the core pure
-  storage: { allow: [domain, std, external] }
-  handler: { allow: [std, external] }
-  util:    { allow: [std, external] }
+default: deny
 
 options:
   test_files: hybrid
@@ -75,15 +61,15 @@ options:
 	}
 }
 
-func TestMergeComponentsNoRulesSection(t *testing.T) {
-	in := "version: 1\n\ncomponents:\n  app: [\"internal/app/**\"]\n\npolicy: deny\n"
+func TestMergeComponentsWithRule(t *testing.T) {
+	in := "version: 2\n\ncomponents:\n  app: { path: \"internal/app/**\", allow: [std] }\n\ndefault: deny\n"
 	got, err := MergeComponents([]byte(in), []MergeComponent{
-		{Name: "web", Patterns: []string{"web/**"}, Rule: "{ allow: [std, external] }"},
+		{Name: "web", Patterns: []string{"web/**"}, Rule: "allow: [std, external]"},
 	})
 	if err != nil {
 		t.Fatalf("MergeComponents: %v", err)
 	}
-	want := "version: 1\n\ncomponents:\n  app: [\"internal/app/**\"]\n  web: [\"web/**\"]\n\npolicy: deny\n\nrules:\n  web: { allow: [std, external] }\n"
+	want := "version: 2\n\ncomponents:\n  app: { path: \"internal/app/**\", allow: [std] }\n  web: { path: \"web/**\", allow: [std, external] }\n\ndefault: deny\n"
 	if string(got) != want {
 		t.Errorf("merged output mismatch\n--- want ---\n%s\n--- got ---\n%s", want, got)
 	}
@@ -92,35 +78,35 @@ func TestMergeComponentsNoRulesSection(t *testing.T) {
 	}
 }
 
-func TestMergeComponentsEmptyRulesSection(t *testing.T) {
-	// A bare "rules:" key (null value) gains its entries right below the key.
-	in := "version: 1\ncomponents:\n  app: [\"internal/app/**\"]\nrules:\n"
-	got, err := MergeComponents([]byte(in), []MergeComponent{
-		{Name: "web", Patterns: []string{"web/**"}, Rule: "{ allow: [std] }"},
-	})
-	if err != nil {
-		t.Fatalf("MergeComponents: %v", err)
-	}
-	want := "version: 1\ncomponents:\n  app: [\"internal/app/**\"]\n  web: [\"web/**\"]\nrules:\n  web: { allow: [std] }\n"
-	if string(got) != want {
-		t.Errorf("merged output mismatch\n--- want ---\n%s\n--- got ---\n%s", want, got)
-	}
-	if _, err := Parse(got); err != nil {
-		t.Fatalf("merged config does not parse: %v\n%s", err, got)
-	}
-}
-
-func TestMergeComponentsBlockSequencePatterns(t *testing.T) {
-	// Multi-line block-sequence patterns: the insertion must land after the
-	// whole entry, not inside it.
-	in := "version: 1\ncomponents:\n  app:\n    - \"internal/app/**\"\n    - \"internal/shared/**\"\npolicy: allow\n"
+func TestMergeComponentsNoRule(t *testing.T) {
+	// A component with no rule renders just its path.
+	in := "version: 2\ncomponents:\n  app: { path: \"internal/app/**\" }\ndefault: allow\n"
 	got, err := MergeComponents([]byte(in), []MergeComponent{
 		{Name: "web", Patterns: []string{"web/**"}},
 	})
 	if err != nil {
 		t.Fatalf("MergeComponents: %v", err)
 	}
-	want := "version: 1\ncomponents:\n  app:\n    - \"internal/app/**\"\n    - \"internal/shared/**\"\n  web: [\"web/**\"]\npolicy: allow\n"
+	want := "version: 2\ncomponents:\n  app: { path: \"internal/app/**\" }\n  web: { path: \"web/**\" }\ndefault: allow\n"
+	if string(got) != want {
+		t.Errorf("merged output mismatch\n--- want ---\n%s\n--- got ---\n%s", want, got)
+	}
+	if _, err := Parse(got); err != nil {
+		t.Fatalf("merged config does not parse: %v\n%s", err, got)
+	}
+}
+
+func TestMergeComponentsBlockEntryPatterns(t *testing.T) {
+	// A block-mapping entry whose path is a multi-line sequence: the insertion
+	// must land after the whole entry, not inside it.
+	in := "version: 2\ncomponents:\n  app:\n    path:\n      - \"internal/app/**\"\n      - \"internal/shared/**\"\ndefault: allow\n"
+	got, err := MergeComponents([]byte(in), []MergeComponent{
+		{Name: "web", Patterns: []string{"web/**"}},
+	})
+	if err != nil {
+		t.Fatalf("MergeComponents: %v", err)
+	}
+	want := "version: 2\ncomponents:\n  app:\n    path:\n      - \"internal/app/**\"\n      - \"internal/shared/**\"\n  web: { path: \"web/**\" }\ndefault: allow\n"
 	if string(got) != want {
 		t.Errorf("merged output mismatch\n--- want ---\n%s\n--- got ---\n%s", want, got)
 	}
@@ -130,14 +116,14 @@ func TestMergeComponentsBlockSequencePatterns(t *testing.T) {
 }
 
 func TestMergeComponentsNoTrailingNewline(t *testing.T) {
-	in := "version: 1\ncomponents:\n  app: [\"internal/app/**\"]"
+	in := "version: 2\ncomponents:\n  app: { path: \"internal/app/**\" }"
 	got, err := MergeComponents([]byte(in), []MergeComponent{
 		{Name: "web", Patterns: []string{"web/**"}},
 	})
 	if err != nil {
 		t.Fatalf("MergeComponents: %v", err)
 	}
-	want := "version: 1\ncomponents:\n  app: [\"internal/app/**\"]\n  web: [\"web/**\"]"
+	want := "version: 2\ncomponents:\n  app: { path: \"internal/app/**\" }\n  web: { path: \"web/**\" }"
 	if string(got) != want {
 		t.Errorf("merged output mismatch\n--- want ---\n%q\n--- got ---\n%q", want, got)
 	}
@@ -166,31 +152,25 @@ func TestMergeComponentsRefusals(t *testing.T) {
 	}{
 		{
 			name: "flow components",
-			in:   "version: 1\ncomponents: { app: [\"internal/**\"] }\n",
+			in:   "version: 2\ncomponents: { app: { path: \"internal/**\" } }\n",
 			add:  web,
 			want: "flow style",
 		},
 		{
-			name: "flow rules",
-			in:   "version: 1\ncomponents:\n  app: [\"internal/**\"]\nrules: {}\n",
-			add:  []MergeComponent{{Name: "web", Patterns: []string{"web/**"}, Rule: "{ allow: [std] }"}},
-			want: "flow style",
-		},
-		{
 			name: "anchors",
-			in:   "version: 1\ncomponents:\n  app: &a [\"internal/**\"]\n  app2: *a\n",
+			in:   "version: 2\ncomponents:\n  app: &a { path: \"internal/**\" }\n  app2: *a\n",
 			add:  web,
 			want: "anchors",
 		},
 		{
 			name: "duplicate name",
-			in:   "version: 1\ncomponents:\n  web: [\"web/**\"]\n",
+			in:   "version: 2\ncomponents:\n  web: { path: \"web/**\" }\n",
 			add:  web,
 			want: "already",
 		},
 		{
 			name: "no components mapping",
-			in:   "version: 1\npolicy: deny\n",
+			in:   "version: 2\ndefault: deny\n",
 			add:  web,
 			want: "components",
 		},
@@ -215,14 +195,14 @@ func TestMergeComponentsRefusals(t *testing.T) {
 }
 
 func TestMergeComponentsQuotesOddNames(t *testing.T) {
-	in := "version: 1\ncomponents:\n  app: [\"internal/app/**\"]\n"
+	in := "version: 2\ncomponents:\n  app: { path: \"internal/app/**\" }\n"
 	got, err := MergeComponents([]byte(in), []MergeComponent{
 		{Name: "we b", Patterns: []string{"web/**"}},
 	})
 	if err != nil {
 		t.Fatalf("MergeComponents: %v", err)
 	}
-	if !strings.Contains(string(got), `"we b": ["web/**"]`) {
+	if !strings.Contains(string(got), `"we b": { path: "web/**" }`) {
 		t.Errorf("a name unsafe as a bare key must be quoted:\n%s", got)
 	}
 	if _, err := Parse(got); err != nil {
@@ -231,7 +211,7 @@ func TestMergeComponentsQuotesOddNames(t *testing.T) {
 }
 
 func TestDeclaredNames(t *testing.T) {
-	in := "version: 1\ncomponents:\n  b: [\"b/**\"]\n  a: [\"a/**\"]\ngroups:\n  edges: [a, b]\n"
+	in := "version: 2\ncomponents:\n  b: { path: \"b/**\" }\n  a: { path: \"a/**\" }\ngroups:\n  edges: [a, b]\n"
 	got, err := DeclaredNames([]byte(in))
 	if err != nil {
 		t.Fatalf("DeclaredNames: %v", err)

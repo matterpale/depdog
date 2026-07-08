@@ -27,14 +27,14 @@ func TestJSONComponentsAndPolicy(t *testing.T) {
 		t.Fatal(err)
 	}
 	var parsed struct {
-		Policy     string           `json:"policy"`
+		Default    string           `json:"default"`
 		Components []map[string]any `json:"components"`
 	}
 	if err := json.Unmarshal(buf.Bytes(), &parsed); err != nil {
 		t.Fatalf("invalid JSON: %v\n%s", err, buf.String())
 	}
-	if parsed.Policy != "deny" {
-		t.Errorf("policy = %q, want deny", parsed.Policy)
+	if parsed.Default != "deny" {
+		t.Errorf("default = %q, want deny", parsed.Default)
 	}
 	app := parsed.Components[0]
 	if app["stance"] != "blacklist" { // a deny-only rule

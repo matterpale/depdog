@@ -17,24 +17,24 @@ type MergeComponent struct {
 	Name     string
 	Patterns []string
 	Comment  string // optional trailing comment on the component line
-	Rule     string // optional pre-rendered rule body, e.g. "{ allow: [std, external] }"
+	Rule     string // optional inline rule, e.g. "allow: [std, external]" (no braces)
 }
 
 // bareKey is the charset a component name may use to stay an unquoted YAML key
 // (mirrors the wizard's name validation).
 var bareKey = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]*$`)
 
-// MergeComponents inserts the given components — and, for entries with a Rule,
-// matching rules — into an existing depdog.yaml without disturbing anything
-// else. The original bytes are kept verbatim: the parsed yaml.Node tree only
-// locates the end of the `components:` (and `rules:`) block mappings, and new
-// lines are spliced in after them, so every existing comment, blank line and
-// alignment survives. New entries are sorted by name and aligned to the
-// existing value column when the block is consistently aligned.
+// MergeComponents inserts the given components into an existing depdog.yaml
+// without disturbing anything else. The original bytes are kept verbatim: the
+// parsed yaml.Node tree only locates the end of the `components:` block mapping,
+// and new `name: { path: [...], <rule> }` lines are spliced in after it, so
+// every existing comment, blank line and alignment survives. New entries are
+// sorted by name and aligned to the existing value column when the block is
+// consistently aligned.
 //
 // It refuses, with an error naming the fix, when a splice could corrupt the
-// file: anchors or aliases anywhere, or a flow-style ({...}) components/rules
-// mapping. Callers must validate the result with Parse before writing it.
+// file: anchors or aliases anywhere, or a flow-style ({...}) components mapping.
+// Callers must validate the result with Parse before writing it.
 func MergeComponents(data []byte, add []MergeComponent) ([]byte, error) {
 	if len(add) == 0 {
 		return data, nil
@@ -59,7 +59,7 @@ func MergeComponents(data []byte, add []MergeComponent) ([]byte, error) {
 		return nil, errors.New(`the config has no "components" mapping — fix the file before merging`)
 	}
 	if comps.Kind != yaml.MappingNode || comps.Style&yaml.FlowStyle != 0 || len(comps.Content) == 0 {
-		return nil, errors.New(`the "components" mapping is in flow style ({...}) or empty — rewrite it in block form (one "name: [patterns]" line per component), then rerun the merge`)
+		return nil, errors.New(`the "components" mapping is in flow style ({...}) or empty — rewrite it in block form (one "name: { path: ... }" line per component), then rerun the merge`)
 	}
 	for _, c := range add {
 		if k, _ := mappingPair(comps, c.Name); k != nil {
@@ -68,62 +68,29 @@ func MergeComponents(data []byte, add []MergeComponent) ([]byte, error) {
 	}
 
 	lines := strings.Split(string(data), "\n")
-
-	type splice struct {
-		afterLine int // 1-based physical line to insert after
-		text      []string
-	}
-	var splices []splice
-
 	indent := strings.Repeat(" ", indentOf(comps))
 	col := valueColumn(comps)
-	compLines := make([]string, len(add))
+	newLines := make([]string, len(add))
 	for i, c := range add {
-		compLines[i] = renderEntry(indent, col, c.Name, renderPatterns(c.Patterns), c.Comment)
-	}
-	splices = append(splices, splice{afterLine: endLine(comps), text: compLines})
-
-	var ruleLines []string
-	ruleKey, rules := mappingPair(root, "rules")
-	rindent, rcol := indent, 0
-	if rules != nil && rules.Kind == yaml.MappingNode && rules.Style&yaml.FlowStyle == 0 && len(rules.Content) > 0 {
-		rindent = strings.Repeat(" ", indentOf(rules))
-		rcol = valueColumn(rules)
-	}
-	for _, c := range add {
-		if c.Rule != "" {
-			ruleLines = append(ruleLines, renderEntry(rindent, rcol, c.Name, c.Rule, ""))
-		}
-	}
-	if len(ruleLines) > 0 {
-		switch {
-		case rules == nil:
-			// No rules section: append one after the last non-blank line.
-			end := len(lines)
-			for end > 0 && strings.TrimSpace(lines[end-1]) == "" {
-				end--
-			}
-			splices = append(splices, splice{afterLine: end, text: append([]string{"", "rules:"}, ruleLines...)})
-		case rules.Kind == yaml.ScalarNode && rules.Tag == "!!null":
-			// A bare "rules:" key: the new entries become its first children.
-			splices = append(splices, splice{afterLine: ruleKey.Line, text: ruleLines})
-		case rules.Kind == yaml.MappingNode && rules.Style&yaml.FlowStyle == 0:
-			splices = append(splices, splice{afterLine: endLine(rules), text: ruleLines})
-		default:
-			return nil, errors.New(`the "rules" mapping is in flow style ({...}) — rewrite it in block form (one "name: { allow: [...] }" line per rule), then rerun the merge`)
-		}
+		newLines[i] = renderEntry(indent, col, c.Name, mergeEntryBody(c), c.Comment)
 	}
 
-	// Apply bottom-up so earlier line numbers stay valid.
-	sort.Slice(splices, func(i, j int) bool { return splices[i].afterLine > splices[j].afterLine })
-	for _, s := range splices {
-		at := s.afterLine
-		if at > len(lines) {
-			at = len(lines)
-		}
-		lines = append(lines[:at], append(append([]string(nil), s.text...), lines[at:]...)...)
+	at := endLine(comps)
+	if at > len(lines) {
+		at = len(lines)
 	}
+	lines = append(lines[:at], append(append([]string(nil), newLines...), lines[at:]...)...)
 	return []byte(strings.Join(lines, "\n")), nil
+}
+
+// mergeEntryBody renders a merged component's `{ path: <patterns>, <rule> }`
+// value, or `{ path: <patterns> }` when the component carries no rule.
+func mergeEntryBody(c MergeComponent) string {
+	body := "{ path: " + renderPathValue(c.Patterns)
+	if c.Rule != "" {
+		body += ", " + c.Rule
+	}
+	return body + " }"
 }
 
 // DeclaredNames lists every name the raw config's components and groups

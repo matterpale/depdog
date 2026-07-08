@@ -1,12 +1,17 @@
-# depdog
+<div align="center">
 
-Keep a Go codebase's internal dependencies pointing in the right direction.
+<img src="docs/logo.svg" alt="depdog" width="330">
 
-Architecture rules — "the domain imports nothing but the standard library",
-"handlers never import repositories" — usually live in people's heads or a wiki,
-and they rot. depdog makes them executable: you declare which *components* exist
-and who may import whom in a small `depdog.yaml`, and `depdog check` enforces it
-against every import edge in the module, with a non-zero exit code for CI.
+**A dependency watchdog for Go** — your architecture rules, enforced on every build.
+
+[![Go Reference](https://pkg.go.dev/badge/github.com/matterpale/depdog.svg)](https://pkg.go.dev/github.com/matterpale/depdog)
+[![CI](https://github.com/matterpale/depdog/actions/workflows/ci.yml/badge.svg)](https://github.com/matterpale/depdog/actions/workflows/ci.yml)
+[![Latest release](https://img.shields.io/github/v/release/matterpale/depdog?color=d68a1e)](https://github.com/matterpale/depdog/releases)
+[![License: MIT](https://img.shields.io/badge/license-MIT-d68a1e)](LICENSE)
+
+[**Install**](#install)&nbsp;·&nbsp;[**Quick start**](#quick-start)&nbsp;·&nbsp;[**Configuration**](#configuration)&nbsp;·&nbsp;[**Commands**](#commands)&nbsp;·&nbsp;[**CI**](#ci)
+
+</div>
 
 ```
 depdog check — github.com/acme/shop
@@ -19,20 +24,26 @@ depdog check — github.com/acme/shop
 1 violation · 1 warning · 12 packages · 39 edges checked in 40ms
 ```
 
-![depdog demo: check, explain, and the TUI on a module with violations](docs/demo.gif)
+<p align="center">
+  <img src="docs/demo.gif" alt="depdog demo: check, explain, and the TUI on a module with violations" width="820">
+</p>
+
+**depdog** is a *dependency watchdog*: architecture rules — *"the domain imports
+nothing but the standard library," "handlers never import repositories"* —
+usually live in someone's head or a wiki, and they rot. depdog makes them
+executable: you declare which **components** exist and who may import whom in one
+small `depdog.yaml`, and `depdog check` enforces it against every import edge in
+your module, exiting non-zero for CI.
 
 ## Install
 
 ```bash
-# From source (Go 1.26+):
 go install github.com/matterpale/depdog/cmd/depdog@latest
-
-# Or build the repo directly:
-go build -o depdog ./cmd/depdog
 ```
 
 Prebuilt binaries for Linux, macOS, and Windows are on the
-[releases page](https://github.com/matterpale/depdog/releases).
+[releases page](https://github.com/matterpale/depdog/releases); building from
+source (`go build -o depdog ./cmd/depdog`) needs Go 1.26+.
 
 ## Quick start
 
@@ -43,93 +54,126 @@ depdog check     # enforce the rules; exit 1 on violations
 
 `init` inspects your layout, matches it against an architecture preset, and
 proposes a component mapping you refine interactively — drop, rename, or
-re-pattern components — or accept as-is with `--yes`.
-
-When a `depdog.yaml` already exists, `init` refuses to touch it. As the code
-grows, `depdog init --merge` rescans the module and appends a component (and,
-under `policy: deny`, a starter rule) for every directory no existing pattern
-covers — editing the file in place without disturbing your comments, ordering
-or formatting. When everything is covered it changes nothing and says so.
+re-pattern components — or accept as-is with `--yes`. It refuses to touch an
+existing `depdog.yaml`; as the code grows, `depdog init --merge` rescans the
+module and appends a component (and, under `default: deny`, a starter rule)
+for every directory no existing pattern covers — editing the file in place
+without disturbing your comments, ordering or formatting. When everything is
+covered it changes nothing and says so.
 
 ## Configuration
 
 `depdog.yaml` lives at the repo root, next to `go.mod`:
 
 ```yaml
-version: 1
+version: 2
 
+# Each component lists its path glob(s) and, inline, who it may import.
 components:
-  main:       ["cmd/**"]
-  domain:     ["internal/domain/**"]
-  handler:    ["internal/handler/**"]
-  service:    ["internal/service/**"]
-  repository: ["internal/repository/**"]
+  main:       { path: "cmd/**" }                                # no rule → open (the default)
+  domain:     { path: "internal/domain/**", allow: [std] }      # whitelist: std only
+  handler:    { path: "internal/handler/**", deny: [service, repository] } # forbids its peers
+  service:    { path: "internal/service/**", deny: [handler, repository] }
+  repository: { path: "internal/repository/**", deny: [handler, service] }
 
-policy: deny          # whitelist stance — only what a rule allows may be imported
-
-rules:
-  main:       { allow: ["*"] }                 # the entrypoint wires everything
-  domain:     { allow: [std] }                 # the pure core: std-lib only
-  handler:    { allow: [domain, std, external] }
-  service:    { allow: [domain, std, external] }
-  repository: { allow: [domain, std, external] }
+default: allow   # fallback for a rule-less component (like main); the default if omitted
 
 options:
   test_files: hybrid              # default; also: same-rules, relaxed
   skip: ["internal/legacy/**"]    # package dirs excluded from analysis
 ```
 
+Here `domain` is a **whitelist** (an `allow` list — only what's listed passes) and the
+three peers are **blacklists** (a `deny` list — everything except what's listed); the
+stance is read per component from which word you use. `main` has no rule at all, so it
+falls back to the top-level `default` — which is `allow`, so it may import anything
+(an explicit `allow: ["*"]` would be equivalent, just noisier). `path` takes a single
+glob or a list (`path: ["internal/api/**", "internal/rpc/**"]`).
+
 An editor JSON Schema ships at
 [`schema/depdog.schema.json`](schema/depdog.schema.json) for autocomplete and
 validation (a test keeps it in lockstep with the parser).
 
-Key ideas:
+### Components and matching
 
-- **Components** are named sets of packages, matched by recursive doublestar
-  globs against module-relative package dirs. When patterns overlap, the most
-  specific wins; equal specificity is an ambiguity error.
-- **Stance is inferred per rule from word choice.** A rule with an `allow` list
-  is a *whitelist* (only the listed imports pass); a rule with only a `deny` list
-  is a *blacklist* (everything passes except what's listed). An explicit `deny`
-  always beats an `allow`. This lets stances mix per component — `handler:
-  { deny: [repository] }` means "anything but repository" even when other
-  components are strict whitelists.
-- **policy** is the fallback for components with no `allow`/`deny` rule: `deny`
-  (whitelist) or `allow` (blacklist). It is optional — omit it for the strict
-  `deny` default. `init` asks which you want.
-- Allow/deny entries are component names or the specials `std`, `external`,
-  `unassigned` and `"*"`. An entry that looks like an import path (contains `/`
-  or `.`) restricts a **specific external module** by prefix, e.g. `allow: [std,
-  "golang.org/x/sync"]` permits std and that one dependency; list it under `deny`
-  to forbid just that module.
-- **Groups** name a reusable set of components. Declare `groups: { inner:
-  [domain, core] }`, then reference `inner` in any allow/deny list; it expands
-  to its members when the config loads.
-- In-module packages no component claims are always reported as **warnings**,
-  but never fail the build on their own — unmapped packages are how rule sets
-  rot, so they stay visible without blocking adoption. A component whose
-  patterns match no package is likewise flagged (a likely typo or dead pattern).
-- **Component import cycles** (`a ↔ b` at the architecture level — which a
-  package-level compile check can't even have) are detected and reported as an
-  advisory, never failing the build on their own.
-- **test_files: hybrid** (the default) lets `_test.go` files import any external
-  module while still enforcing component-to-component rules; `same-rules` is
-  strict, `relaxed` exempts test files entirely.
+A component is a named set of packages: each `path` glob is matched, recursive
+doublestar style, against module-relative package directories. When patterns
+overlap, the most specific one wins; equal specificity is an ambiguity error,
+not a silent pick.
+
+### What goes in `allow` and `deny`
+
+| Entry                  | Matches                                                          |
+| ---------------------- | ---------------------------------------------------------------- |
+| `domain`, `handler`, … | another component, by name                                       |
+| `std`                  | the Go standard library                                          |
+| `external`             | any module that isn't yours                                      |
+| `unassigned`           | in-module packages no component claims                           |
+| `"*"`                  | everything                                                       |
+| `golang.org/x/sync`    | one specific external module, by prefix — any entry with `/` or `.` |
+
+**Groups** name a reusable set of components: declare `groups: { inner:
+[domain, core] }`, then reference `inner` in any allow/deny list; it expands
+to its members when the config loads.
+
+Two rules of precedence to remember: an explicit `deny` always beats an
+`allow`, and a component with neither falls back to the top-level `default` —
+set `default: deny` to make unruled components fail closed (`init` asks which
+stance you want).
+
+### Signals that never fail the build
+
+Three findings are always reported but never exit non-zero on their own —
+visibility without blocking adoption:
+
+- **Unmapped packages.** In-module packages no component claims are warnings;
+  unmapped packages are how rule sets rot, so they stay visible.
+- **Dead patterns.** A component whose patterns match no package is flagged —
+  a likely typo.
+- **Component cycles.** `a ↔ b` at the architecture level (which a
+  package-level compile check can't even have) is detected and reported as an
+  advisory.
+
+### Test files
+
+`test_files: hybrid` (the default) lets `_test.go` files import any external
+module while still enforcing component-to-component rules; `same-rules` is
+strict, `relaxed` exempts test files entirely.
 
 ## Commands
 
-| Command | What it does |
-|---|---|
-| `depdog init` | Scan the module and write a starter `depdog.yaml`. `--preset ddd\|hexagonal\|layered\|flat`, `--policy deny\|allow`, `--yes` (non-interactive), `--force` (overwrite), `--merge` (add components for uncovered directories to an existing file, preserving its comments and formatting). |
-| `depdog check [packages]` | Evaluate imports against the rules. `--format text\|json\|github\|sarif`, `--fail-on any\|new`, `--color auto\|always\|never`. |
-| `depdog baseline` | Record current violations to `depdog.baseline.yaml` for the ratchet below. |
-| `depdog graph` | Emit the dependency graph. `--format dot\|mermaid`, `--level component\|package`, `--violations-only`, `--focus <component>`. |
-| `depdog config` | Print the compiled rule set — components, patterns, each component's inferred stance and rule, the policy and options — for debugging a config. |
-| `depdog explain <component-or-package> [import]` | Explain why something is red (the rule that fired, with file:line), how a component is constrained, or — with a second argument — whether one package may import another (a package, component, or external module) and which rule decides it. |
-| `depdog tui` / bare `depdog` | Interactive terminal UI: a component dashboard, a browsable violations list, and per-package imports/importers. The Violations and Packages lists scroll and filter with `/`; `e` opens the selection in `$EDITOR` at its file:line; `r` re-runs the check in place; `?` shows all keys. |
+| Command                    | What it does                                                       |
+| -------------------------- | ------------------------------------------------------------------ |
+| `depdog init`              | Scan the module and write a starter `depdog.yaml`; `--merge` extends an existing one in place |
+| `depdog check [packages]`  | Evaluate every import edge against the rules                       |
+| `depdog baseline`          | Record current violations to `depdog.baseline.yaml` for the [ratchet](#adopting-rules-on-a-codebase-that-doesnt-pass-yet) |
+| `depdog graph`             | Emit the dependency graph as DOT or Mermaid                        |
+| `depdog explain <component-or-package> [import]` | Explain why something is red (the rule that fired, with file:line), how a component is constrained, or whether *A* may import *B* and which rule decides it |
+| `depdog config`            | Print the compiled rule set — components, patterns, inferred stances, options — for debugging a config |
+| `depdog tui` (or bare `depdog`) | Interactive terminal UI: component dashboard, browsable violations, per-package imports and importers |
 
-Exit codes are a contract: **0** clean, **1** violations, **2** configuration or
-usage error.
+<details>
+<summary><b>All flags</b></summary>
+
+| Command  | Flags                                                                     |
+| -------- | ------------------------------------------------------------------------- |
+| `init`   | `--preset ddd\|hexagonal\|layered\|flat` · `--default deny\|allow` · `--yes` (non-interactive) · `--force` (overwrite) · `--merge` (extend an existing file, preserving comments and formatting) |
+| `check`  | `--format text\|json\|github\|sarif` · `--fail-on any\|new` · `--color auto\|always\|never` |
+| `graph`  | `--format dot\|mermaid` · `--level component\|package` · `--violations-only` · `--focus <component>` |
+
+</details>
+
+In the TUI, the Violations and Packages lists scroll and filter with
+<kbd>/</kbd>; <kbd>e</kbd> opens the selection in `$EDITOR` at its file:line,
+<kbd>r</kbd> re-runs the check in place, and <kbd>?</kbd> shows all keys.
+
+Exit codes are a contract:
+
+| Code | Meaning                      |
+|:----:| ---------------------------- |
+| `0`  | clean                        |
+| `1`  | violations                   |
+| `2`  | configuration or usage error |
 
 ## CI
 
@@ -157,10 +201,11 @@ depdog check --fail-on new      # exits 1 only on violations not in the baseline
 
 ## depdog checks itself
 
-depdog's own architecture is declared in its `depdog.yaml` and enforced in CI:
-the language-agnostic engine (`internal/core`) depends on the standard library
-only, language knowledge lives behind an adapter interface, and the layers above
-may only import inward. A failing architecture is a failing build.
+depdog's own architecture is declared in its [`depdog.yaml`](depdog.yaml) and
+enforced in CI: the language-agnostic engine (`internal/core`) depends on the
+standard library only, language knowledge lives behind an adapter interface,
+and the layers above may only import inward. A failing architecture is a
+failing build.
 
 ## Limitations
 
@@ -173,9 +218,13 @@ may only import inward. A failing architecture is a failing build.
 
 ## Status
 
-v0.1.0 — the first tagged release. The M0–M5 roadmap in `PLAN.md` is complete;
-`BACKLOG.md` tracks what's next.
+v0.1.0 — the first tagged release. The M0–M5 roadmap in [`PLAN.md`](PLAN.md)
+is complete; [`BACKLOG.md`](BACKLOG.md) tracks what's next.
 
 ## License
 
 [MIT](LICENSE)
+
+---
+
+<p align="center"><sub>🐕 <em>woof.</em></sub></p>

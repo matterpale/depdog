@@ -9,7 +9,7 @@
   "properties": {
     "version": {
       "type": "integer",
-      "const": 1,
+      "const": 2,
       "description": "Config format version."
     },
     "module": {
@@ -18,8 +18,17 @@
     },
     "components": {
       "type": "object",
-      "description": "Named layers, each mapped to package-directory glob patterns (relative to the module root).",
-      "additionalProperties": { "$ref": "#/definitions/patterns" }
+      "description": "Named layers. Each entry carries its package-directory glob path(s) and, inline, the rule for who it may (allow) or must not (deny) import. An allow list makes the component a whitelist; a deny-only rule a blacklist; deny always wins.",
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["path"],
+        "properties": {
+          "path": { "$ref": "#/definitions/patterns" },
+          "allow": { "$ref": "#/definitions/refs" },
+          "deny": { "$ref": "#/definitions/refs" }
+        }
+      }
     },
     "groups": {
       "type": "object",
@@ -29,22 +38,10 @@
         "items": { "type": "string" }
       }
     },
-    "policy": {
+    "default": {
       "type": "string",
-      "enum": ["deny", "allow"],
-      "description": "Fallback stance for components with no allow/deny rule. Optional; defaults to deny (whitelist)."
-    },
-    "rules": {
-      "type": "object",
-      "description": "Per-component rules. An allow list makes the component a whitelist; a deny-only rule a blacklist. deny always wins.",
-      "additionalProperties": {
-        "type": "object",
-        "additionalProperties": false,
-        "properties": {
-          "allow": { "$ref": "#/definitions/refs" },
-          "deny": { "$ref": "#/definitions/refs" }
-        }
-      }
+      "enum": ["allow", "deny"],
+      "description": "Fallback stance for a component with no allow/deny rule: allow (open — may import anything) or deny (strict whitelist — may import nothing). Optional; defaults to allow."
     },
     "options": {
       "type": "object",

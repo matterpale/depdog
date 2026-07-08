@@ -8,12 +8,12 @@ import (
 	"github.com/matterpale/depdog/internal/core"
 )
 
-// RuleSet prints the compiled configuration for debugging: the policy and
-// options, then each component with its patterns, inferred stance and rule.
+// RuleSet prints the compiled configuration for debugging: the default stance
+// and options, then each component with its patterns, inferred stance and rule.
 // Output is plain text and deterministic (components are already sorted).
 func RuleSet(w io.Writer, rs *core.RuleSet) error {
 	var b strings.Builder
-	fmt.Fprintf(&b, "policy:     %s\n", policyName(rs.Policy))
+	fmt.Fprintf(&b, "default:    %s\n", policyName(rs.Policy))
 	fmt.Fprintf(&b, "test_files: %s\n", testFilesName(rs.TestFiles))
 	if len(rs.Skip) > 0 {
 		fmt.Fprintf(&b, "skip:       %s\n", strings.Join(rs.Skip, ", "))

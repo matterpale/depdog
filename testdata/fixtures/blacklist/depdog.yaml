@@ -1,13 +1,9 @@
 # Blacklist style: everything is allowed except what is explicitly denied.
-version: 1
+version: 2
 
 components:
-  domain:  ["internal/domain/**"]
-  handler: ["internal/handler/**"]
-  service: ["internal/service/**"]
+  domain:  { path: "internal/domain/**",  deny: [handler, service, external] }
+  handler: { path: "internal/handler/**", deny: [service] }
+  service: { path: "internal/service/**" }
 
-policy: allow
-
-rules:
-  handler: { deny: [service] }
-  domain:  { deny: [handler, service, external] }
+default: allow

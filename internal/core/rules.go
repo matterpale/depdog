@@ -208,12 +208,12 @@ func (rs *RuleSet) fallback(component string, rule Rule, hasRule bool) (bool, st
 		if hasRule && len(rule.Deny) > 0 {
 			return true, "not denied by " + ruleText(component, "deny", rule.Deny)
 		}
-		return true, "policy: allow"
+		return true, "default: allow"
 	}
 	if hasRule && len(rule.Allow) > 0 {
 		return false, ruleText(component, "allow", rule.Allow)
 	}
-	return false, "policy: deny"
+	return false, "default: deny"
 }
 
 func refMatchesTarget(r Ref, target string) bool {

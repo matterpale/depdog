@@ -21,7 +21,7 @@ const (
 
 // Component is one named layer of an architecture: a set of package-dir
 // patterns plus the dependency refs it may import (Allow, rendered under
-// policy: deny) or must not import (Deny, rendered under policy: allow).
+// default: deny) or must not import (Deny, rendered under default: allow).
 // Refs are component names or the specials std, external, unassigned and "*".
 type Component struct {
 	Name     string

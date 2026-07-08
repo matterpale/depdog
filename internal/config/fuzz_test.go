@@ -9,14 +9,14 @@ func FuzzParse(f *testing.F) {
 	seeds := []string{
 		"",
 		valid,
-		"version: 1\ncomponents: {a: [\"x/**\"]}\npolicy: deny\n",
-		"version: 1\ncomponents:\n  a: cmd/**\nrules:\n  a: { deny: [external] }\n",
-		"version: 1\ncomponents: {a: [\"x/**\"]}\npolicy: allow\noptions: {test_files: relaxed, skip: [\"y/**\"]}",
-		"version: 2\ncomponents: {a: [\"x/**\"]}\npolicy: deny",
-		"version: 1\ncomponents: {std: [\"x/**\"]}\npolicy: deny",
-		"version: 1\ncomponents: {a: [\"x/[bad/**\"]}\npolicy: deny",
+		"version: 2\ncomponents: {a: {path: \"x/**\"}}\ndefault: deny\n",
+		"version: 2\ncomponents:\n  a: { path: cmd/**, deny: [external] }\ndefault: allow\n",
+		"version: 2\ncomponents: {a: {path: \"x/**\"}}\ndefault: allow\noptions: {test_files: relaxed, skip: [\"y/**\"]}",
+		"version: 1\ncomponents:\n  a: [\"x/**\"]\nrules:\n  a: { allow: [std] }\n", // legacy: exercises the migration error path
+		"version: 2\ncomponents: {std: {path: \"x/**\"}}\ndefault: deny",
+		"version: 2\ncomponents: {a: {path: \"x/[bad/**\"}}\ndefault: deny",
 		"not: yaml: at: all",
-		"version: 1\ncomponents: {a: [\"x/**\"]}\nrulez: {}",
+		"version: 2\ncomponents: {a: {path: \"x/**\"}}\nrulez: {}",
 	}
 	for _, s := range seeds {
 		f.Add([]byte(s))

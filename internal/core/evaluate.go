@@ -155,7 +155,7 @@ func Evaluate(g *Graph, rs *RuleSet) (*Result, error) {
 			if stance == PolicyAllow {
 				continue // blacklist fallback: unmentioned edges pass
 			}
-			text := "policy: deny"
+			text := "default: deny"
 			if hasRule && len(rule.Allow) > 0 {
 				text = ruleText(comp, "allow", rule.Allow)
 			}

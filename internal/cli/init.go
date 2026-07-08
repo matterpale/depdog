@@ -33,11 +33,11 @@ preset (ddd, hexagonal, layered or flat) and writes a starter depdog.yaml.
 
 Run it with no flags for an interactive wizard, or with --yes to accept the
 suggestion non-interactively (for scripts and CI bootstrapping). --preset and
---policy pin those choices; without them --yes defaults to ddd + deny.
+--default pin those choices; without them --yes defaults to ddd + deny.
 
 When a depdog.yaml already exists, init refuses to touch it unless you pass
 --force (overwrite it) or --merge (keep it). --merge rescans the module and
-appends a component — and, under policy deny, a starter rule — for every
+appends a component — and, under a deny default, a starter rule — for every
 directory no existing component pattern covers, editing the file in place
 without disturbing its comments, ordering or formatting. It lists what it
 would add and asks for confirmation; --yes applies the additions
@@ -66,7 +66,7 @@ Exit codes: 0 written (or nothing to merge), 2 configuration or usage error.`,
 					return errors.New("--merge and --force conflict — merge edits the existing file, force overwrites it; pick one")
 				}
 				if presetName != "" || policy != "" {
-					return errors.New("drop --preset and --policy — they have no effect with --merge; the existing file keeps its layout and policy")
+					return errors.New("drop --preset and --default — they have no effect with --merge; the existing file keeps its layout and stance")
 				}
 				if !assumeYes && !isInteractive(cmd) {
 					return errors.New("depdog init --merge needs an interactive terminal; pass --yes to apply the additions non-interactively")
@@ -84,13 +84,13 @@ Exit codes: 0 written (or nothing to merge), 2 configuration or usage error.`,
 				}
 			}
 			if policy != "" && policy != wizard.PolicyDeny && policy != wizard.PolicyAllow {
-				return fmt.Errorf("invalid --policy %q — use %q (whitelist) or %q (blacklist)",
+				return fmt.Errorf("invalid --default %q — use %q (whitelist) or %q (blacklist)",
 					policy, wizard.PolicyDeny, wizard.PolicyAllow)
 			}
 
 			interactive := !assumeYes
 			if interactive && !isInteractive(cmd) {
-				return errors.New("depdog init needs an interactive terminal; pass --yes to accept the suggested config (optionally with --preset and --policy)")
+				return errors.New("depdog init needs an interactive terminal; pass --yes to accept the suggested config (optionally with --preset and --default)")
 			}
 
 			scan, err := wizard.ScanModule(root)
@@ -148,13 +148,13 @@ Exit codes: 0 written (or nothing to merge), 2 configuration or usage error.`,
 				return err
 			}
 			out := cmd.OutOrStdout()
-			fmt.Fprintf(out, "Wrote %s — %d components, policy: %s.\n", relTo(root, dest), len(cfg.Components), cfg.Policy)
+			fmt.Fprintf(out, "Wrote %s — %d components, default: %s.\n", relTo(root, dest), len(cfg.Components), cfg.Policy)
 			fmt.Fprintln(out, "Review it, then run `depdog check`.")
 			return nil
 		},
 	}
 	cmd.Flags().StringVar(&presetName, "preset", "", "architecture preset: "+strings.Join(wizard.PresetNames(), ", "))
-	cmd.Flags().StringVar(&policy, "policy", "", "rule stance: deny (whitelist) or allow (blacklist)")
+	cmd.Flags().StringVar(&policy, "default", "", "default stance for rule-less components: deny (whitelist) or allow (blacklist)")
 	cmd.Flags().BoolVarP(&assumeYes, "yes", "y", false, "accept the suggestion without prompting")
 	cmd.Flags().BoolVar(&force, "force", false, "overwrite an existing depdog.yaml")
 	cmd.Flags().BoolVar(&merge, "merge", false, "add components for uncovered directories to an existing depdog.yaml, keeping its comments and formatting")
@@ -163,7 +163,7 @@ Exit codes: 0 written (or nothing to merge), 2 configuration or usage error.`,
 }
 
 // runMerge implements `init --merge`: rescan the module, propose a component
-// (plus, under policy deny, a starter rule) for every directory no existing
+// (plus, under a deny default, a starter rule) for every directory no existing
 // component pattern covers, and splice them into the existing file via
 // config.MergeComponents — a yaml.Node-located edit that leaves the user's
 // comments, ordering and formatting untouched. The merged bytes must pass
@@ -213,7 +213,7 @@ func runMerge(cmd *cobra.Command, root, dest string, interactive bool) error {
 			Name:     c.Name,
 			Patterns: c.Patterns,
 			Comment:  c.Comment,
-			Rule:     wizard.RuleBody(c, policy),
+			Rule:     wizard.RuleInner(c, policy),
 		}
 		names[i] = c.Name
 	}

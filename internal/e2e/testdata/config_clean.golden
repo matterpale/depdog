@@ -1,4 +1,4 @@
-policy:     deny
+default:    deny
 test_files: hybrid
 
 components:
