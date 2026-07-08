@@ -1,0 +1,2 @@
+boundaryfix/cmd/comparator (comparator) → cmd/query-ce (query-ce)
+  denied by boundary "cmd-services"

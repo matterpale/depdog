@@ -620,6 +620,69 @@ func TestExplainUnknown(t *testing.T) {
 	}
 }
 
+func TestCheckBoundaries(t *testing.T) {
+	// The boundaries fixture: a cross-service edge (member → member) and a
+	// shared-lib → service edge under a sealed boundary are both violations.
+	out, _, exit := run(t, fixture("boundaries"), "check")
+	if exit != 1 {
+		t.Fatalf("exit %d, want 1\n%s", exit, out)
+	}
+	golden(t, "boundaries_text.golden", reTextDur.ReplaceAllString(out, "checked in X"))
+}
+
+func TestCheckBoundariesJSON(t *testing.T) {
+	out, _, exit := run(t, fixture("boundaries"), "check", "--format", "json")
+	if exit != 1 {
+		t.Fatalf("exit %d, want 1\n%s", exit, out)
+	}
+	golden(t, "boundaries_json.golden", reJSONDur.ReplaceAllString(out, `"duration_ms": 0`))
+}
+
+func TestConfigDumpBoundaries(t *testing.T) {
+	out, stderr, exit := run(t, fixture("boundaries"), "config")
+	if exit != 0 {
+		t.Fatalf("exit %d\nstderr:\n%s", exit, stderr)
+	}
+	golden(t, "config_boundaries.golden", out)
+}
+
+func TestExplainBoundaryEdge(t *testing.T) {
+	// A cross-member edge: reported as denied by the boundary, not by a
+	// component rule — the shared DecideBoundary path keeps explain and check in
+	// step.
+	out, stderr, exit := run(t, fixture("boundaries"), "explain", "cmd/comparator", "cmd/query-ce")
+	if exit != 0 {
+		t.Fatalf("exit %d\nstderr:\n%s", exit, stderr)
+	}
+	golden(t, "explain_boundary.golden", out)
+}
+
+func TestExplainBoundaryEdgeSealed(t *testing.T) {
+	// An ungrouped source (a shared lib) importing into a member of a sealed
+	// boundary: denied by the sealed one-way rule.
+	out, stderr, exit := run(t, fixture("boundaries"), "explain", "internal/badshared", "cmd/query-ce")
+	if exit != 0 {
+		t.Fatalf("exit %d\nstderr:\n%s", exit, stderr)
+	}
+	golden(t, "explain_boundary_sealed.golden", out)
+}
+
+func TestExplainBoundaryPackage(t *testing.T) {
+	out, stderr, exit := run(t, fixture("boundaries"), "explain", "cmd/query-ce")
+	if exit != 0 {
+		t.Fatalf("exit %d\nstderr:\n%s", exit, stderr)
+	}
+	golden(t, "explain_boundary_package.golden", out)
+}
+
+func TestGraphBoundaries(t *testing.T) {
+	out, stderr, exit := run(t, fixture("boundaries"), "graph")
+	if exit != 0 {
+		t.Fatalf("exit %d\nstderr:\n%s", exit, stderr)
+	}
+	golden(t, "graph_boundaries_dot.golden", out)
+}
+
 // mergeConfig is a hand-formatted config for the initModule layout that covers
 // only cmd, internal/domain and internal/repository, with comments and value
 // alignment a merge must preserve. handler, service, telemetry and util stay

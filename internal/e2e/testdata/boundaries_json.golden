@@ -1,0 +1,91 @@
+{
+  "module": "boundaryfix",
+  "default": "allow",
+  "violations": [
+    {
+      "from_package": "boundaryfix/cmd/comparator",
+      "from_component": "comparator",
+      "import": "boundaryfix/cmd/query-ce",
+      "target": "query-ce",
+      "rule": "denied by boundary \"cmd-services\"",
+      "test_only": false,
+      "boundary": "cmd-services",
+      "reason": "boundary",
+      "positions": [
+        {
+          "file": "cmd/comparator/comparator.go",
+          "line": 5
+        }
+      ]
+    },
+    {
+      "from_package": "boundaryfix/internal/badshared",
+      "from_component": "shared",
+      "import": "boundaryfix/cmd/query-ce",
+      "target": "query-ce",
+      "rule": "denied by boundary \"cmd-services\" (sealed)",
+      "test_only": false,
+      "boundary": "cmd-services",
+      "reason": "boundary-sealed",
+      "positions": [
+        {
+          "file": "internal/badshared/lib.go",
+          "line": 5
+        }
+      ]
+    }
+  ],
+  "warnings": [],
+  "components": [
+    {
+      "name": "comparator",
+      "stance": "whitelist",
+      "allow": [
+        "*"
+      ],
+      "packages": 1,
+      "edges": 1,
+      "violations": 1
+    },
+    {
+      "name": "query-ce",
+      "stance": "whitelist",
+      "allow": [
+        "*"
+      ],
+      "packages": 1,
+      "edges": 1,
+      "violations": 0
+    },
+    {
+      "name": "shared",
+      "stance": "whitelist",
+      "allow": [
+        "*"
+      ],
+      "packages": 2,
+      "edges": 1,
+      "violations": 1
+    }
+  ],
+  "boundaries": [
+    {
+      "name": "cmd-services",
+      "sealed": true,
+      "members": [
+        {
+          "component": "comparator"
+        },
+        {
+          "component": "query-ce"
+        }
+      ]
+    }
+  ],
+  "cycles": [],
+  "stats": {
+    "packages": 4,
+    "edges": 3,
+    "duration_ms": 0
+  }
+}

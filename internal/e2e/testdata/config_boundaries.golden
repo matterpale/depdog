@@ -1,0 +1,16 @@
+default:    allow
+test_files: hybrid
+
+components:
+  comparator  cmd/comparator/**
+              stance: whitelist (only allowed pass)
+              allow:  [*]
+  query-ce    cmd/query-ce/**
+              stance: whitelist (only allowed pass)
+              allow:  [*]
+  shared      internal/**
+              stance: whitelist (only allowed pass)
+              allow:  [*]
+
+boundaries:
+  cmd-services (sealed)  comparator, query-ce

@@ -45,9 +45,10 @@ func Graph(w io.Writer, module string, views []core.PackageView, violations []co
 }
 
 type graphNode struct {
-	id        string // unique: import path (package level) or component name
-	label     string // display label
-	component string // owning component, for package-level clustering
+	id         string   // unique: import path (package level) or component name
+	label      string   // display label
+	component  string   // owning component, for package-level clustering
+	boundaries []string // boundary names this node is a member of (sorted, deduped)
 }
 
 type graphEdge struct {
@@ -73,9 +74,23 @@ func graphElements(module string, views []core.PackageView, violations []core.Vi
 	}
 
 	nodeInfo := map[string]graphNode{}
-	ensure := func(gn graphNode) {
+	// Boundary membership accumulates by node id across every package that maps
+	// to it, so a component node carries the union of its packages' boundaries.
+	nodeBoundaries := map[string]map[string]bool{}
+	ensure := func(gn graphNode, boundaries []core.PackageBoundary) {
 		if _, ok := nodeInfo[gn.id]; !ok {
 			nodeInfo[gn.id] = gn
+		}
+		if len(boundaries) == 0 {
+			return
+		}
+		set := nodeBoundaries[gn.id]
+		if set == nil {
+			set = map[string]bool{}
+			nodeBoundaries[gn.id] = set
+		}
+		for _, pb := range boundaries {
+			set[pb.Boundary] = true
 		}
 	}
 	edgeViol := map[[2]string]bool{}
@@ -88,15 +103,22 @@ func graphElements(module string, views []core.PackageView, violations []core.Vi
 		return graphNode{id: importPath, label: shortLabel(importPath, module), component: orUnassigned(component)}
 	}
 
+	// byPath resolves a target package's boundaries so imported nodes carry
+	// membership even when the importer is the only one that names them.
+	byPath := make(map[string][]core.PackageBoundary, len(views))
+	for _, pv := range views {
+		byPath[pv.ImportPath] = pv.Boundaries
+	}
+
 	for _, pv := range views {
 		src := node(pv.Component, pv.ImportPath)
-		ensure(src)
+		ensure(src, pv.Boundaries)
 		for _, iv := range pv.Imports {
 			if iv.Class != core.ClassInModule {
 				continue
 			}
 			dst := node(iv.Component, iv.Path)
-			ensure(dst)
+			ensure(dst, byPath[iv.Path])
 			if dst.id == src.id {
 				continue
 			}
@@ -107,6 +129,14 @@ func graphElements(module string, views []core.PackageView, violations []core.Vi
 
 	nodes := make([]graphNode, 0, len(nodeInfo))
 	for _, gn := range nodeInfo {
+		if set := nodeBoundaries[gn.id]; len(set) > 0 {
+			bs := make([]string, 0, len(set))
+			for name := range set {
+				bs = append(bs, name)
+			}
+			sort.Strings(bs)
+			gn.boundaries = bs
+		}
 		nodes = append(nodes, gn)
 	}
 	sort.Slice(nodes, func(i, j int) bool { return nodes[i].id < nodes[j].id })
@@ -214,16 +244,16 @@ func writeDOT(w io.Writer, nodes []graphNode, edges []graphEdge, cluster bool) e
 			fmt.Fprintf(&b, "  subgraph %q {\n", "cluster_"+comp)
 			fmt.Fprintf(&b, "    label=%q;\n", comp)
 			for _, n := range byComp[comp] {
-				fmt.Fprintf(&b, "    %q [label=%q];\n", n.id, n.label)
+				fmt.Fprintf(&b, "    %q [label=%q];\n", n.id, nodeLabel(n))
 			}
 			b.WriteString("  }\n")
 		}
 	} else {
 		for _, n := range nodes {
-			if n.label == n.id {
+			if lbl := nodeLabel(n); lbl == n.id {
 				fmt.Fprintf(&b, "  %q;\n", n.id)
 			} else {
-				fmt.Fprintf(&b, "  %q [label=%q];\n", n.id, n.label)
+				fmt.Fprintf(&b, "  %q [label=%q];\n", n.id, lbl)
 			}
 		}
 	}
@@ -250,7 +280,7 @@ func writeMermaid(w io.Writer, nodes []graphNode, edges []graphEdge) error {
 	var b strings.Builder
 	b.WriteString("flowchart LR\n")
 	for _, n := range nodes {
-		fmt.Fprintf(&b, "  %s[%q]\n", mid[n.id], n.label)
+		fmt.Fprintf(&b, "  %s[%q]\n", mid[n.id], nodeLabel(n))
 	}
 	for _, e := range edges {
 		if e.violation {
@@ -261,6 +291,16 @@ func writeMermaid(w io.Writer, nodes []graphNode, edges []graphEdge) error {
 	}
 	_, err := io.WriteString(w, b.String())
 	return err
+}
+
+// nodeLabel is the display label with any boundary membership appended, so a
+// node's boundaries are visible in the rendered graph, e.g. `comparator
+// «cmd-services»`. Deterministic: boundaries are already sorted.
+func nodeLabel(n graphNode) string {
+	if len(n.boundaries) == 0 {
+		return n.label
+	}
+	return fmt.Sprintf("%s «%s»", n.label, strings.Join(n.boundaries, ", "))
 }
 
 func orUnassigned(comp string) string {
