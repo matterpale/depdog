@@ -38,6 +38,24 @@
         "items": { "type": "string" }
       }
     },
+    "boundaries": {
+      "type": "object",
+      "description": "Named mutual-exclusion groups: distinct members may not import each other. A member is a component name or a path glob. sealed: true adds a one-way wall (nothing outside all members may import in). Shorthand is a bare list of members; the expanded form takes {members, sealed}.",
+      "additionalProperties": {
+        "oneOf": [
+          { "type": "array", "items": { "type": "string" } },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["members"],
+            "properties": {
+              "members": { "type": "array", "items": { "type": "string" } },
+              "sealed": { "type": "boolean" }
+            }
+          }
+        ]
+      }
+    },
     "default": {
       "type": "string",
       "enum": ["allow", "deny"],

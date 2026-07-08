@@ -19,6 +19,16 @@ type PackageView struct {
 	Component  string // "" means unassigned
 	Imports    []ImportView
 	Importers  []string
+	Boundaries []PackageBoundary // boundary members this package belongs to; sorted by boundary
+}
+
+// PackageBoundary records one boundary a package participates in: which member
+// (if any) claims it and whether that boundary is sealed. Member is "" when the
+// package sits in no member of the boundary (ungrouped for it).
+type PackageBoundary struct {
+	Boundary string
+	Member   string // member label (component name or glob); "" if not a member
+	Sealed   bool
 }
 
 // BuildPackageViews turns the graph into per-package views, resolving each
@@ -51,6 +61,21 @@ func BuildPackageViews(g *Graph, rs *RuleSet) ([]PackageView, error) {
 			return nil, err
 		}
 		pv := PackageView{ImportPath: p.ImportPath, Component: comp}
+		if len(rs.Boundaries) > 0 {
+			mem, merr := rs.BoundaryMembership(p.RelDir)
+			if merr != nil {
+				return nil, merr
+			}
+			for bi, mi := range mem {
+				if mi < 0 {
+					continue // not a member of this boundary
+				}
+				b := &rs.Boundaries[bi]
+				pv.Boundaries = append(pv.Boundaries, PackageBoundary{
+					Boundary: b.Name, Member: b.Members[mi].Label, Sealed: b.Sealed,
+				})
+			}
+		}
 		for _, imp := range p.Imports {
 			if imp.Class == ClassInModule && rs.Skipped(imp.RelDir) {
 				continue

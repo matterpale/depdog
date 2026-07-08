@@ -126,6 +126,7 @@
       "violations": 0
     }
   ],
+  "boundaries": [],
   "cycles": [],
   "stats": {
     "packages": 6,

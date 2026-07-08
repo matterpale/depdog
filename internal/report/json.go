@@ -17,6 +17,7 @@ type jsonReport struct {
 	Violations []jsonViolation `json:"violations"`
 	Warnings   []jsonWarning   `json:"warnings"`
 	Components []jsonComponent `json:"components"`
+	Boundaries []jsonBoundary  `json:"boundaries"`
 	Cycles     [][]string      `json:"cycles"`
 	Stats      jsonStats       `json:"stats"`
 }
@@ -38,7 +39,24 @@ type jsonViolation struct {
 	Target        string         `json:"target"`
 	Rule          string         `json:"rule"`
 	TestOnly      bool           `json:"test_only"`
+	Boundary      string         `json:"boundary,omitempty"` // boundary name for boundary violations
+	Reason        string         `json:"reason,omitempty"`   // "boundary" / "boundary-sealed"
 	Positions     []jsonPosition `json:"positions"`
+}
+
+// jsonBoundary is one declared boundary: its members and sealed flag. A stable
+// top-level array, encoded as [] when absent.
+type jsonBoundary struct {
+	Name    string               `json:"name"`
+	Sealed  bool                 `json:"sealed"`
+	Members []jsonBoundaryMember `json:"members"`
+}
+
+// jsonBoundaryMember is one member of a boundary: a component name or a set of
+// glob patterns. Exactly one of component/path is populated.
+type jsonBoundaryMember struct {
+	Component string   `json:"component,omitempty"` // set for component members
+	Path      []string `json:"path,omitempty"`      // set for glob members
 }
 
 type jsonPosition struct {
@@ -51,6 +69,7 @@ type jsonWarning struct {
 	Package   string `json:"package,omitempty"`
 	Dir       string `json:"dir,omitempty"`
 	Component string `json:"component,omitempty"`
+	Boundary  string `json:"boundary,omitempty"`
 }
 
 type jsonStats struct {
@@ -88,6 +107,7 @@ func JSON(w io.Writer, res *core.Result, rs *core.RuleSet, elapsed time.Duration
 		Violations: make([]jsonViolation, 0, len(res.Violations)),
 		Warnings:   make([]jsonWarning, 0, len(res.Warnings)),
 		Components: make([]jsonComponent, 0, len(res.Components)),
+		Boundaries: make([]jsonBoundary, 0, len(rs.Boundaries)),
 		Cycles:     emptyIfNil(res.Cycles),
 		Stats: jsonStats{
 			Packages:   res.Stats.Packages,
@@ -103,6 +123,8 @@ func JSON(w io.Writer, res *core.Result, rs *core.RuleSet, elapsed time.Duration
 			Target:        v.Target,
 			Rule:          v.Rule,
 			TestOnly:      v.TestOnly,
+			Boundary:      v.Boundary,
+			Reason:        string(v.Reason),
 			Positions:     make([]jsonPosition, 0, len(v.Positions)),
 		}
 		for _, p := range v.Positions {
@@ -116,8 +138,21 @@ func JSON(w io.Writer, res *core.Result, rs *core.RuleSet, elapsed time.Duration
 			kind = "unassigned"
 		}
 		out.Warnings = append(out.Warnings, jsonWarning{
-			Kind: kind, Package: wr.Package, Dir: wr.RelDir, Component: wr.Component,
+			Kind: kind, Package: wr.Package, Dir: wr.RelDir, Component: wr.Component, Boundary: wr.Boundary,
 		})
+	}
+	for _, b := range rs.Boundaries {
+		jb := jsonBoundary{Name: b.Name, Sealed: b.Sealed, Members: make([]jsonBoundaryMember, 0, len(b.Members))}
+		for _, m := range b.Members {
+			jm := jsonBoundaryMember{}
+			if m.Component != "" {
+				jm.Component = m.Component
+			} else {
+				jm.Path = m.Patterns
+			}
+			jb.Members = append(jb.Members, jm)
+		}
+		out.Boundaries = append(out.Boundaries, jb)
 	}
 	for _, c := range res.Components {
 		stance := "whitelist"

@@ -485,6 +485,235 @@ func TestEvaluateSkip(t *testing.T) {
 	}
 }
 
+// twoServiceBoundary is the recurring boundaries fixture: two service globs in
+// one boundary. sealed controls the one-way wall. Under policy allow, so the
+// only violations produced are boundary-sourced.
+func twoServiceBoundary(sealed bool) *RuleSet {
+	return &RuleSet{
+		Policy:    PolicyAllow,
+		TestFiles: TestHybrid,
+		Boundaries: []Boundary{{
+			Name:   "cmd-services",
+			Sealed: sealed,
+			Members: []BoundaryMember{
+				{Patterns: []string{"cmd/comparator/**"}, Label: "cmd/comparator/**"},
+				{Patterns: []string{"cmd/query-ce/**"}, Label: "cmd/query-ce/**"},
+			},
+		}},
+	}
+}
+
+// boundaryEdge builds a one-package graph with a single in-module edge.
+func boundaryEdge(fromPath, fromDir, toPath, toDir string, testOnly bool) *Graph {
+	return &Graph{ModulePath: "m", Packages: []Package{
+		{ImportPath: fromPath, RelDir: fromDir, Imports: []Import{
+			mkImport(toPath, ClassInModule, toDir, testOnly),
+		}},
+	}}
+}
+
+func TestEvaluateBoundaryMatrix(t *testing.T) {
+	cases := []struct {
+		name           string
+		sealed         bool
+		from, fromDir  string
+		to, toDir      string
+		wantViolations int
+		wantReason     ReasonKind
+	}{
+		{"in-member allowed", false,
+			"m/cmd/query-ce/a", "cmd/query-ce/a", "m/cmd/query-ce/b", "cmd/query-ce/b", 0, ""},
+		{"cross-member denied", false,
+			"m/cmd/comparator/x", "cmd/comparator/x", "m/cmd/query-ce/y", "cmd/query-ce/y", 1, ReasonBoundary},
+		{"member to ungrouped allowed", false,
+			"m/cmd/query-ce/a", "cmd/query-ce/a", "m/internal/shared", "internal/shared", 0, ""},
+		{"ungrouped to member unsealed allowed", false,
+			"m/internal/shared", "internal/shared", "m/cmd/query-ce/a", "cmd/query-ce/a", 0, ""},
+		{"ungrouped to member sealed denied", true,
+			"m/internal/shared", "internal/shared", "m/cmd/query-ce/a", "cmd/query-ce/a", 1, ReasonBoundarySealed},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			rs := twoServiceBoundary(c.sealed)
+			g := boundaryEdge(c.from, c.fromDir, c.to, c.toDir, false)
+			res := evaluate(t, g, rs)
+			if len(res.Violations) != c.wantViolations {
+				t.Fatalf("violations = %d, want %d: %+v", len(res.Violations), c.wantViolations, res.Violations)
+			}
+			if c.wantViolations > 0 {
+				v := res.Violations[0]
+				if v.Reason != c.wantReason {
+					t.Errorf("reason = %q, want %q", v.Reason, c.wantReason)
+				}
+				if v.Boundary != "cmd-services" {
+					t.Errorf("boundary = %q, want cmd-services", v.Boundary)
+				}
+			}
+		})
+	}
+}
+
+func TestEvaluateBoundarySealedComponentlessSource(t *testing.T) {
+	// The critical control-flow case: the source package is claimed by NO
+	// component (so the old loop continued before the imports loop), yet the
+	// sealed rule must still fire on its outgoing edge into a member.
+	rs := twoServiceBoundary(true)
+	// No component covers internal/shared, so it is truly component-less.
+	g := boundaryEdge("m/internal/shared", "internal/shared", "m/cmd/query-ce/a", "cmd/query-ce/a", false)
+	res := evaluate(t, g, rs)
+	if len(res.Violations) != 1 || res.Violations[0].Reason != ReasonBoundarySealed {
+		t.Fatalf("a component-less ungrouped source must still be sealed-denied: %+v", res.Violations)
+	}
+	// The unassigned warning is orthogonal: it must still fire for the source.
+	var un int
+	for _, w := range res.Warnings {
+		if w.Kind == WarnUnassigned && w.RelDir == "internal/shared" {
+			un++
+		}
+	}
+	if un != 1 {
+		t.Errorf("membership must not silence the unassigned warning: got %d, want 1", un)
+	}
+}
+
+func TestEvaluateBoundaryWinsOverComponentAllow(t *testing.T) {
+	// Both packages are component-assigned with allow[*], yet the cross-member
+	// boundary crossing is a hard deny that wins over the component allow.
+	rs := &RuleSet{
+		Policy:    PolicyAllow,
+		TestFiles: TestHybrid,
+		Components: []Component{
+			{Name: "comparator", Patterns: []string{"cmd/comparator/**"}},
+			{Name: "query-ce", Patterns: []string{"cmd/query-ce/**"}},
+		},
+		Rules: map[string]Rule{
+			"comparator": {Allow: []Ref{{Kind: RefAny}}},
+			"query-ce":   {Allow: []Ref{{Kind: RefAny}}},
+		},
+		Boundaries: []Boundary{{
+			Name: "cmd-services",
+			Members: []BoundaryMember{
+				{Patterns: []string{"cmd/comparator/**"}, Label: "cmd/comparator/**"},
+				{Patterns: []string{"cmd/query-ce/**"}, Label: "cmd/query-ce/**"},
+			},
+		}},
+	}
+	g := boundaryEdge("m/cmd/comparator/x", "cmd/comparator/x", "m/cmd/query-ce/y", "cmd/query-ce/y", false)
+	res := evaluate(t, g, rs)
+	if len(res.Violations) != 1 || res.Violations[0].Reason != ReasonBoundary {
+		t.Fatalf("boundary deny must win over component allow: %+v", res.Violations)
+	}
+}
+
+func TestEvaluateBoundaryMultiComposition(t *testing.T) {
+	// An edge subject to two boundaries: the first (sorted) denying boundary
+	// wins, and exactly one violation is emitted for determinism.
+	rs := &RuleSet{
+		Policy:    PolicyAllow,
+		TestFiles: TestHybrid,
+		Boundaries: []Boundary{
+			// "aaa" sorts before "zzz"; both deny this cross-member edge.
+			{Name: "aaa", Members: []BoundaryMember{
+				{Patterns: []string{"cmd/comparator/**"}, Label: "cmd/comparator/**"},
+				{Patterns: []string{"cmd/query-ce/**"}, Label: "cmd/query-ce/**"},
+			}},
+			{Name: "zzz", Members: []BoundaryMember{
+				{Patterns: []string{"cmd/comparator/**"}, Label: "cmd/comparator/**"},
+				{Patterns: []string{"cmd/query-ce/**"}, Label: "cmd/query-ce/**"},
+			}},
+		},
+	}
+	g := boundaryEdge("m/cmd/comparator/x", "cmd/comparator/x", "m/cmd/query-ce/y", "cmd/query-ce/y", false)
+	res := evaluate(t, g, rs)
+	if len(res.Violations) != 1 {
+		t.Fatalf("multi-boundary edge must emit exactly one violation: %+v", res.Violations)
+	}
+	if res.Violations[0].Boundary != "aaa" {
+		t.Errorf("first sorted boundary should win: got %q, want aaa", res.Violations[0].Boundary)
+	}
+}
+
+func TestEvaluateBoundaryTestFileModes(t *testing.T) {
+	// A cross-member edge that appears only in _test.go is relaxed exactly like
+	// a component edge would be, under each test_files mode.
+	tests := []struct {
+		mode TestFileMode
+		want int
+	}{
+		{TestHybrid, 1},    // in-module cross-member still enforced under hybrid
+		{TestSameRules, 1}, // enforced
+		{TestRelaxed, 0},   // relaxed: the test-only crossing is exempt
+	}
+	for _, tt := range tests {
+		rs := twoServiceBoundary(false)
+		rs.TestFiles = tt.mode
+		g := boundaryEdge("m/cmd/comparator/x", "cmd/comparator/x", "m/cmd/query-ce/y", "cmd/query-ce/y", true)
+		res := evaluate(t, g, rs)
+		if len(res.Violations) != tt.want {
+			t.Errorf("mode %v: got %d violations, want %d: %+v", tt.mode, len(res.Violations), tt.want, res.Violations)
+		}
+	}
+}
+
+func TestEvaluateBoundaryOffCycleAxis(t *testing.T) {
+	// A boundary crossing must never appear as a component cycle.
+	rs := &RuleSet{
+		Policy:    PolicyAllow,
+		TestFiles: TestHybrid,
+		Components: []Component{
+			{Name: "comparator", Patterns: []string{"cmd/comparator/**"}},
+			{Name: "query-ce", Patterns: []string{"cmd/query-ce/**"}},
+		},
+		Boundaries: []Boundary{{
+			Name: "cmd-services",
+			Members: []BoundaryMember{
+				{Patterns: []string{"cmd/comparator/**"}, Label: "cmd/comparator/**"},
+				{Patterns: []string{"cmd/query-ce/**"}, Label: "cmd/query-ce/**"},
+			},
+		}},
+	}
+	// A mutual cross-member pair would be a cycle if it fed compEdges.
+	g := &Graph{ModulePath: "m", Packages: []Package{
+		{ImportPath: "m/cmd/comparator/x", RelDir: "cmd/comparator/x", Imports: []Import{
+			mkImport("m/cmd/query-ce/y", ClassInModule, "cmd/query-ce/y", false)}},
+		{ImportPath: "m/cmd/query-ce/y", RelDir: "cmd/query-ce/y", Imports: []Import{
+			mkImport("m/cmd/comparator/x", ClassInModule, "cmd/comparator/x", false)}},
+	}}
+	res := evaluate(t, g, rs)
+	if len(res.Cycles) != 0 {
+		t.Errorf("boundary crossings must not create a component cycle: %v", res.Cycles)
+	}
+}
+
+func TestEvaluateEmptyBoundaryMemberWarning(t *testing.T) {
+	// A glob member matching no package surfaces an advisory, never fatal; a
+	// component member does not (it rides the empty-component warning).
+	rs := &RuleSet{
+		Policy:    PolicyAllow,
+		TestFiles: TestHybrid,
+		Boundaries: []Boundary{{
+			Name: "cmd-services",
+			Members: []BoundaryMember{
+				{Patterns: []string{"cmd/comparator/**"}, Label: "cmd/comparator/**"}, // matched
+				{Patterns: []string{"cmd/ghost/**"}, Label: "cmd/ghost/**"},           // matches nothing
+			},
+		}},
+	}
+	g := &Graph{ModulePath: "m", Packages: []Package{
+		{ImportPath: "m/cmd/comparator/x", RelDir: "cmd/comparator/x", Imports: nil},
+	}}
+	res := evaluate(t, g, rs)
+	var empties []Warning
+	for _, w := range res.Warnings {
+		if w.Kind == WarnEmptyBoundaryMember {
+			empties = append(empties, w)
+		}
+	}
+	if len(empties) != 1 || empties[0].Boundary != "cmd-services" || empties[0].Component != "cmd/ghost/**" {
+		t.Fatalf("want one empty-boundary-member warning for cmd/ghost/**: %+v", empties)
+	}
+}
+
 func TestEvaluateNoRulePolicyDeny(t *testing.T) {
 	rs := ddd()
 	delete(rs.Rules, "service")
