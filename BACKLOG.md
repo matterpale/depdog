@@ -106,6 +106,18 @@ Improvements, refinements, and polish beyond the M0–M5 work already shipped.
 
 ## TUI
 
+- **Config tab — view the compiled rules, edit via `$EDITOR`, auto re-check.**
+  (S–M) A fourth screen showing the active config path and the compiled rule
+  set (`depdog config`'s data, rendered via `report.RuleSet`); `e` there opens
+  `depdog.yaml` itself in `$EDITOR`, and the editor exiting auto-fires the
+  existing `r` refresh pipeline so the edited rules take effect on every screen
+  (an invalid config surfaces through the existing re-run error path, old data
+  kept). Deliberately **not** an embedded YAML editor — that would break the
+  TUI's "adds navigation, not data" design note and reimplement a worse editor;
+  structured rule editing stays a separate, later item. Evaluated with the
+  owner 2026-07-08; detailed plan in
+  [docs/tui-config-tab.md](docs/tui-config-tab.md).
+
 - ✅ **Shipped:** the Violations and Packages lists now scroll — a height-aware
   window follows the selection with `▲/▼ N more` markers. (Custom windowing over
   the manual render, not `bubbles/viewport`.)
