@@ -1,0 +1,11 @@
+digraph depdog {
+  rankdir=LR;
+  node [shape=box];
+  "api";
+  "domain";
+  "service";
+  "api" -> "domain" [color="red", penwidth=2];
+  "api" -> "service";
+  "domain" -> "service" [color="red", penwidth=2];
+  "service" -> "domain";
+}

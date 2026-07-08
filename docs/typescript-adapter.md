@@ -1,9 +1,11 @@
 # TypeScript / JavaScript adapter — pure-Go import scanner
 
-Status: **proposed**. The owner has chosen a **pure-Go static import scanner**
-(no Node.js / `tsc` runtime dependency — depdog stays a single Go binary).
-Design settled with the owner on **2026-07-08**. This document is the design of
-record; nothing below is implemented yet.
+Status: **shipped** (2026-07-08). The owner has chosen a **pure-Go static
+import scanner** (no Node.js / `tsc` runtime dependency — depdog stays a single
+Go binary). Design settled with the owner on **2026-07-08** and implemented in
+two slices: the `internal/lang/typescript` adapter, then CLI language selection
+(`--lang` + auto-detect), the `testdata/fixtures/ts-*` fixtures and golden e2e.
+This document remains the design of record.
 
 ## Goal
 

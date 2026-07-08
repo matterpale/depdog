@@ -234,8 +234,10 @@ internal/tui/          bubbletea app                         → core, report, s
 ```
 
 Key inversions: `core` knows nothing about Go-the-analyzed-language, YAML, or terminals.
-`lang` defines the adapter interface; `golang` implements it. Adding TypeScript later means one
-new package under `lang/` and zero changes to `core`.
+`lang` defines the adapter interface; `golang` and `typescript` implement it. The TypeScript/JS
+adapter (a pure-Go import scanner) shipped as one new package under `lang/` with zero changes to
+`core` — the seam held, proving `core` is genuinely language-agnostic. See
+[`docs/typescript-adapter.md`](docs/typescript-adapter.md).
 
 The repo's own `depdog.yaml` encodes exactly this and runs in CI next to tests and lint.
 
@@ -273,8 +275,10 @@ anything.
 
 **Post-v0.1 backlog (explicitly not now)**
 Watch mode; rule editing in the TUI; external-dependency allowlists per component
-(depguard-style); second language adapter; editor/LSP integration; import-cycle detection
-(go vet catches package cycles, but component-level cycles are interesting).
+(depguard-style); editor/LSP integration; import-cycle detection
+(go vet catches package cycles, but component-level cycles are interesting). The second
+language adapter (TypeScript/JS) has shipped — see [`BACKLOG.md`](BACKLOG.md) and
+[`docs/typescript-adapter.md`](docs/typescript-adapter.md).
 
 ---
 

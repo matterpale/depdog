@@ -1,0 +1,8 @@
+version: 2
+
+components:
+  domain:  { path: "src/domain/**",  allow: [std] }
+  service: { path: "src/service/**", allow: [domain, std] }
+  api:     { path: "src/api/**",     allow: [service, std, external] }
+
+default: deny

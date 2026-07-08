@@ -22,6 +22,9 @@ declared in depdog.yaml: which components exist, and who may import whom.`,
 			return runBare(cmd)
 		},
 	}
+	// --lang selects the language adapter for every subcommand; empty means
+	// auto-detect by marker file (go.mod ⇒ go, tsconfig/package.json ⇒ ts).
+	root.PersistentFlags().String("lang", "", "language adapter: go or ts (default: auto-detect by go.mod / tsconfig.json)")
 	root.AddCommand(initCmd())
 	root.AddCommand(checkCmd())
 	root.AddCommand(configCmd())

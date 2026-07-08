@@ -192,6 +192,12 @@ Improvements, refinements, and polish beyond the M0–M5 work already shipped.
   in the comment). README documents `go install` and the releases page.
 - ✅ **Shipped:** `vhs` demo — `docs/demo.tape` records check → explain → TUI on
   the dirty fixture into `docs/demo.gif`, embedded at the top of the README.
-- **Second language adapter (e.g. TypeScript)** to prove the `lang` seam — the
-  strongest validation that `core` is truly language-agnostic.
+- ✅ **Shipped: second language adapter — TypeScript/JavaScript.** A pure-Go
+  static import scanner (`internal/lang/typescript`, no Node/`tsc`) behind the
+  existing `lang.Loader` seam, selected by auto-detect (go.mod ⇒ go,
+  tsconfig.json/package.json ⇒ ts) or an explicit persistent `--lang go|ts`;
+  ambiguity is an actionable exit-2 error, never a silent guess. `internal/core`
+  did not change and `depdog.yaml` stays language-neutral — the strongest
+  validation that `core` is truly language-agnostic. See
+  [`docs/typescript-adapter.md`](docs/typescript-adapter.md).
 - **Editor/LSP integration** for inline architecture diagnostics.

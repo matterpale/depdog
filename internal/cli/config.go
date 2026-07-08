@@ -24,11 +24,15 @@ Exit codes: 0 shown, 2 configuration or usage error.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cfgPath := configPath
 			if cfgPath == "" {
+				language, err := languageFlag(cmd)
+				if err != nil {
+					return err
+				}
 				cwd, err := os.Getwd()
 				if err != nil {
 					return err
 				}
-				if cfgPath, _, err = config.Find(cwd); err != nil {
+				if cfgPath, _, _, err = config.FindWithLanguage(cwd, language); err != nil {
 					return err
 				}
 			} else {
