@@ -4,12 +4,14 @@ import (
 	"bytes"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/exp/golden"
 	"github.com/charmbracelet/x/exp/teatest"
 	"github.com/muesli/termenv"
 
@@ -57,6 +59,24 @@ func fixturePkgs() []core.PackageView {
 			{Path: "example.test/shop/internal/domain", Class: core.ClassInModule, Component: "domain"},
 			{Path: "example.test/shop/internal/service", Class: core.ClassInModule, Component: "service"},
 		}},
+	}
+}
+
+// fixtureRuleSet is the compiled config the Config tab renders via
+// report.RuleSet. It matches the shape of fixtureResult's two components.
+func fixtureRuleSet() *core.RuleSet {
+	return &core.RuleSet{
+		Components: []core.Component{
+			{Name: "domain", Patterns: []string{"internal/domain/**"}},
+			{Name: "handler", Patterns: []string{"internal/handler/**"}},
+		},
+		Rules: map[string]core.Rule{
+			"domain":  {Allow: []core.Ref{{Kind: core.RefStd}}},
+			"handler": {Allow: []core.Ref{{Kind: core.RefComponent, Name: "domain"}, {Kind: core.RefStd}}},
+		},
+		Policy:    core.PolicyDeny,
+		TestFiles: core.TestHybrid,
+		Skip:      []string{"internal/legacy/**"},
 	}
 }
 
@@ -114,10 +134,20 @@ func TestViolationSelectionMoves(t *testing.T) {
 
 func TestTabWraps(t *testing.T) {
 	m := New(fixtureResult(), fixturePkgs())
-	for _, want := range []tab{tabViolations, tabPackages, tabDashboard} {
+	for _, want := range []tab{tabViolations, tabPackages, tabConfig, tabDashboard} {
 		m = update(m, tea.KeyMsg{Type: tea.KeyTab})
 		if m.active != want {
 			t.Fatalf("tab sequence: active = %d, want %d", m.active, want)
+		}
+	}
+}
+
+func TestTabWrapsBackward(t *testing.T) {
+	m := New(fixtureResult(), fixturePkgs())
+	for _, want := range []tab{tabConfig, tabPackages, tabViolations, tabDashboard} {
+		m = update(m, tea.KeyMsg{Type: tea.KeyShiftTab})
+		if m.active != want {
+			t.Fatalf("shift+tab sequence: active = %d, want %d", m.active, want)
 		}
 	}
 }
@@ -390,6 +420,242 @@ func TestPackageFilter(t *testing.T) {
 	}
 }
 
+func TestSwitchToConfig(t *testing.T) {
+	m := update(New(fixtureResult(), fixturePkgs(), WithConfig("depdog.yaml", fixtureRuleSet())), runes("4"))
+	if m.active != tabConfig {
+		t.Fatalf("4 should select the Config tab, active = %d", m.active)
+	}
+	v := m.View()
+	for _, want := range []string{
+		"Config", "depdog.yaml", // the active config path
+		"default:", "deny", "test_files:", "components:",
+		"internal/domain/**", "stance: whitelist", "allow:  [std]",
+		"skip:", "internal/legacy/**",
+	} {
+		if !strings.Contains(v, want) {
+			t.Errorf("config view missing %q\n%s", want, v)
+		}
+	}
+	if strings.Contains(v, "\x1b") {
+		t.Errorf("ANSI leaked into forced-plain view:\n%q", v)
+	}
+}
+
+func TestConfigViewWithoutRuleSet(t *testing.T) {
+	// No WithConfig: the tab must still render (a hint), never panic.
+	m := update(New(fixtureResult(), fixturePkgs()), runes("4"))
+	if m.active != tabConfig {
+		t.Fatalf("4 should select the Config tab even without a rule set")
+	}
+	if v := m.View(); v == "" {
+		t.Error("config view should not be empty without a rule set")
+	}
+}
+
+// configLines builds a rule set whose rendered dump is long enough to force the
+// document to scroll on a small terminal.
+func manyComponentRuleSet(n int) *core.RuleSet {
+	rs := &core.RuleSet{Rules: map[string]core.Rule{}, Policy: core.PolicyDeny, TestFiles: core.TestHybrid}
+	for i := 0; i < n; i++ {
+		name := fmt.Sprintf("comp%02d", i)
+		rs.Components = append(rs.Components, core.Component{Name: name, Patterns: []string{fmt.Sprintf("internal/%s/**", name)}})
+		rs.Rules[name] = core.Rule{Allow: []core.Ref{{Kind: core.RefStd}}}
+	}
+	return rs
+}
+
+func TestConfigScrollClamps(t *testing.T) {
+	m := update(New(fixtureResult(), fixturePkgs(), WithConfig("depdog.yaml", manyComponentRuleSet(30))), runes("4"))
+	m = update(m, tea.WindowSizeMsg{Width: 80, Height: 20})
+
+	// Up at the top stays clamped at offset 0.
+	if m.configScroll != 0 {
+		t.Fatalf("initial configScroll = %d, want 0", m.configScroll)
+	}
+	m = update(m, runes("k")) // up
+	if m.configScroll != 0 {
+		t.Errorf("up at the top should clamp at 0, got %d", m.configScroll)
+	}
+
+	// The document is taller than the screen: a ▼ marker must appear.
+	v := m.View()
+	if !strings.Contains(v, "▼") {
+		t.Errorf("a config dump taller than the screen should show a ▼ marker:\n%s", v)
+	}
+	if got := lineCount(v); got > 20 {
+		t.Fatalf("config view is %d lines, want <= 20 (must fit the terminal):\n%s", got, v)
+	}
+
+	// Scroll all the way down; the offset must clamp, never runs off the end.
+	for i := 0; i < 100; i++ {
+		m = update(m, runes("j"))
+	}
+	v = m.View()
+	if got := lineCount(v); got > 20 {
+		t.Fatalf("config view overflows after scrolling: %d lines\n%s", got, v)
+	}
+	if !strings.Contains(v, "▲") {
+		t.Errorf("after scrolling to the bottom an ▲ marker should show:\n%s", v)
+	}
+	// The last component must be visible at the bottom.
+	if !strings.Contains(v, "comp29") {
+		t.Errorf("the bottom of the document should be reachable:\n%s", v)
+	}
+	// Header survives (it is what scrolls off if the body overflows).
+	if !strings.Contains(v, "depdog") || !strings.Contains(v, "Config") {
+		t.Errorf("header must survive scrolling:\n%s", v)
+	}
+}
+
+func TestConfigScrollResetsOnRefresh(t *testing.T) {
+	m := update(New(fixtureResult(), fixturePkgs(), WithConfig("depdog.yaml", manyComponentRuleSet(30)),
+		WithRefresh(func() (*core.Result, []core.PackageView, *core.RuleSet, error) {
+			return fixtureResult(), fixturePkgs(), fixtureRuleSet(), nil
+		})), runes("4"))
+	m = update(m, tea.WindowSizeMsg{Width: 80, Height: 20})
+	for i := 0; i < 10; i++ {
+		m = update(m, runes("j"))
+	}
+	if m.configScroll == 0 {
+		t.Fatal("precondition: the config should be scrolled before the refresh")
+	}
+	next, cmd := m.Update(runes("r"))
+	m = next.(Model)
+	m = update(m, cmd().(refreshMsg))
+	if m.configScroll != 0 {
+		t.Errorf("a refresh should reset the config scroll offset, got %d", m.configScroll)
+	}
+}
+
+func TestConfigEditOpensConfigFile(t *testing.T) {
+	t.Setenv("EDITOR", "vim")
+	m := update(New(fixtureResult(), fixturePkgs(), WithRoot("/proj"),
+		WithConfig("depdog.yaml", fixtureRuleSet())), runes("4"))
+	next, cmd := m.Update(runes("e"))
+	m = next.(Model)
+	if cmd == nil {
+		t.Fatal("e on the Config tab with $EDITOR set should return an exec command")
+	}
+	if m.status != "" {
+		t.Errorf("no status message expected on success, got %q", m.status)
+	}
+	if !m.editedConfig {
+		t.Error("the Config tab e should record that the editor was launched from it")
+	}
+}
+
+func TestConfigEditArgvOpensYamlAtLineOne(t *testing.T) {
+	// The argv the Config tab builds points $EDITOR at depdog.yaml, line 1.
+	root := "/proj"
+	rel := "depdog.yaml"
+	argv := editorArgv("vim", filepath.Join(root, rel), 1)
+	want := []string{"vim", "+1", filepath.Join(root, rel)}
+	if strings.Join(argv, "\x00") != strings.Join(want, "\x00") {
+		t.Errorf("config editor argv = %q, want %q", argv, want)
+	}
+}
+
+func TestConfigEditMissingEditor(t *testing.T) {
+	t.Setenv("EDITOR", "")
+	m := update(New(fixtureResult(), fixturePkgs(), WithConfig("depdog.yaml", fixtureRuleSet())), runes("4"))
+	next, cmd := m.Update(runes("e"))
+	m = next.(Model)
+	if cmd != nil {
+		t.Error("e without $EDITOR should not launch a process")
+	}
+	if !strings.Contains(m.status, "$EDITOR is not set") {
+		t.Errorf("status should tell the user to set $EDITOR, got %q", m.status)
+	}
+	if m.editedConfig {
+		t.Error("a failed launch should not mark editedConfig")
+	}
+}
+
+func TestConfigEditAutoRefreshesOnExit(t *testing.T) {
+	calls := 0
+	m := New(fixtureResult(), fixturePkgs(), WithConfig("depdog.yaml", fixtureRuleSet()),
+		WithRefresh(func() (*core.Result, []core.PackageView, *core.RuleSet, error) {
+			calls++
+			return fixtureResult(), fixturePkgs(), fixtureRuleSet(), nil
+		}))
+	m = update(m, runes("4"))
+	m.editedConfig = true // simulate the Config-tab e having launched the editor
+
+	next, cmd := m.Update(editorFinishedMsg{})
+	m = next.(Model)
+	if cmd == nil {
+		t.Fatal("editor exit from the Config tab should fire a refresh command")
+	}
+	if !strings.Contains(m.status, "config edited") {
+		t.Errorf("status should announce the config re-run, got %q", m.status)
+	}
+	if m.editedConfig {
+		t.Error("the editedConfig flag should reset after firing the refresh")
+	}
+	msg := cmd()
+	if _, ok := msg.(refreshMsg); !ok {
+		t.Fatalf("the auto-refresh command returned %T, want refreshMsg", msg)
+	}
+	if calls != 1 {
+		t.Fatalf("refresh callback called %d times, want 1", calls)
+	}
+}
+
+func TestEditorFinishedNoAutoRefreshWithoutFlag(t *testing.T) {
+	// A normal editor exit (from Violations/Packages) must not auto-refresh.
+	m := New(fixtureResult(), fixturePkgs(), WithConfig("depdog.yaml", fixtureRuleSet()),
+		WithRefresh(func() (*core.Result, []core.PackageView, *core.RuleSet, error) {
+			t.Fatal("a non-config editor exit must not trigger a refresh")
+			return nil, nil, nil, nil
+		}))
+	next, cmd := m.Update(editorFinishedMsg{})
+	if cmd != nil {
+		t.Errorf("editor exit without the config flag should not return a command, got %v", cmd)
+	}
+	_ = next
+}
+
+func TestRefreshDeliversRuleSet(t *testing.T) {
+	fresh := fixtureRuleSet()
+	fresh.Skip = []string{"internal/generated/**"}
+	m := New(fixtureResult(), fixturePkgs(), WithConfig("depdog.yaml", manyComponentRuleSet(2)),
+		WithRefresh(func() (*core.Result, []core.PackageView, *core.RuleSet, error) {
+			return fixtureResult(), fixturePkgs(), fresh, nil
+		}))
+	m = update(m, runes("4"))
+	if strings.Contains(m.View(), "internal/generated/**") {
+		t.Fatal("precondition: the fresh skip pattern should not be shown yet")
+	}
+	next, cmd := m.Update(runes("r"))
+	m = next.(Model)
+	m = update(m, cmd().(refreshMsg))
+	if !strings.Contains(m.View(), "internal/generated/**") {
+		t.Errorf("the Config tab should re-render with the delivered rule set:\n%s", m.View())
+	}
+}
+
+func TestConfigErrorTruncatedToOneLine(t *testing.T) {
+	m := New(fixtureResult(), fixturePkgs(), WithConfig("depdog.yaml", fixtureRuleSet()),
+		WithRefresh(func() (*core.Result, []core.PackageView, *core.RuleSet, error) {
+			return nil, nil, nil, fmt.Errorf("depdog.yaml: bad pattern\n  line 4: unclosed brace\n  hint: check the glob")
+		}))
+	m = update(m, runes("4"))
+	next, cmd := m.Update(runes("r"))
+	m = next.(Model)
+	m = update(m, cmd().(refreshMsg))
+	// Old data survives.
+	if !strings.Contains(m.View(), "internal/domain/**") {
+		t.Errorf("old config should survive a failed re-run:\n%s", m.View())
+	}
+	// The footer status is a single line — no embedded newline.
+	if strings.Contains(m.status, "\n") {
+		t.Errorf("a multi-line config error must be truncated to one line for the footer, got %q", m.status)
+	}
+	if !strings.Contains(m.status, "bad pattern") {
+		t.Errorf("the truncated error should keep the first, most actionable line, got %q", m.status)
+	}
+}
+
 func TestHelpOverlay(t *testing.T) {
 	m := update(New(fixtureResult(), fixturePkgs()), runes("?"))
 	if !m.showHelp {
@@ -542,9 +808,9 @@ func TestRerunRefreshesData(t *testing.T) {
 	}
 	freshPkgs := []core.PackageView{{ImportPath: "example.test/shop/internal/handler", Component: "handler"}}
 	calls := 0
-	m := New(fixtureResult(), fixturePkgs(), WithRefresh(func() (*core.Result, []core.PackageView, error) {
+	m := New(fixtureResult(), fixturePkgs(), WithRefresh(func() (*core.Result, []core.PackageView, *core.RuleSet, error) {
 		calls++
-		return fresh, freshPkgs, nil
+		return fresh, freshPkgs, fixtureRuleSet(), nil
 	}))
 	m = update(m, runes("2"))
 	m = update(m, runes("j")) // selection on the second (soon out-of-range) row
@@ -589,8 +855,8 @@ func TestRerunRefreshesData(t *testing.T) {
 }
 
 func TestRerunErrorKeepsOldData(t *testing.T) {
-	m := New(fixtureResult(), fixturePkgs(), WithRefresh(func() (*core.Result, []core.PackageView, error) {
-		return nil, nil, fmt.Errorf("depdog.yaml: bad pattern")
+	m := New(fixtureResult(), fixturePkgs(), WithRefresh(func() (*core.Result, []core.PackageView, *core.RuleSet, error) {
+		return nil, nil, nil, fmt.Errorf("depdog.yaml: bad pattern")
 	}))
 	m = update(m, runes("2"))
 	next, cmd := m.Update(runes("r"))
@@ -635,6 +901,27 @@ func TestHelpListsEditAndRerun(t *testing.T) {
 			t.Errorf("violations footer missing %q\n%s", want, f)
 		}
 	}
+}
+
+// TestConfigGoldenFrame pins the Config screen's exact rendered frame. Golden
+// frames are deterministic (forced-plain color, fixed window) — regenerate with
+// `go test ./internal/tui -update` after an intended layout change, then re-run
+// without -update to confirm determinism.
+func TestConfigGoldenFrame(t *testing.T) {
+	m := update(New(fixtureResult(), fixturePkgs(), WithConfig("depdog.yaml", fixtureRuleSet())), runes("4"))
+	m = update(m, tea.WindowSizeMsg{Width: 72, Height: 30})
+	golden.RequireEqual(t, []byte(m.View()))
+}
+
+// TestConfigGoldenScrolled pins the windowed frame: a long config on a short
+// terminal, scrolled part-way, showing the ▲/▼ markers.
+func TestConfigGoldenScrolled(t *testing.T) {
+	m := update(New(fixtureResult(), fixturePkgs(), WithConfig("depdog.yaml", manyComponentRuleSet(30))), runes("4"))
+	m = update(m, tea.WindowSizeMsg{Width: 72, Height: 20})
+	for i := 0; i < 8; i++ {
+		m = update(m, runes("j"))
+	}
+	golden.RequireEqual(t, []byte(m.View()))
 }
 
 func TestProgramLifecycle(t *testing.T) {

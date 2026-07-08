@@ -191,7 +191,7 @@ strict, `relaxed` exempts test files entirely.
 | `depdog graph`             | Emit the dependency graph as DOT or Mermaid                        |
 | `depdog explain <component-or-package> [import]` | Explain why something is red (the rule or boundary that fired, with file:line), how a component is constrained, its boundary membership, or whether *A* may import *B* and which rule or boundary decides it |
 | `depdog config`            | Print the compiled rule set — components, patterns, inferred stances, boundaries, options — for debugging a config |
-| `depdog tui` (or bare `depdog`) | Interactive terminal UI: component dashboard, browsable violations, per-package imports and importers |
+| `depdog tui` (or bare `depdog`) | Interactive terminal UI: component dashboard, browsable violations, per-package imports and importers, and a Config tab showing the compiled rules |
 
 <details>
 <summary><b>All flags</b></summary>
@@ -204,9 +204,14 @@ strict, `relaxed` exempts test files entirely.
 
 </details>
 
-In the TUI, the Violations and Packages lists scroll and filter with
-<kbd>/</kbd>; <kbd>e</kbd> opens the selection in `$EDITOR` at its file:line,
-<kbd>r</kbd> re-runs the check in place, and <kbd>?</kbd> shows all keys.
+In the TUI, <kbd>1</kbd>–<kbd>4</kbd> (or <kbd>tab</kbd>) switch between the
+Dashboard, Violations, Packages and Config screens. The Violations and Packages
+lists scroll and filter with <kbd>/</kbd>; <kbd>e</kbd> opens the selection in
+`$EDITOR` at its file:line, <kbd>r</kbd> re-runs the check in place, and
+<kbd>?</kbd> shows all keys. The Config tab (<kbd>4</kbd>) shows the active
+config path and the compiled rule set (the same data as `depdog config`);
+<kbd>e</kbd> there opens `depdog.yaml` in `$EDITOR`, and the editor exiting
+auto-re-runs the check so the edited rules take effect on every screen.
 
 Exit codes are a contract:
 

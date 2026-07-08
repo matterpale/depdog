@@ -1,0 +1,19 @@
+depdog · example.test/shop
+ Dashboard | Violations | Packages | Config 
+────────────────────────────────────────────────────────────────────────
+
+config: depdog.yaml
+
+default:    deny
+test_files: hybrid
+skip:       internal/legacy/**
+
+components:
+  domain   internal/domain/**
+           stance: whitelist (only allowed pass)
+           allow:  [std]
+  handler  internal/handler/**
+           stance: whitelist (only allowed pass)
+           allow:  [domain, std]
+
+tab/1-4 switch · ↑/↓ scroll · e edit depdog.yaml · r re-run · ? help · q quit

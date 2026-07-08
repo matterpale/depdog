@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -39,27 +40,41 @@ Exit codes: 0 on quit, 2 configuration or usage error.`,
 }
 
 // launch builds the package-navigation views and opens the UI, wiring in the
-// module root (so `e` can open module-relative positions in $EDITOR) and a
-// refresh hook that re-runs the same load+check pipeline for `r`.
+// module root (so `e` can open module-relative positions in $EDITOR), the
+// config path and compiled rule set (for the Config tab), and a refresh hook
+// that re-runs the same load+check pipeline for `r`. The hook hands back the
+// recompiled rule set too, since core.Result does not carry it.
 func launch(cmd *cobra.Command, configPath string, args []string, ev *evaluation) error {
 	pkgs, err := core.BuildPackageViews(ev.Graph, ev.Rules)
 	if err != nil {
 		return err
 	}
-	refresh := func() (*core.Result, []core.PackageView, error) {
+	root := filepath.Dir(ev.ConfigPath)
+	configRel := configRelPath(root, ev.ConfigPath)
+	refresh := func() (*core.Result, []core.PackageView, *core.RuleSet, error) {
 		ev, err := evaluateModule(cmd, configPath, args)
 		if err != nil {
-			return nil, nil, err
+			return nil, nil, nil, err
 		}
 		pkgs, err := core.BuildPackageViews(ev.Graph, ev.Rules)
 		if err != nil {
-			return nil, nil, err
+			return nil, nil, nil, err
 		}
-		return ev.Result, pkgs, nil
+		return ev.Result, pkgs, ev.Rules, nil
 	}
 	return tui.Run(ev.Result, pkgs,
-		tui.WithRoot(filepath.Dir(ev.ConfigPath)),
+		tui.WithRoot(root),
+		tui.WithConfig(configRel, ev.Rules),
 		tui.WithRefresh(refresh))
+}
+
+// configRelPath renders the config path relative to the module root for display,
+// falling back to the base name when it lies outside the root.
+func configRelPath(root, configPath string) string {
+	if rel, err := filepath.Rel(root, configPath); err == nil && !strings.HasPrefix(rel, "..") {
+		return rel
+	}
+	return filepath.Base(configPath)
 }
 
 // runBare backs a plain `depdog` invocation: it opens the TUI when a terminal
