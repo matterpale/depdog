@@ -83,7 +83,8 @@ type RuleSet struct {
 	Rules      map[string]Rule
 	Policy     Policy
 	TestFiles  TestFileMode
-	Skip       []string // package-dir patterns excluded from analysis
+	Skip       []string   // package-dir patterns excluded from analysis
+	Boundaries []Boundary // mutual-exclusion groups, orthogonal to components; sorted by name
 }
 
 // AmbiguityError reports a package matched by equally specific patterns of

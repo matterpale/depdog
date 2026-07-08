@@ -38,8 +38,37 @@ func RuleSet(w io.Writer, rs *core.RuleSet) error {
 			}
 		}
 	}
+
+	if len(rs.Boundaries) > 0 {
+		b.WriteString("\nboundaries:\n")
+		// Label width covers the boundary name plus its " (sealed)" suffix so
+		// the member lists align. Boundaries are already sorted by name.
+		labelW := 0
+		for _, bd := range rs.Boundaries {
+			if w := len(boundaryLabel(bd)); w > labelW {
+				labelW = w
+			}
+		}
+		for _, bd := range rs.Boundaries {
+			labels := make([]string, len(bd.Members))
+			for i, m := range bd.Members {
+				labels[i] = m.Label
+			}
+			fmt.Fprintf(&b, "  %-*s  %s\n", labelW, boundaryLabel(bd), strings.Join(labels, ", "))
+		}
+	}
+
 	_, err := io.WriteString(w, b.String())
 	return err
+}
+
+// boundaryLabel renders a boundary's name with a " (sealed)" suffix when the
+// one-way wall is on, matching the (sealed) marker used in explain and text.
+func boundaryLabel(b core.Boundary) string {
+	if b.Sealed {
+		return b.Name + " (sealed)"
+	}
+	return b.Name
 }
 
 func testFilesName(m core.TestFileMode) string {

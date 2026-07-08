@@ -46,6 +46,27 @@ func ExplainEdge(w io.Writer, from, to string, rs *core.RuleSet, views []core.Pa
 		_, werr := io.WriteString(w, b.String())
 		return werr
 	}
+	// A boundary crossing is a hard deny that wins over any component allow, so
+	// it is reported first — using the same DecideBoundary path Evaluate uses so
+	// what `explain` reports never drifts from what `check` flags. Only in-module
+	// package → package edges carry boundary membership.
+	if tpv, ok := findPackage(views, to, res.ModulePath); ok {
+		ok, boundary, sealed, berr := rs.DecideBoundary(
+			relDir(pv.ImportPath, res.ModulePath), relDir(tpv.ImportPath, res.ModulePath))
+		if berr != nil {
+			return berr
+		}
+		if !ok {
+			suffix := ""
+			if sealed {
+				suffix = " (sealed)"
+			}
+			fmt.Fprintf(&b, "  denied by boundary %q%s\n", boundary, suffix)
+			_, werr := io.WriteString(w, b.String())
+			return werr
+		}
+	}
+
 	var (
 		allowed bool
 		reason  string
@@ -62,6 +83,20 @@ func ExplainEdge(w io.Writer, from, to string, rs *core.RuleSet, views []core.Pa
 	fmt.Fprintf(&b, "  %s by %s\n", verdict, reason)
 	_, werr := io.WriteString(w, b.String())
 	return werr
+}
+
+// relDir maps a package import path back to its module-relative directory, the
+// form BoundaryMembership matches patterns against: "." for the module root,
+// otherwise the path with the module prefix stripped.
+func relDir(importPath, module string) string {
+	switch {
+	case module == "" || importPath == module:
+		return "."
+	case strings.HasPrefix(importPath, module+"/"):
+		return strings.TrimPrefix(importPath, module+"/")
+	default:
+		return importPath
+	}
 }
 
 // resolveTarget maps a `to` argument to a rule target: a component name, one of
@@ -105,6 +140,17 @@ func explainComponent(w io.Writer, c core.Component, rs *core.RuleSet, res *core
 		}
 	}
 
+	// Boundaries this component is a member of, keyed off the component name so a
+	// component that is itself a member is listed even before its packages are.
+	for _, bd := range rs.Boundaries {
+		for _, m := range bd.Members {
+			if m.Component == c.Name {
+				fmt.Fprintf(&b, "  boundary: %s\n", boundaryMembership(bd.Name, m.Label, bd.Sealed))
+				break
+			}
+		}
+	}
+
 	var members []string
 	for _, pv := range views {
 		if pv.Component == c.Name {
@@ -144,6 +190,9 @@ func explainPackage(w io.Writer, pv core.PackageView, res *core.Result) error {
 	var b strings.Builder
 	fmt.Fprintf(&b, "package %s\n", pv.ImportPath)
 	fmt.Fprintf(&b, "  component: %s\n", orUnassigned(pv.Component))
+	for _, pb := range pv.Boundaries {
+		fmt.Fprintf(&b, "  boundary:  %s\n", boundaryMembership(pb.Boundary, pb.Member, pb.Sealed))
+	}
 	fmt.Fprintf(&b, "  imports (%d):\n", len(pv.Imports))
 	for _, iv := range pv.Imports {
 		tag := iv.Class.String()
@@ -204,6 +253,17 @@ func stanceName(p core.Policy) string {
 		return "blacklist (all pass except denied)"
 	}
 	return "whitelist (only allowed pass)"
+}
+
+// boundaryMembership renders a package's or component's place in one boundary,
+// e.g. `cmd-services (member query-ce, sealed)`, mirroring the config dump's
+// (sealed) marker.
+func boundaryMembership(boundary, member string, sealed bool) string {
+	s := fmt.Sprintf("%s (member %s", boundary, member)
+	if sealed {
+		s += ", sealed"
+	}
+	return s + ")"
 }
 
 func refList(refs []core.Ref) string {

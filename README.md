@@ -121,6 +121,47 @@ Two rules of precedence to remember: an explicit `deny` always beats an
 set `default: deny` to make unruled components fail closed (`init` asks which
 stance you want).
 
+### Boundaries
+
+Components answer "who may this layer import?" along one axis. **Boundaries** add
+a second, orthogonal axis: named sets of *members* that may not import across
+each other. A package keeps its most-specific component **and**, independently,
+belongs to every boundary whose region contains it — so
+`cmd/query-ce/services/x` can be the `query-ce-services` component (subject to
+layer rules) and a member of the `cmd-services` boundary (subject to isolation)
+at once. That dissolves two kinds of boilerplate: peer `deny` lists ("layers
+don't import each other") and cross-cutting isolation ("no service imports
+another"), which otherwise needs O(n²) deny lists.
+
+```yaml
+boundaries:
+  # shorthand — a symmetric peer set; these three may not import each other
+  query-ce-layers: [query-ce-repositories, query-ce-services, query-ce-handlers]
+
+  # expanded form — members can be path globs, and sealed adds a one-way wall
+  cmd-services:
+    members: ["cmd/query-ce/**", "cmd/comparator/**"]
+    sealed: true
+```
+
+A **member** is a component name *or* a path glob (told apart by the same `/`-or-
+metacharacter heuristic as allow/deny refs); the two may mix in one boundary.
+
+| edge | verdict |
+| --- | --- |
+| member A → member B (A ≠ B) | **denied** (a hard deny — wins over any component `allow`) |
+| within one member (incl. same package) | allowed |
+| member → ungrouped (e.g. a shared lib) | allowed |
+| ungrouped → member | allowed — **denied** when the boundary is `sealed` |
+
+`sealed: true` adds one rule: nothing outside all members may import *into* a
+member. The wall is one-way, so a service may still import a shared lib, but a
+shared lib (or another service) must not reach in. Boundaries are **composable**
+(each edge is checked against every boundary plus the component rules) and
+**orthogonal to assignment** — membership never silences the `unassigned`
+warning for a package no component claims. `explain` reports a crossing as
+`denied by boundary "cmd-services"`, with `(sealed)` for the one-way rule.
+
 ### Signals that never fail the build
 
 Three findings are always reported but never exit non-zero on their own —
@@ -148,8 +189,8 @@ strict, `relaxed` exempts test files entirely.
 | `depdog check [packages]`  | Evaluate every import edge against the rules                       |
 | `depdog baseline`          | Record current violations to `depdog.baseline.yaml` for the [ratchet](#adopting-rules-on-a-codebase-that-doesnt-pass-yet) |
 | `depdog graph`             | Emit the dependency graph as DOT or Mermaid                        |
-| `depdog explain <component-or-package> [import]` | Explain why something is red (the rule that fired, with file:line), how a component is constrained, or whether *A* may import *B* and which rule decides it |
-| `depdog config`            | Print the compiled rule set — components, patterns, inferred stances, options — for debugging a config |
+| `depdog explain <component-or-package> [import]` | Explain why something is red (the rule or boundary that fired, with file:line), how a component is constrained, its boundary membership, or whether *A* may import *B* and which rule or boundary decides it |
+| `depdog config`            | Print the compiled rule set — components, patterns, inferred stances, boundaries, options — for debugging a config |
 | `depdog tui` (or bare `depdog`) | Interactive terminal UI: component dashboard, browsable violations, per-package imports and importers |
 
 <details>

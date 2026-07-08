@@ -1,0 +1,15 @@
+version: 2
+
+components:
+  query-ce:   { path: "cmd/query-ce/**",   allow: ["*"] }
+  comparator: { path: "cmd/comparator/**", allow: ["*"] }
+  shared:     { path: "internal/**",       allow: ["*"] }
+
+default: allow
+
+# A sealed boundary isolates the two services from each other and forbids
+# anything outside both members (shared libs, other services) from importing in.
+boundaries:
+  cmd-services:
+    members: [query-ce, comparator]
+    sealed: true

@@ -1,7 +1,10 @@
 # Boundaries — orthogonal mutual-exclusion groups
 
-Status: **planned** (post-v0.2). Concept and the five design decisions below were
-settled with the owner on 2026-07-08.
+Status: **shipped**. Concept and the five design decisions below were settled
+with the owner on 2026-07-08 and implemented the same day: the `boundaries` key,
+the core membership index and evaluate gate, the JSON schema, and the text /
+`explain` / `config` / `graph` surfaces all ship together. This document is the
+settled design; the engine now enforces it.
 
 ## Problem
 
@@ -134,25 +137,30 @@ redefine `groups` to be mutually exclusive — that would break the documented
 
 ## Engine changes (this is not config sugar)
 
+As shipped:
+
 - **`internal/core`:** a `Boundary` type (name, members, `sealed`) and a
   per-package boundary-membership index built alongside component assignment.
-  `Evaluate` gains, per edge, for each boundary the edge touches: cross-member →
+  `Evaluate` runs, per edge, for each boundary the edge touches: cross-member →
   violation; and if the boundary is `sealed`, ungrouped-source → in-member-target
-  → violation. New violation reason kind (`boundary`, distinguishing sealed).
-  Keep boundaries off the component-cycle SCC — they're a separate axis.
-- **`internal/config`:** new top-level `boundaries` key; shorthand list and
+  → violation. A violation reason kind (`boundary`, distinguishing sealed) rides
+  each verdict, and `DecideBoundary` is the single decision path shared by
+  `Evaluate` and `explain`. Boundaries stay off the component-cycle SCC —
+  they're a separate axis.
+- **`internal/config`:** the top-level `boundaries` key; shorthand list and
   expanded `{ members, sealed }` forms; member = component-name | glob (same
   `/`-heuristic as refs); validation with actionable errors (unknown component
   member, overlapping members within a boundary, empty boundary, glob matching no
   package).
-- **`internal/report`:** `explain`, text, JSON, `config`, and `graph` learn to
-  show boundary membership and boundary-sourced verdicts (including `(sealed)`).
-  JSON schema gains a stable `boundaries` array and a `boundary` field on
+- **`internal/report`:** `explain`, text, JSON, `config`, and `graph` show
+  boundary membership and boundary-sourced verdicts (including `(sealed)`). The
+  JSON schema carries a stable `boundaries` array and a `boundary` field on
   boundary violations.
-- **`schema/depdog.schema.json`:** add `boundaries` (kept in lockstep by the
-  reflection test).
-- **`internal/wizard`:** out of scope for the first cut (hand-authored first);
-  later, propose a `cmd-services`-style boundary from the directory scan.
+- **`schema/depdog.schema.json`:** `boundaries` is declared (kept in lockstep by
+  the reflection test).
+- **`internal/wizard`:** still out of scope (boundaries are hand-authored for
+  now); a future cut could propose a `cmd-services`-style boundary from the
+  directory scan.
 
 No changes to the loader or the `internal/lang` adapter seam.
 

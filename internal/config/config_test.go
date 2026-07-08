@@ -168,6 +168,204 @@ func TestParseErrors(t *testing.T) {
 	}
 }
 
+func TestParseBoundariesShorthand(t *testing.T) {
+	rs, err := Parse([]byte(`
+version: 2
+components:
+  query-ce:   { path: "cmd/query-ce/**" }
+  comparator: { path: "cmd/comparator/**" }
+default: allow
+boundaries:
+  services: [query-ce, comparator]
+`))
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	if len(rs.Boundaries) != 1 {
+		t.Fatalf("boundaries = %d, want 1: %+v", len(rs.Boundaries), rs.Boundaries)
+	}
+	b := rs.Boundaries[0]
+	if b.Name != "services" || b.Sealed {
+		t.Errorf("boundary = %+v, want services, sealed=false", b)
+	}
+	if len(b.Members) != 2 || b.Members[0].Label != "comparator" || b.Members[1].Label != "query-ce" {
+		t.Errorf("members = %+v, want sorted [comparator query-ce]", b.Members)
+	}
+	// A component member carries its component's patterns.
+	if b.Members[1].Component != "query-ce" || len(b.Members[1].Patterns) != 1 || b.Members[1].Patterns[0] != "cmd/query-ce/**" {
+		t.Errorf("query-ce member = %+v, want component with its pattern", b.Members[1])
+	}
+}
+
+func TestParseBoundariesExpanded(t *testing.T) {
+	rs, err := Parse([]byte(`
+version: 2
+components:
+  query-ce:   { path: "cmd/query-ce/**" }
+  comparator: { path: "cmd/comparator/**" }
+default: allow
+boundaries:
+  services:
+    members: [query-ce, comparator]
+    sealed: true
+`))
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	if len(rs.Boundaries) != 1 || !rs.Boundaries[0].Sealed {
+		t.Fatalf("expanded form should set sealed=true: %+v", rs.Boundaries)
+	}
+}
+
+func TestParseBoundariesGlobMembers(t *testing.T) {
+	rs, err := Parse([]byte(`
+version: 2
+components:
+  app: { path: "**" }
+default: allow
+boundaries:
+  cmd-services:
+    members: ["cmd/query-ce/**", "cmd/comparator/**"]
+    sealed: true
+`))
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	b := rs.Boundaries[0]
+	if len(b.Members) != 2 {
+		t.Fatalf("members = %+v, want 2 globs", b.Members)
+	}
+	for _, m := range b.Members {
+		if m.Component != "" {
+			t.Errorf("glob member should have no component: %+v", m)
+		}
+		if len(m.Patterns) != 1 {
+			t.Errorf("glob member should carry its pattern: %+v", m)
+		}
+	}
+}
+
+func TestParseBoundariesMixedMembers(t *testing.T) {
+	rs, err := Parse([]byte(`
+version: 2
+components:
+  query-ce: { path: "cmd/query-ce/**" }
+default: allow
+boundaries:
+  mix: [query-ce, "cmd/comparator/**"]
+`))
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	b := rs.Boundaries[0]
+	if len(b.Members) != 2 {
+		t.Fatalf("members = %+v, want a component and a glob", b.Members)
+	}
+	// Sorted by label: "cmd/comparator/**" < "query-ce".
+	if b.Members[0].Component != "" || b.Members[0].Label != "cmd/comparator/**" {
+		t.Errorf("first member should be the glob: %+v", b.Members[0])
+	}
+	if b.Members[1].Component != "query-ce" {
+		t.Errorf("second member should be the component: %+v", b.Members[1])
+	}
+}
+
+func TestParseBoundariesSingleSegmentGlob(t *testing.T) {
+	// A bare-glob member like "cmd*" has no "/" but does have a metachar, so it
+	// must be read as a glob, not mis-read as an unknown component.
+	rs, err := Parse([]byte(`
+version: 2
+components:
+  app: { path: "**" }
+default: allow
+boundaries:
+  b: ["cmd*", "svc*"]
+`))
+	if err != nil {
+		t.Fatalf("a single-segment glob member should parse: %v", err)
+	}
+	for _, m := range rs.Boundaries[0].Members {
+		if m.Component != "" {
+			t.Errorf("single-segment glob mis-read as component: %+v", m)
+		}
+	}
+}
+
+func TestParseBoundariesErrors(t *testing.T) {
+	tests := []struct {
+		name, yaml, wantErr string
+	}{
+		{
+			"unknown member",
+			"version: 2\ncomponents: {a: {path: \"x/**\"}}\ndefault: allow\nboundaries: {b: [nope]}",
+			"is not a known component or a path glob",
+		},
+		{
+			"empty boundary",
+			"version: 2\ncomponents: {a: {path: \"x/**\"}}\ndefault: allow\nboundaries: {b: []}",
+			"has no members",
+		},
+		{
+			"duplicate component member",
+			"version: 2\ncomponents: {a: {path: \"x/**\"}}\ndefault: allow\nboundaries: {b: [a, a]}",
+			"twice",
+		},
+		{
+			"identical glob members overlap",
+			"version: 2\ncomponents: {a: {path: \"x/**\"}}\ndefault: allow\nboundaries: {b: [\"y/**\", \"y/**\"]}",
+			"overlap",
+		},
+		{
+			"bad glob member",
+			"version: 2\ncomponents: {a: {path: \"x/**\"}}\ndefault: allow\nboundaries: {b: [\"y/[bad/**\", \"z/**\"]}",
+			"segment",
+		},
+		{
+			"unknown expanded sub-key",
+			"version: 2\ncomponents: {a: {path: \"x/**\"}}\ndefault: allow\nboundaries: {b: {members: [\"y/**\", \"z/**\"], seald: true}}",
+			"seald",
+		},
+		{
+			"reserved boundary name",
+			"version: 2\ncomponents: {a: {path: \"x/**\"}}\ndefault: allow\nboundaries: {std: [\"y/**\", \"z/**\"]}",
+			"reserved",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := Parse([]byte(tt.yaml))
+			if err == nil {
+				t.Fatal("want error, got nil")
+			}
+			if !strings.Contains(err.Error(), tt.wantErr) {
+				t.Errorf("error %q does not mention %q", err, tt.wantErr)
+			}
+		})
+	}
+}
+
+func TestParseBoundariesBadForm(t *testing.T) {
+	// A scalar (neither a list nor a mapping) is neither boundary form.
+	_, err := Parse([]byte("version: 2\ncomponents: {a: {path: \"x/**\"}}\ndefault: allow\nboundaries: {b: oops}"))
+	if err == nil {
+		t.Fatal("a scalar boundary value must be rejected")
+	}
+	if !strings.Contains(err.Error(), "members") {
+		t.Errorf("error should describe the accepted forms: %v", err)
+	}
+}
+
+func TestParseNoBoundaries(t *testing.T) {
+	// Absent the key, boundaries is nil and everything else is unchanged.
+	rs, err := Parse([]byte(valid))
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	if rs.Boundaries != nil {
+		t.Errorf("absent boundaries should compile to nil: %+v", rs.Boundaries)
+	}
+}
+
 // TestParseLegacyMigrationError checks that a version-1 config (separate
 // components: and rules: blocks) is rejected with an actionable rewrite built
 // from the user's own first component, not a generic decode failure.

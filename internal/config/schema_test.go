@@ -64,6 +64,41 @@ func TestSchemaMatchesFileStruct(t *testing.T) {
 	}
 }
 
+// TestSchemaBoundaries guards the additive boundaries change: the schema must
+// declare the optional boundaries key without bumping the config version or
+// changing the required set (adding boundaries must stay purely additive under
+// version 2).
+func TestSchemaBoundaries(t *testing.T) {
+	data, err := os.ReadFile(schemaPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var s struct {
+		Required   []string                   `json:"required"`
+		Properties map[string]json.RawMessage `json:"properties"`
+	}
+	if err := json.Unmarshal(data, &s); err != nil {
+		t.Fatalf("schema is not valid JSON: %v", err)
+	}
+	if _, ok := s.Properties["boundaries"]; !ok {
+		t.Error("schema must declare a boundaries property")
+	}
+	// boundaries is optional — the required set must not have grown.
+	if len(s.Required) != 2 || !contains(s.Required, "version") || !contains(s.Required, "components") {
+		t.Errorf("required set changed, want exactly [version components]: %v", s.Required)
+	}
+	// version must stay const: 2 — no version bump for an additive key.
+	var v struct {
+		Const int `json:"const"`
+	}
+	if err := json.Unmarshal(s.Properties["version"], &v); err != nil {
+		t.Fatalf("version property is not valid JSON: %v", err)
+	}
+	if v.Const != 2 {
+		t.Errorf("version const = %d, want 2 (additive change, no bump)", v.Const)
+	}
+}
+
 // TestFixtureConfigsConformToSchema checks every committed depdog.yaml uses only
 // keys the schema declares — a cheap guard that examples stay valid.
 func TestFixtureConfigsConformToSchema(t *testing.T) {

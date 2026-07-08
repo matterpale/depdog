@@ -5,6 +5,18 @@ import (
 	"strings"
 )
 
+// ReasonKind classifies why an edge was flagged, so a boundary verdict and its
+// sealed variant survive into JSON without string-parsing the Rule field. The
+// empty kind is an ordinary component allow/deny/stance violation and is omitted
+// from JSON.
+type ReasonKind string
+
+const (
+	ReasonRule           ReasonKind = ""                // ordinary component allow/deny/stance
+	ReasonBoundary       ReasonKind = "boundary"        // a cross-member boundary crossing
+	ReasonBoundarySealed ReasonKind = "boundary-sealed" // ungrouped source → in-member target under sealed
+)
+
 // Violation is one import edge that breaks a rule.
 type Violation struct {
 	FromPackage   string // import path of the offending package
@@ -14,22 +26,27 @@ type Violation struct {
 	Rule          string // human-readable rule that fired, e.g. `domain: allow [std]`
 	TestOnly      bool
 	Positions     []Position
+	Reason        ReasonKind // "" for ordinary rule violations; a boundary kind otherwise
+	Boundary      string     // boundary name when Reason is a boundary kind; "" otherwise
 }
 
 // WarningKind distinguishes the advisory notes a check surfaces.
 const (
-	WarnUnassigned     = "unassigned"      // an in-module package no component claims
-	WarnEmptyComponent = "empty-component" // a component whose patterns match no package
+	WarnUnassigned          = "unassigned"            // an in-module package no component claims
+	WarnEmptyComponent      = "empty-component"       // a component whose patterns match no package
+	WarnEmptyBoundaryMember = "empty-boundary-member" // a glob boundary member matching no package
 )
 
 // Warning is an advisory note that never fails a check by itself. Its fields
 // depend on Kind: WarnUnassigned carries Package and RelDir; WarnEmptyComponent
-// carries Component.
+// carries Component; WarnEmptyBoundaryMember carries Boundary and Component (the
+// member label).
 type Warning struct {
 	Kind      string
 	Package   string
 	RelDir    string
 	Component string
+	Boundary  string
 }
 
 type Stats struct {
@@ -90,6 +107,34 @@ func Evaluate(g *Graph, rs *RuleSet) (*Result, error) {
 		return c, nil
 	}
 
+	// Boundary membership is resolved per directory too, independently of
+	// component assignment (the two axes are orthogonal). A nil slice means the
+	// config declares no boundaries.
+	memCache := make(map[string][]int, len(g.Packages))
+	membership := func(relDir string) ([]int, error) {
+		if m, ok := memCache[relDir]; ok {
+			return m, nil
+		}
+		m, err := rs.BoundaryMembership(relDir)
+		if err != nil {
+			return nil, err
+		}
+		memCache[relDir] = m
+		return m, nil
+	}
+
+	// Track which boundary members ever matched a package, so glob members that
+	// claim nothing surface as an advisory (mirrors WarnEmptyComponent). Keyed
+	// by boundary index → member index.
+	memberSeen := make(map[[2]int]bool)
+	recordSeen := func(m []int) {
+		for bi, mi := range m {
+			if mi >= 0 {
+				memberSeen[[2]int{bi, mi}] = true
+			}
+		}
+	}
+
 	for _, p := range g.Packages {
 		if rs.Skipped(p.RelDir) {
 			continue
@@ -99,19 +144,43 @@ func Evaluate(g *Graph, rs *RuleSet) (*Result, error) {
 		if err != nil {
 			return nil, err
 		}
+		srcMembership, err := membership(p.RelDir)
+		if err != nil {
+			return nil, err
+		}
+		recordSeen(srcMembership)
+
+		// Boundary membership is independent of component assignment: even a
+		// package no component claims may sit inside a boundary member, and its
+		// outgoing edges must still be checked (a sealed boundary forbids an
+		// ungrouped source from importing in). So when the package is
+		// component-unassigned we still walk its imports for the boundary gate,
+		// but only emit the single unassigned warning and skip component rules.
+		var (
+			cs                  *ComponentStat
+			rule                Rule
+			hasRule, unassigned bool
+			stance              Policy
+		)
 		if comp == "" {
 			// No component means no rule to judge outgoing edges by; the
 			// package is reported once instead of flooding the output.
 			res.Warnings = append(res.Warnings, Warning{Kind: WarnUnassigned, Package: p.ImportPath, RelDir: p.RelDir})
-			continue
+			unassigned = true
+		} else {
+			cs = compStats[comp]
+			cs.Packages++
+			rule, hasRule = rs.Rules[comp]
+			stance = rs.Stance(comp)
 		}
-		cs := compStats[comp]
-		cs.Packages++
-		rule, hasRule := rs.Rules[comp]
-		stance := rs.Stance(comp)
+
 		for _, imp := range p.Imports {
-			res.Stats.Edges++
-			cs.Edges++
+			// Edge stats count every import of a component-assigned source,
+			// exactly as before; unassigned sources never counted their edges.
+			if !unassigned {
+				res.Stats.Edges++
+				cs.Edges++
+			}
 
 			targetComp := ""
 			if imp.Class == ClassInModule {
@@ -121,9 +190,39 @@ func Evaluate(g *Graph, rs *RuleSet) (*Result, error) {
 				if targetComp, err = assign(imp.RelDir); err != nil {
 					return nil, err
 				}
-				if targetComp == comp {
-					continue // imports within a component are always fine
+			}
+
+			// The boundary gate runs for every source (component-assigned or
+			// not), honouring the same test_files relaxation as component rules.
+			testExempt := false
+			if imp.TestOnly {
+				if rs.TestFiles == TestRelaxed {
+					testExempt = true
+				} else if rs.TestFiles == TestHybrid && imp.Class == ClassExternal {
+					testExempt = true
 				}
+			}
+			if !testExempt && imp.Class == ClassInModule && len(rs.Boundaries) > 0 {
+				tgtMembership, merr := membership(imp.RelDir)
+				if merr != nil {
+					return nil, merr
+				}
+				if bv := rs.boundaryVerdict(p, imp, comp, targetComp, srcMembership, tgtMembership); bv != nil {
+					res.Violations = append(res.Violations, *bv)
+					if cs != nil {
+						cs.Violations++
+					}
+					continue
+				}
+			}
+
+			// Component rules only apply to a component-assigned source.
+			if unassigned {
+				continue
+			}
+
+			if imp.Class == ClassInModule && targetComp == comp {
+				continue // imports within a component are always fine
 			}
 			if targetComp != "" {
 				edge := compEdges[comp]
@@ -134,13 +233,8 @@ func Evaluate(g *Graph, rs *RuleSet) (*Result, error) {
 				edge[targetComp] = true
 			}
 
-			if imp.TestOnly {
-				if rs.TestFiles == TestRelaxed {
-					continue
-				}
-				if rs.TestFiles == TestHybrid && imp.Class == ClassExternal {
-					continue
-				}
+			if testExempt {
+				continue
 			}
 
 			if hasRule && matchAny(rule.Deny, imp, targetComp) {
@@ -175,7 +269,51 @@ func Evaluate(g *Graph, rs *RuleSet) (*Result, error) {
 			res.Warnings = append(res.Warnings, Warning{Kind: WarnEmptyComponent, Component: c.Name})
 		}
 	}
+
+	// A glob boundary member that matched no package is likely a typo or dead
+	// glob; surface it (component members are already covered by the
+	// empty-component warning). Deterministic: boundaries and members sorted.
+	for bi := range rs.Boundaries {
+		b := &rs.Boundaries[bi]
+		for mi := range b.Members {
+			if b.Members[mi].Component != "" {
+				continue // component members ride the empty-component warning
+			}
+			if !memberSeen[[2]int{bi, mi}] {
+				res.Warnings = append(res.Warnings, Warning{
+					Kind: WarnEmptyBoundaryMember, Boundary: b.Name, Component: b.Members[mi].Label,
+				})
+			}
+		}
+	}
 	return res, nil
+}
+
+// boundaryVerdict applies the boundary gate to one in-module edge and returns
+// the single violation it produces, or nil when no boundary denies. When an
+// edge crosses multiple boundaries the first denying boundary (in sorted order)
+// wins, so exactly one violation is emitted per edge for determinism. A
+// boundary crossing is a hard deny that wins over any component allow, so this
+// is checked before the component decision.
+func (rs *RuleSet) boundaryVerdict(p Package, imp Import, comp, targetComp string, src, tgt []int) *Violation {
+	for bi := range rs.Boundaries {
+		b := rs.Boundaries[bi]
+		deny, sealed := crossesBoundary(b, src[bi], tgt[bi])
+		if !deny {
+			continue
+		}
+		reason := ReasonBoundary
+		rule := fmt.Sprintf("denied by boundary %q", b.Name)
+		if sealed {
+			reason = ReasonBoundarySealed
+			rule = fmt.Sprintf("denied by boundary %q (sealed)", b.Name)
+		}
+		v := violation(p, comp, imp, targetComp, rule)
+		v.Reason = reason
+		v.Boundary = b.Name
+		return &v
+	}
+	return nil
 }
 
 func violation(p Package, comp string, imp Import, targetComp, rule string) Violation {

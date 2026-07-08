@@ -8,20 +8,24 @@ Improvements, refinements, and polish beyond the M0–M5 work already shipped.
 
 ## Rules & policy
 
-- **Boundaries — orthogonal mutual-exclusion groups.** (M–L) A second
+- ✅ **Shipped: boundaries — orthogonal mutual-exclusion groups.** A second
   classification axis: named sets of members (components or path globs) that may
   not import across each other, *orthogonal* to most-specific-wins component
-  assignment — so a package sits in its layer component **and** several
-  boundaries at once. Collapses peer `deny`-list boilerplate into one
-  declaration, and makes cross-cutting isolation ("no `cmd/` service imports
-  another") expressible without O(n²) deny lists or a `**` catch-all. Symmetric by
-  default, with an opt-in `sealed: true` flag (nothing outside may import in — for
-  "shared libs must not depend on a service"). Distinct from today's `groups`
-  (which expand in allow/deny lists — kept as-is). Engine change: core membership
-  index + evaluate + all five report formats + schema. Design settled with the
-  owner 2026-07-08 (name, glob members, sealed flag, respect `test_files`,
-  orthogonal to assignment); detailed plan in
-  [docs/boundaries.md](docs/boundaries.md).
+  assignment — a package sits in its layer component **and** every boundary
+  whose region contains it. Collapses peer `deny`-list boilerplate into one
+  declaration and makes cross-cutting isolation ("no `cmd/` service imports
+  another") expressible without O(n²) deny lists or a `**` catch-all. Symmetric
+  by default, with an opt-in `sealed: true` one-way flag (nothing outside may
+  import in). Distinct from today's `groups` (kept as-is). Landed as a top-level
+  `boundaries` key (shorthand list or `{ members, sealed }`) — purely additive,
+  no config-version bump: a core `Boundary` type + per-package membership index
+  (most-specific-wins, equal-specificity overlap is a config error), an
+  `Evaluate` gate (cross-member deny, sealed ungrouped→member deny, deny-wins,
+  `test_files`-aware, off the cycle SCC, one violation per edge) sharing a
+  `DecideBoundary` path with `explain`, a machine-readable `ReasonKind`, JSON
+  `boundaries` array + `boundary` field, schema, and boundary rendering in text
+  / `explain` / `config` / `graph` — proven by a two-service fixture and golden
+  e2e. Design and full write-up in [docs/boundaries.md](docs/boundaries.md).
 
 - ✅ **Shipped (config v2, breaking):** merged the separate `components:` and
   `rules:` blocks into one. Each component is now `name: { path: <glob|list>,
@@ -105,6 +109,18 @@ Improvements, refinements, and polish beyond the M0–M5 work already shipped.
   patterns, each component's inferred stance and rule, policy and options.
 
 ## TUI
+
+- **Config tab — view the compiled rules, edit via `$EDITOR`, auto re-check.**
+  (S–M) A fourth screen showing the active config path and the compiled rule
+  set (`depdog config`'s data, rendered via `report.RuleSet`); `e` there opens
+  `depdog.yaml` itself in `$EDITOR`, and the editor exiting auto-fires the
+  existing `r` refresh pipeline so the edited rules take effect on every screen
+  (an invalid config surfaces through the existing re-run error path, old data
+  kept). Deliberately **not** an embedded YAML editor — that would break the
+  TUI's "adds navigation, not data" design note and reimplement a worse editor;
+  structured rule editing stays a separate, later item. Evaluated with the
+  owner 2026-07-08; detailed plan in
+  [docs/tui-config-tab.md](docs/tui-config-tab.md).
 
 - ✅ **Shipped:** the Violations and Packages lists now scroll — a height-aware
   window follows the selection with `▲/▼ N more` markers. (Custom windowing over

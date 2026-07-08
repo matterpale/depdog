@@ -1,0 +1,2 @@
+boundaryfix/internal/badshared (shared) → cmd/query-ce (query-ce)
+  denied by boundary "cmd-services" (sealed)

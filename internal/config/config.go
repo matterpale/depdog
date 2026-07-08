@@ -27,6 +27,7 @@ type file struct {
 	Module     string                   `yaml:"module"`
 	Components map[string]componentYAML `yaml:"components"`
 	Groups     map[string]stringList    `yaml:"groups"`
+	Boundaries map[string]boundaryYAML  `yaml:"boundaries"`
 	Default    string                   `yaml:"default"`
 	Options    optionsYAML              `yaml:"options"`
 }
@@ -67,6 +68,63 @@ func (s *stringList) UnmarshalYAML(n *yaml.Node) error {
 	default:
 		return fmt.Errorf("line %d: expected a pattern or a list of patterns", n.Line)
 	}
+}
+
+// boundaryYAML accepts both boundary forms: a bare list of members (shorthand,
+// symmetric and not sealed) or an expanded mapping {members, sealed}.
+type boundaryYAML struct {
+	Members stringList `yaml:"members"`
+	Sealed  bool       `yaml:"sealed"`
+}
+
+func (b *boundaryYAML) UnmarshalYAML(n *yaml.Node) error {
+	switch n.Kind {
+	case yaml.SequenceNode:
+		// Shorthand: a list of members, symmetric and unsealed.
+		var members []string
+		if err := n.Decode(&members); err != nil {
+			return err
+		}
+		b.Members = stringList(members)
+		b.Sealed = false
+		return nil
+	case yaml.MappingNode:
+		// Expanded form. A custom UnmarshalYAML bypasses the top-level decoder's
+		// KnownFields(true), so reject unknown sub-keys here to keep the
+		// actionable-error-on-typo convention (e.g. `seald: true`).
+		var aux struct {
+			Members stringList `yaml:"members"`
+			Sealed  bool       `yaml:"sealed"`
+		}
+		if err := decodeKnownFields(n, &aux); err != nil {
+			return err
+		}
+		b.Members = aux.Members
+		b.Sealed = aux.Sealed
+		return nil
+	default:
+		return fmt.Errorf("line %d: expected a list of members or {members, sealed}", n.Line)
+	}
+}
+
+// decodeKnownFields decodes a mapping node into v, rejecting keys v does not
+// declare — the strict decode a custom UnmarshalYAML must do itself, since it
+// bypasses the parent decoder's KnownFields setting.
+func decodeKnownFields(n *yaml.Node, v any) error {
+	// yaml.Node.Decode does not honour KnownFields; round-trip through a decoder
+	// that does, over the node's own serialization.
+	var buf bytes.Buffer
+	enc := yaml.NewEncoder(&buf)
+	if err := enc.Encode(n); err != nil {
+		return err
+	}
+	enc.Close()
+	dec := yaml.NewDecoder(&buf)
+	dec.KnownFields(true)
+	if err := dec.Decode(v); err != nil {
+		return err
+	}
+	return nil
 }
 
 // Load reads and compiles the config file at path.
@@ -171,6 +229,12 @@ func Parse(data []byte) (*core.RuleSet, error) {
 		}
 	}
 
+	boundaries, err := parseBoundaries(f.Boundaries, known, names, rs.Components)
+	if err != nil {
+		return nil, err
+	}
+	rs.Boundaries = boundaries
+
 	switch f.Options.TestFiles {
 	case "", "hybrid":
 		rs.TestFiles = core.TestHybrid
@@ -224,6 +288,83 @@ func parseGroups(raw map[string]stringList, known map[string]bool, componentName
 		groups[name] = members
 	}
 	return groups, nil
+}
+
+// isGlobMember reports whether a boundary member string is a path glob rather
+// than a bare component name. It extends the allow/deny ref heuristic
+// (ContainsAny "/.") with glob metacharacters so a single-segment glob like
+// "cmd*" is read as a glob, not mis-read as an unknown component.
+func isGlobMember(m string) bool {
+	return strings.ContainsAny(m, "/.*?[")
+}
+
+// parseBoundaries validates the optional `boundaries` map (named
+// mutual-exclusion groups) and returns the compiled boundaries, sorted by name.
+// A member is a known component name or a path glob, told apart by the same
+// heuristic as allow/deny refs (extended so glob metacharacters mean "glob").
+// Members disjoint-within-a-boundary is enforced authoritatively at runtime by
+// the membership index; here only a cheap duplicate/identical-pattern check
+// catches obvious authoring mistakes.
+func parseBoundaries(raw map[string]boundaryYAML, known map[string]bool, componentNames []string, components []core.Component) ([]core.Boundary, error) {
+	if len(raw) == 0 {
+		return nil, nil
+	}
+	// Component name → its patterns, for expanding component members.
+	patternsOf := make(map[string][]string, len(components))
+	for _, c := range components {
+		patternsOf[c.Name] = c.Patterns
+	}
+
+	names := make([]string, 0, len(raw))
+	for name := range raw {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+
+	boundaries := make([]core.Boundary, 0, len(raw))
+	for _, name := range names {
+		if reserved[name] {
+			return nil, fmt.Errorf("boundary name %q is reserved", name)
+		}
+		by := raw[name]
+		if len(by.Members) == 0 {
+			return nil, fmt.Errorf("boundary %q has no members — list at least two components or globs", name)
+		}
+		members := make([]core.BoundaryMember, 0, len(by.Members))
+		seenComponent := make(map[string]bool, len(by.Members))
+		seenPattern := make(map[string]string, len(by.Members)) // pattern → member label that owns it
+		for _, m := range by.Members {
+			switch {
+			case known[m]:
+				if seenComponent[m] {
+					return nil, fmt.Errorf("boundary %q lists component %q twice", name, m)
+				}
+				seenComponent[m] = true
+				pats := patternsOf[m]
+				for _, pat := range pats {
+					if owner, dup := seenPattern[pat]; dup {
+						return nil, fmt.Errorf("boundary %q members %q and %q overlap with equal specificity — make one more specific", name, owner, m)
+					}
+					seenPattern[pat] = m
+				}
+				members = append(members, core.BoundaryMember{Component: m, Patterns: pats, Label: m})
+			case isGlobMember(m):
+				if err := core.ValidatePattern(m); err != nil {
+					return nil, fmt.Errorf("boundary %q member %q: %w", name, m, err)
+				}
+				if owner, dup := seenPattern[m]; dup {
+					return nil, fmt.Errorf("boundary %q members %q and %q overlap with equal specificity — make one more specific", name, owner, m)
+				}
+				seenPattern[m] = m
+				members = append(members, core.BoundaryMember{Patterns: []string{m}, Label: m})
+			default:
+				return nil, fmt.Errorf("boundary %q member %q is not a known component or a path glob (known components: %s)", name, m, strings.Join(componentNames, ", "))
+			}
+		}
+		sort.Slice(members, func(i, j int) bool { return members[i].Label < members[j].Label })
+		boundaries = append(boundaries, core.Boundary{Name: name, Members: members, Sealed: by.Sealed})
+	}
+	return boundaries, nil
 }
 
 func parseRefs(comp string, entries []string, known map[string]bool, groups map[string][]string) ([]core.Ref, error) {
