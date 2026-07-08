@@ -38,17 +38,13 @@ changelog:
       - "^docs:"
       - "^test:"
 
-# Homebrew tap — wired but deliberately disabled. To enable:
-#   1. create the github.com/matterpale/homebrew-tap repository
-#   2. add a TAP_GITHUB_TOKEN secret (a PAT with repo scope on the tap)
-#   3. uncomment this block and pass the token in release.yml
-# brews:
-#   - repository:
-#       owner: matterpale
-#       name: homebrew-tap
-#       token: "{{ .Env.TAP_GITHUB_TOKEN }}"
-#     homepage: https://github.com/matterpale/depdog
-#     description: A Dependency Watchdog
-#     license: MIT
-#     test: |
-#       system "#{bin}/depdog", "--version"
+brews:
+  - repository:
+      owner: matterpale
+      name: homebrew-tap
+      token: "{{ .Env.TAP_GITHUB_TOKEN }}"
+    homepage: https://github.com/matterpale/depdog
+    description: A Dependency Watchdog
+    license: MIT
+    test: |
+      system "#{bin}/depdog", "--version"

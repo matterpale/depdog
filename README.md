@@ -1,4 +1,4 @@
-<div>
+<div align="center">
 
 <img src="docs/logo.svg" alt="depdog" width="330">
 

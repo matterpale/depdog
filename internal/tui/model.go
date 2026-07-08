@@ -46,14 +46,18 @@ var (
 	styleGood     = lipgloss.NewStyle().Foreground(lipgloss.Color("2")).Bold(true)
 	styleWarn     = lipgloss.NewStyle().Foreground(lipgloss.Color("3"))
 	styleSelected = lipgloss.NewStyle().Reverse(true)
+	// styleSelectedBad highlights the selected row when it is an offending package:
+	// the selection bar, tinted red so its violation status survives the highlight.
+	styleSelectedBad = lipgloss.NewStyle().Reverse(true).Foreground(lipgloss.Color("1")).Bold(true)
 )
 
 // Model is depdog's root Bubble Tea model.
 type Model struct {
 	res       *core.Result
-	pkgs      []core.PackageView // sorted by component, then import path
+	pkgs      []core.PackageView // violators first, then by component and import path
 	rules     *core.RuleSet      // compiled config rendered on the Config tab
 	violEdges map[[2]string]bool // (from package, import) of every violation
+	violPkgs  map[string]bool    // import paths that are the source of a violation
 	root      string             // module root; positions are relative to it
 	configRel string             // module-relative config path (stable across refreshes)
 	refresh   func() (*core.Result, []core.PackageView, *core.RuleSet, error)
@@ -117,18 +121,25 @@ func New(res *core.Result, pkgs []core.PackageView, opts ...Option) Model {
 // the violation-edge index the Packages screen marks ✗ with. Used both at
 // construction and when `r` delivers fresh results.
 func (m *Model) setData(res *core.Result, pkgs []core.PackageView) {
+	edges := make(map[[2]string]bool, len(res.Violations))
+	vpkgs := make(map[string]bool)
+	for _, v := range res.Violations {
+		edges[[2]string{v.FromPackage, v.ImportPath}] = true
+		vpkgs[v.FromPackage] = true
+	}
 	sorted := append([]core.PackageView(nil), pkgs...)
 	sort.SliceStable(sorted, func(i, j int) bool {
+		// Offending packages float to the top so the eye lands on them first; the
+		// rest keep the component-then-path grouping the list has always used.
+		if vi, vj := vpkgs[sorted[i].ImportPath], vpkgs[sorted[j].ImportPath]; vi != vj {
+			return vi
+		}
 		if sorted[i].Component != sorted[j].Component {
 			return sorted[i].Component < sorted[j].Component
 		}
 		return sorted[i].ImportPath < sorted[j].ImportPath
 	})
-	edges := make(map[[2]string]bool, len(res.Violations))
-	for _, v := range res.Violations {
-		edges[[2]string{v.FromPackage, v.ImportPath}] = true
-	}
-	m.res, m.pkgs, m.violEdges = res, sorted, edges
+	m.res, m.pkgs, m.violEdges, m.violPkgs = res, sorted, edges, vpkgs
 }
 
 func (m Model) Init() tea.Cmd { return nil }
