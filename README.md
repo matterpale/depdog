@@ -2,7 +2,8 @@
 
 <img src="assets/logo.svg" alt="depdog" width="330">
 
-**A Dependency Watchdog for Go** — your architecture rules, enforced on every build.
+**A Codebase Dependency Watchdog** — your architecture rules, enforced on every build.
+Go, TypeScript/JS, Python, Rust, Java, Ruby, and Kotlin, one tool.
 
 [![Go Reference](https://pkg.go.dev/badge/github.com/matterpale/depdog.svg)](https://pkg.go.dev/github.com/matterpale/depdog)
 [![CI](https://github.com/matterpale/depdog/actions/workflows/ci.yml/badge.svg)](https://github.com/matterpale/depdog/actions/workflows/ci.yml)
@@ -22,7 +23,8 @@ nothing but the standard library," "handlers never import repositories"* —
 usually live in someone's head or a wiki, and they rot. depdog makes them
 executable: you declare which **components** exist and who may import whom in one
 small `depdog.yaml`, and `depdog check` enforces it against every import edge in
-your module, exiting non-zero for CI.
+your codebase, exiting non-zero for CI. One neutral rule format, one engine —
+depdog just swaps a thin language adapter per project ([see below](#multi-language-support)).
 
 ```
 depdog check — github.com/matterpale/depdog
@@ -263,50 +265,92 @@ failing build.
 
 ## Multi-language support
 
-depdog checks **Go** and **TypeScript/JavaScript** projects with the *same*
-`depdog.yaml`, the *same* commands (`check`, `graph`, `explain`, `config`, TUI),
-and the *same* engine. Only a thin language adapter differs; the rule format is
-neutral — component `path` globs match module-relative directories, and `std` /
-`external` are abstract buckets each adapter fills (Go stdlib vs Node builtins;
-a Go module vs an `node_modules` package). The TypeScript adapter is a pure-Go
-static import scanner: no Node.js or `tsc` is required, depdog stays a single
-binary.
+depdog checks **seven** languages with the *same* `depdog.yaml`, the *same*
+commands (`check`, `graph`, `explain`, `config`, TUI), and the *same* engine.
+Only a thin language adapter differs; the rule format is neutral — component
+`path` globs match project-relative directories, and `std` / `external` are
+abstract buckets each adapter fills (Go stdlib vs Node builtins vs the Python
+stdlib; a Go module vs an `node_modules` package vs a gem). Every adapter is a
+pure-Go static import scanner — **no language toolchain is required** (no
+Node/`tsc`, no `python`, no `cargo`), depdog stays a single binary.
+
+| `--lang` | Language | Detected by | Scans |
+| --- | --- | --- | --- |
+| `go` | Go | `go.mod` | package imports |
+| `ts` | TypeScript / JavaScript | `tsconfig.json`, `package.json` | `import`/`export from`/`require`/dynamic `import()` |
+| `py` | Python | `pyproject.toml`, `setup.py`, `setup.cfg` | `import` / `from … import` (incl. relative) |
+| `rs` | Rust | `Cargo.toml` | `use` / `mod` / `extern crate` |
+| `java` | Java | `pom.xml`, `build.gradle` | `package` + `import` |
+| `rb` | Ruby | `Gemfile`, `.ruby-version`, `Rakefile` | `require` / `require_relative` / `autoload` |
+| `kt` | Kotlin | `build.gradle.kts`, `settings.gradle.kts` | `package` + `import` |
+
+`internal/core` (the engine) never changed as languages were added — the whole
+point of the [adapter registry](internal/cli/languages.go) is that a new
+language is one `internal/lang/<x>` package plus one registry entry.
 
 **Auto-detection.** depdog picks the adapter from the project's marker files,
-walking up from the working directory:
+walking up from the working directory; the marker nearest the working directory
+wins in a nested layout (e.g. a `web/` TS app inside a Go repo).
 
-- a `go.mod` ⇒ the Go adapter;
-- a `tsconfig.json` or `package.json` ⇒ the TypeScript/JS adapter;
-- the marker nearest the working directory wins in a nested layout.
-
-**Explicit override.** The persistent `--lang go|ts` flag (available to every
+**Explicit override.** The persistent `--lang` flag (available to every
 subcommand) bypasses detection:
 
 ```bash
-depdog check --lang ts        # force the TypeScript adapter
-depdog graph --lang go        # force the Go adapter
+depdog check --lang py        # force the Python adapter
+depdog graph --lang rs        # force the Rust adapter
 ```
 
-A directory that carries **both** a `go.mod` and a `tsconfig.json`/`package.json`
-with no `--lang` is genuinely ambiguous: depdog exits with a usage error naming
-`--lang` rather than silently guessing.
+A directory that carries markers for **two** languages with no `--lang` is
+genuinely ambiguous: depdog exits with a usage error naming `--lang` rather than
+silently guessing.
+
+## For AI agents
+
+depdog is built to be driven by tools and agents, not just humans:
+
+- **Machine-readable output.** `depdog check --format json` emits a stable
+  schema (violations, components, boundaries, stats); the [exit codes](#commands)
+  are a contract (`0` clean, `1` violations, `2` config/usage error). `depdog
+  config --format json` dumps the compiled rules so an agent can inspect what a
+  config actually means before changing it.
+- **Polyglot-aware.** Auto-detect or `--lang` means an agent doesn't need to
+  know the language up front; a monorepo can be checked per subtree.
+- **A skill for authoring `depdog.yaml`.** [`skills/depdog-config/`](skills/depdog-config/SKILL.md)
+  is a self-contained [Claude Code](https://claude.com/claude-code) skill that
+  analyzes a codebase's layout, proposes components and import rules, writes a
+  `depdog.yaml`, and validates it with `depdog check` — iterating until it
+  reflects the intended architecture. Drop it into your project's
+  `.claude/skills/` (or point any agent at it):
+
+  ```bash
+  mkdir -p .claude/skills
+  cp -r "$(go env GOPATH)/pkg/mod/github.com/matterpale/depdog@*/skills/depdog-config" .claude/skills/
+  # or copy skills/depdog-config from a clone
+  ```
+- **Editor schema.** [`schema/depdog.schema.json`](schema/depdog.schema.json)
+  gives autocomplete and validation in any JSON-schema-aware editor or agent.
 
 ## Limitations
 
-- **One build configuration.** depdog loads packages for the host's
-  `GOOS`/`GOARCH` and default build tags. Imports guarded by other build
-  constraints (e.g. `//go:build windows` on a non-Windows machine) aren't seen.
-- **Single module.** Go workspaces (`go.work`) aren't supported: depdog checks
-  one module and declines to run inside a workspace with a clear message (set
-  `GOWORK=off` to bypass a workspace and check the module directly).
+- **Static analysis.** Every adapter scans source for import statements; it does
+  not run or type-check your code. Fully dynamic imports (a computed
+  `require(someVar)`, a reflective Java classload) are invisible by design —
+  architecture rules are about the imports you *write*.
+- **Go adapter — one build configuration.** The Go adapter loads packages for
+  the host's `GOOS`/`GOARCH` and default build tags; imports guarded by other
+  build constraints (e.g. `//go:build windows` on a non-Windows machine) aren't
+  seen.
+- **Go adapter — single module.** Go workspaces (`go.work`) aren't supported:
+  depdog checks one module and declines to run inside a workspace with a clear
+  message (set `GOWORK=off` to bypass a workspace and check the module directly).
 
 ## Status
 
-v0.2.0 — the current release. It brings the config v2 format (per-component
-`allow`/`deny` in one block, `default` stance) and a second language adapter
-(TypeScript/JavaScript, selected by auto-detect or `--lang`) among a round of
-post-v0.1 refinements. The M0–M5 roadmap in [`PLAN.md`](PLAN.md) is complete;
-[`BACKLOG.md`](BACKLOG.md) tracks what's next.
+v0.5.0 — the current release. depdog now checks **seven** languages (Go,
+TypeScript/JS, Python, Rust, Java, Ruby, Kotlin) through a pluggable adapter
+registry, on top of the config v2 format (per-component `allow`/`deny`,
+`default` stance) and `boundaries` (orthogonal mutual-exclusion groups). The
+M0–M5 roadmap is complete; editor/LSP integration is the main item still ahead.
 
 ## License
 
