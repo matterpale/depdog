@@ -3,14 +3,14 @@
 <img src="assets/logo.svg" alt="depdog" width="330">
 
 **A Codebase Dependency Watchdog** — your architecture rules, enforced on every build.
-Go, TypeScript/JS, Python, Rust, Java, Ruby, and Kotlin, one tool.
 
 [![Go Reference](https://pkg.go.dev/badge/github.com/matterpale/depdog.svg)](https://pkg.go.dev/github.com/matterpale/depdog)
 [![CI](https://github.com/matterpale/depdog/actions/workflows/ci.yml/badge.svg)](https://github.com/matterpale/depdog/actions/workflows/ci.yml)
 [![Latest release](https://img.shields.io/github/v/release/matterpale/depdog?color=d68a1e)](https://github.com/matterpale/depdog/releases)
 [![License: MIT](https://img.shields.io/badge/license-MIT-d68a1e)](LICENSE)
 
-[**Install**](#install)&nbsp;·&nbsp;[**Quick start**](#quick-start)&nbsp;·&nbsp;[**Configuration**](#configuration)&nbsp;·&nbsp;[**Commands**](#commands)&nbsp;·&nbsp;[**CI**](#ci)
+[**Install**](#install)&nbsp;·&nbsp;[**Quick start**](#quick-start)&nbsp;·&nbsp;[**Configuration**](#configuration)
+&nbsp;·&nbsp;[**Commands**](#commands)&nbsp;·&nbsp;[**CI**](#ci)
 
 </div>
 
@@ -80,17 +80,17 @@ version: 2
 
 # Each component lists its path glob(s) and, inline, who it may import.
 components:
-  main:       { path: "cmd/**" }                                # no rule → open (the default)
-  domain:     { path: "internal/domain/**", allow: [std] }      # whitelist: std only
-  handler:    { path: "internal/handler/**", deny: [service, repository] } # forbids its peers
-  service:    { path: "internal/service/**", deny: [handler, repository] }
-  repository: { path: "internal/repository/**", deny: [handler, service] }
+  main: { path: "cmd/**" }                                # no rule → open (the default)
+  domain: { path: "internal/domain/**", allow: [ std ] }      # whitelist: std only
+  handler: { path: "internal/handler/**", deny: [ service, repository ] } # forbids its peers
+  service: { path: "internal/service/**", deny: [ handler, repository ] }
+  repository: { path: "internal/repository/**", deny: [ handler, service ] }
 
 default: allow   # fallback for a rule-less component (like main); the default if omitted
 
 options:
   test_files: hybrid              # default; also: same-rules, relaxed
-  skip: ["internal/legacy/**"]    # package dirs excluded from analysis
+  skip: [ "internal/legacy/**" ]    # package dirs excluded from analysis
 ```
 
 Here `domain` is a **whitelist** (an `allow` list — only what's listed passes) and the
@@ -113,13 +113,13 @@ not a silent pick.
 
 ### What goes in `allow` and `deny`
 
-| Entry                  | Matches                                                          |
-| ---------------------- | ---------------------------------------------------------------- |
-| `domain`, `handler`, … | another component, by name                                       |
-| `std`                  | the Go standard library                                          |
-| `external`             | any module that isn't yours                                      |
-| `unassigned`           | in-module packages no component claims                           |
-| `"*"`                  | everything                                                       |
+| Entry                  | Matches                                                             |
+|------------------------|---------------------------------------------------------------------|
+| `domain`, `handler`, … | another component, by name                                          |
+| `std`                  | the Go standard library                                             |
+| `external`             | any module that isn't yours                                         |
+| `unassigned`           | in-module packages no component claims                              |
+| `"*"`                  | everything                                                          |
 | `golang.org/x/sync`    | one specific external module, by prefix — any entry with `/` or `.` |
 
 **Groups** name a reusable set of components: declare `groups: { inner:
@@ -146,23 +146,23 @@ another"), which otherwise needs O(n²) deny lists.
 ```yaml
 boundaries:
   # shorthand — a symmetric peer set; these three may not import each other
-  service-a-layers: [service-a-repositories, service-a-services, service-a-handlers]
+  service-a-layers: [ service-a-repositories, service-a-services, service-a-handlers ]
 
   # expanded form — members can be path globs, and sealed adds a one-way wall
   cmd-services:
-    members: ["cmd/service-a/**", "cmd/service-b/**"]
+    members: [ "cmd/service-a/**", "cmd/service-b/**" ]
     sealed: true
 ```
 
 A **member** is a component name *or* a path glob (told apart by the same `/`-or-
 metacharacter heuristic as allow/deny refs); the two may mix in one boundary.
 
-| edge | verdict |
-| --- | --- |
-| member A → member B (A ≠ B) | **denied** (a hard deny — wins over any component `allow`) |
-| within one member (incl. same package) | allowed |
-| member → ungrouped (e.g. a shared lib) | allowed |
-| ungrouped → member | allowed — **denied** when the boundary is `sealed` |
+| edge                                   | verdict                                                    |
+|----------------------------------------|------------------------------------------------------------|
+| member A → member B (A ≠ B)            | **denied** (a hard deny — wins over any component `allow`) |
+| within one member (incl. same package) | allowed                                                    |
+| member → ungrouped (e.g. a shared lib) | allowed                                                    |
+| ungrouped → member                     | allowed — **denied** when the boundary is `sealed`         |
 
 `sealed: true` adds one rule: nothing outside all members may import *into* a
 member. The wall is one-way, so a service may still import a shared lib, but a
@@ -193,24 +193,24 @@ strict, `relaxed` exempts test files entirely.
 
 ## Commands
 
-| Command                    | What it does                                                       |
-| -------------------------- | ------------------------------------------------------------------ |
-| `depdog init`              | Scan the module and write a starter `depdog.yaml`; `--merge` extends an existing one in place |
-| `depdog check [packages]`  | Evaluate every import edge against the rules                       |
-| `depdog baseline`          | Record current violations to `depdog.baseline.yaml` for the [ratchet](#adopting-rules-on-a-codebase-that-doesnt-pass-yet) |
-| `depdog graph`             | Emit the dependency graph as DOT or Mermaid                        |
+| Command                                          | What it does                                                                                                                                                                                                 |
+|--------------------------------------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `depdog init`                                    | Scan the module and write a starter `depdog.yaml`; `--merge` extends an existing one in place                                                                                                                |
+| `depdog check [packages]`                        | Evaluate every import edge against the rules                                                                                                                                                                 |
+| `depdog baseline`                                | Record current violations to `depdog.baseline.yaml` for the [ratchet](#adopting-rules-on-a-codebase-that-doesnt-pass-yet)                                                                                    |
+| `depdog graph`                                   | Emit the dependency graph as DOT or Mermaid                                                                                                                                                                  |
 | `depdog explain <component-or-package> [import]` | Explain why something is red (the rule or boundary that fired, with file:line), how a component is constrained, its boundary membership, or whether *A* may import *B* and which rule or boundary decides it |
-| `depdog config`            | Print the compiled rule set — components, patterns, inferred stances, boundaries, options — for debugging a config |
-| `depdog tui` (or bare `depdog`) | Interactive terminal UI: component dashboard, browsable violations, per-package imports and importers, and a Config tab showing the compiled rules |
+| `depdog config`                                  | Print the compiled rule set — components, patterns, inferred stances, boundaries, options — for debugging a config                                                                                           |
+| `depdog tui` (or bare `depdog`)                  | Interactive terminal UI: component dashboard, browsable violations, per-package imports and importers, and a Config tab showing the compiled rules                                                           |
 
 <details>
 <summary><b>All flags</b></summary>
 
-| Command  | Flags                                                                     |
-| -------- | ------------------------------------------------------------------------- |
-| `init`   | `--preset ddd\|hexagonal\|layered\|flat` · `--default deny\|allow` · `--yes` (non-interactive) · `--force` (overwrite) · `--merge` (extend an existing file, preserving comments and formatting) |
-| `check`  | `--format text\|json\|github\|sarif` · `--fail-on any\|new` · `--color auto\|always\|never` |
-| `graph`  | `--format dot\|mermaid` · `--level component\|package` · `--violations-only` · `--focus <component>` |
+| Command | Flags                                                                                                                                                                                            |
+|---------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `init`  | `--preset ddd\|hexagonal\|layered\|flat` · `--default deny\|allow` · `--yes` (non-interactive) · `--force` (overwrite) · `--merge` (extend an existing file, preserving comments and formatting) |
+| `check` | `--format text\|json\|github\|sarif` · `--fail-on any\|new` · `--color auto\|always\|never`                                                                                                      |
+| `graph` | `--format dot\|mermaid` · `--level component\|package` · `--violations-only` · `--focus <component>`                                                                                             |
 
 </details>
 
@@ -226,7 +226,7 @@ auto-re-runs the check so the edited rules take effect on every screen.
 Exit codes are a contract:
 
 | Code | Meaning                      |
-|:----:| ---------------------------- |
+|:----:|------------------------------|
 | `0`  | clean                        |
 | `1`  | violations                   |
 | `2`  | configuration or usage error |
@@ -274,15 +274,15 @@ stdlib; a Go module vs an `node_modules` package vs a gem). Every adapter is a
 pure-Go static import scanner — **no language toolchain is required** (no
 Node/`tsc`, no `python`, no `cargo`), depdog stays a single binary.
 
-| `--lang` | Language | Detected by | Scans |
-| --- | --- | --- | --- |
-| `go` | Go | `go.mod` | package imports |
-| `ts` | TypeScript / JavaScript | `tsconfig.json`, `package.json` | `import`/`export from`/`require`/dynamic `import()` |
-| `py` | Python | `pyproject.toml`, `setup.py`, `setup.cfg` | `import` / `from … import` (incl. relative) |
-| `rs` | Rust | `Cargo.toml` | `use` / `mod` / `extern crate` |
-| `java` | Java | `pom.xml`, `build.gradle` | `package` + `import` |
-| `rb` | Ruby | `Gemfile`, `.ruby-version`, `Rakefile` | `require` / `require_relative` / `autoload` |
-| `kt` | Kotlin | `build.gradle.kts`, `settings.gradle.kts` | `package` + `import` |
+|        | Language | Detected by                               | Scans                                               |
+|--------|----------|-------------------------------------------|-----------------------------------------------------|
+| `go`   | Go       | `go.mod`                                  | package imports                                     |
+| `rs`   | Rust     | `Cargo.toml`                              | `use` / `mod` / `extern crate`                      |
+| `py`   | Python   | `pyproject.toml`, `setup.py`, `setup.cfg` | `import` / `from … import` (incl. relative)         |
+| `kt`   | Kotlin   | `build.gradle.kts`, `settings.gradle.kts` | `package` + `import`                                |
+| `java` | Java     | `pom.xml`, `build.gradle`                 | `package` + `import`                                |
+| `rb`   | Ruby     | `Gemfile`, `.ruby-version`, `Rakefile`    | `require` / `require_relative` / `autoload`         |
+| `ts`   | TS / JS  | `tsconfig.json`, `package.json`           | `import`/`export from`/`require`/dynamic `import()` |
 
 `internal/core` (the engine) never changed as languages were added — the whole
 point of the [adapter registry](internal/cli/languages.go) is that a new
