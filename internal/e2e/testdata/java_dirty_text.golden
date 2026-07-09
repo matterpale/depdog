@@ -1,0 +1,14 @@
+depdog check — javadirty
+
+✗ domain: allow [std]  (1 violation)
+    javadirty/src/main/java/com/example/domain
+      → com.example.service.notify.Notifier  src/main/java/com/example/domain/Order.java:7
+
+✗ handler: allow [service, std, external]  (1 violation)
+    javadirty/src/main/java/com/example/handler
+      → com.example.domain.Order  src/main/java/com/example/handler/OrderHandler.java:9
+
+! 1 component cycle:
+    domain ↔ service
+
+2 violations · 5 packages · 10 edges checked in X

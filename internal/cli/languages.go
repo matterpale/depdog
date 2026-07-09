@@ -9,6 +9,7 @@ import (
 	"github.com/matterpale/depdog/internal/config"
 	"github.com/matterpale/depdog/internal/lang"
 	"github.com/matterpale/depdog/internal/lang/golang"
+	"github.com/matterpale/depdog/internal/lang/java"
 	"github.com/matterpale/depdog/internal/lang/python"
 	"github.com/matterpale/depdog/internal/lang/rust"
 	"github.com/matterpale/depdog/internal/lang/typescript"
@@ -39,6 +40,11 @@ var languages = []lang.Adapter{
 		Name:    "rs",
 		Markers: []string{"Cargo.toml"},
 		New:     func(root string) lang.Loader { return &rust.Loader{Dir: root} },
+	},
+	{
+		Name:    "java",
+		Markers: []string{"pom.xml", "build.gradle", "build.gradle.kts"},
+		New:     func(root string) lang.Loader { return &java.Loader{Dir: root} },
 	},
 }
 

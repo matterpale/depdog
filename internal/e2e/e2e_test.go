@@ -326,6 +326,61 @@ func TestCheckRustLangFlag(t *testing.T) {
 	}
 }
 
+func TestCheckJavaClean(t *testing.T) {
+	// A layered Java project auto-detected via pom.xml: the same engine and
+	// depdog.yaml format the Go/TS/Py/Rust paths use, exit 0.
+	out, stderr, exit := run(t, fixture("java-clean"), "check")
+	if exit != 0 {
+		t.Fatalf("exit %d\nstdout:\n%s\nstderr:\n%s", exit, out, stderr)
+	}
+	golden(t, "java_clean_text.golden", reTextDur.ReplaceAllString(out, "checked in X"))
+}
+
+func TestCheckJavaDirtyText(t *testing.T) {
+	out, _, exit := run(t, fixture("java-dirty"), "check")
+	if exit != 1 {
+		t.Fatalf("exit %d, want 1\n%s", exit, out)
+	}
+	golden(t, "java_dirty_text.golden", reTextDur.ReplaceAllString(out, "checked in X"))
+}
+
+func TestCheckJavaDirtyJSON(t *testing.T) {
+	// Proves the stable JSON schema is language-neutral: Java violations render
+	// through the same renderer and field names as Go/TS/Py/Rust ones.
+	out, _, exit := run(t, fixture("java-dirty"), "check", "--format", "json")
+	if exit != 1 {
+		t.Fatalf("exit %d, want 1\n%s", exit, out)
+	}
+	golden(t, "java_dirty_json.golden", reJSONDur.ReplaceAllString(out, `"duration_ms": 0`))
+}
+
+func TestExplainJavaComponent(t *testing.T) {
+	out, stderr, exit := run(t, fixture("java-dirty"), "explain", "domain")
+	if exit != 0 {
+		t.Fatalf("exit %d\nstderr:\n%s", exit, stderr)
+	}
+	golden(t, "java_explain_component.golden", out)
+}
+
+func TestGraphJavaComponentDOT(t *testing.T) {
+	out, stderr, exit := run(t, fixture("java-dirty"), "graph")
+	if exit != 0 {
+		t.Fatalf("exit %d\nstderr:\n%s", exit, stderr)
+	}
+	golden(t, "java_graph_component_dot.golden", out)
+}
+
+func TestCheckJavaLangFlag(t *testing.T) {
+	// Explicit --lang java selects the adapter (bypassing auto-detect).
+	out, stderr, exit := run(t, fixture("java-clean"), "check", "--lang", "java")
+	if exit != 0 {
+		t.Fatalf("--lang java: exit %d\nstdout:\n%s\nstderr:\n%s", exit, out, stderr)
+	}
+	if !strings.Contains(out, "✓ no violations") {
+		t.Errorf("--lang java on clean fixture should pass:\n%s", out)
+	}
+}
+
 func TestCheckAmbiguousLanguage(t *testing.T) {
 	// A directory carrying both a go.mod and a package.json is not guessed at:
 	// depdog errors (exit 2) and points at --lang rather than silently choosing.
