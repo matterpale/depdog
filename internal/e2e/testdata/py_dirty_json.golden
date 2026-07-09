@@ -1,0 +1,82 @@
+{
+  "module": "pydirty",
+  "default": "deny",
+  "violations": [
+    {
+      "from_package": "pydirty/domain",
+      "from_component": "domain",
+      "import": "service.notify",
+      "target": "service",
+      "rule": "domain: allow [std]",
+      "test_only": false,
+      "positions": [
+        {
+          "file": "domain/order.py",
+          "line": 6
+        }
+      ]
+    },
+    {
+      "from_package": "pydirty/handler",
+      "from_component": "handler",
+      "import": "domain.order",
+      "target": "domain",
+      "rule": "handler: allow [service, std, external]",
+      "test_only": false,
+      "positions": [
+        {
+          "file": "handler/api.py",
+          "line": 7
+        }
+      ]
+    }
+  ],
+  "warnings": [],
+  "components": [
+    {
+      "name": "domain",
+      "stance": "whitelist",
+      "allow": [
+        "std"
+      ],
+      "packages": 1,
+      "edges": 3,
+      "violations": 1
+    },
+    {
+      "name": "handler",
+      "stance": "whitelist",
+      "allow": [
+        "service",
+        "std",
+        "external"
+      ],
+      "packages": 1,
+      "edges": 4,
+      "violations": 1
+    },
+    {
+      "name": "service",
+      "stance": "whitelist",
+      "allow": [
+        "domain",
+        "std"
+      ],
+      "packages": 1,
+      "edges": 4,
+      "violations": 0
+    }
+  ],
+  "boundaries": [],
+  "cycles": [
+    [
+      "domain",
+      "service"
+    ]
+  ],
+  "stats": {
+    "packages": 3,
+    "edges": 11,
+    "duration_ms": 0
+  }
+}

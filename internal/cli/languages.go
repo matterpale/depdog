@@ -9,6 +9,7 @@ import (
 	"github.com/matterpale/depdog/internal/config"
 	"github.com/matterpale/depdog/internal/lang"
 	"github.com/matterpale/depdog/internal/lang/golang"
+	"github.com/matterpale/depdog/internal/lang/python"
 	"github.com/matterpale/depdog/internal/lang/typescript"
 )
 
@@ -27,6 +28,11 @@ var languages = []lang.Adapter{
 		Name:    "ts",
 		Markers: []string{"tsconfig.json", "package.json"},
 		New:     func(root string) lang.Loader { return &typescript.Loader{Dir: root} },
+	},
+	{
+		Name:    "py",
+		Markers: []string{"pyproject.toml", "setup.py", "setup.cfg"},
+		New:     func(root string) lang.Loader { return &python.Loader{Dir: root} },
 	},
 }
 
