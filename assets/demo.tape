@@ -4,7 +4,7 @@ Output assets/demo.gif
 
 Set FontSize 15
 Set Width 1100
-Set Height 620
+Set Height 520
 Set Padding 16
 Set TypingSpeed 40ms
 
