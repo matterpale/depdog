@@ -1,2 +1,2 @@
-boundaryfix/cmd/comparator (comparator) → cmd/query-ce (query-ce)
+boundaryfix/cmd/service-b (service-b) → cmd/service-a (service-a)
   denied by boundary "cmd-services"

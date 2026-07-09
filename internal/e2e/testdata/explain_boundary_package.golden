@@ -1,8 +1,8 @@
-package boundaryfix/cmd/query-ce
-  component: query-ce
-  boundary:  cmd-services (member query-ce, sealed)
+package boundaryfix/cmd/service-a
+  component: service-a
+  boundary:  cmd-services (member service-a, sealed)
   imports (1):
       boundaryfix/internal/shared  [shared]
   imported by (2):
-    boundaryfix/cmd/comparator
+    boundaryfix/cmd/service-b
     boundaryfix/internal/badshared

@@ -737,7 +737,7 @@ func TestExplainBoundaryEdge(t *testing.T) {
 	// A cross-member edge: reported as denied by the boundary, not by a
 	// component rule — the shared DecideBoundary path keeps explain and check in
 	// step.
-	out, stderr, exit := run(t, fixture("boundaries"), "explain", "cmd/comparator", "cmd/query-ce")
+	out, stderr, exit := run(t, fixture("boundaries"), "explain", "cmd/service-b", "cmd/service-a")
 	if exit != 0 {
 		t.Fatalf("exit %d\nstderr:\n%s", exit, stderr)
 	}
@@ -747,7 +747,7 @@ func TestExplainBoundaryEdge(t *testing.T) {
 func TestExplainBoundaryEdgeSealed(t *testing.T) {
 	// An ungrouped source (a shared lib) importing into a member of a sealed
 	// boundary: denied by the sealed one-way rule.
-	out, stderr, exit := run(t, fixture("boundaries"), "explain", "internal/badshared", "cmd/query-ce")
+	out, stderr, exit := run(t, fixture("boundaries"), "explain", "internal/badshared", "cmd/service-a")
 	if exit != 0 {
 		t.Fatalf("exit %d\nstderr:\n%s", exit, stderr)
 	}
@@ -755,7 +755,7 @@ func TestExplainBoundaryEdgeSealed(t *testing.T) {
 }
 
 func TestExplainBoundaryPackage(t *testing.T) {
-	out, stderr, exit := run(t, fixture("boundaries"), "explain", "cmd/query-ce")
+	out, stderr, exit := run(t, fixture("boundaries"), "explain", "cmd/service-a")
 	if exit != 0 {
 		t.Fatalf("exit %d\nstderr:\n%s", exit, stderr)
 	}

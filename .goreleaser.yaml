@@ -38,17 +38,22 @@ changelog:
       - "^docs:"
       - "^test:"
 
-# Homebrew tap — wired but deliberately disabled. To enable:
-#   1. create the github.com/matterpale/homebrew-tap repository
-#   2. add a TAP_GITHUB_TOKEN secret (a PAT with repo scope on the tap)
-#   3. uncomment this block and pass the token in release.yml
-# brews:
-#   - repository:
-#       owner: matterpale
-#       name: homebrew-tap
-#       token: "{{ .Env.TAP_GITHUB_TOKEN }}"
-#     homepage: https://github.com/matterpale/depdog
-#     description: Keep a Go codebase's internal dependencies pointing in the right direction
-#     license: MIT
-#     test: |
-#       system "#{bin}/depdog", "--version"
+# Homebrew Cask — generated and pushed to github.com/matterpale/homebrew-tap on
+# each v* tag (needs the TAP_GITHUB_TOKEN secret, passed through release.yml).
+# Casks supersede the deprecated `brews` formulas; note they are macOS-only, so
+# Linux users install from the release archives directly.
+homebrew_casks:
+  - repository:
+      owner: matterpale
+      name: homebrew-tap
+      token: "{{ .Env.TAP_GITHUB_TOKEN }}"
+    homepage: https://github.com/matterpale/depdog
+    description: A Dependency Watchdog
+    # depdog ships unsigned (CGO_ENABLED=0, not notarized); strip the quarantine
+    # attribute on install so macOS Gatekeeper doesn't block the binary.
+    hooks:
+      post:
+        install: |
+          if OS.mac?
+            system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/depdog"]
+          end

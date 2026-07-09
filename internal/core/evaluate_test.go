@@ -496,8 +496,8 @@ func twoServiceBoundary(sealed bool) *RuleSet {
 			Name:   "cmd-services",
 			Sealed: sealed,
 			Members: []BoundaryMember{
-				{Patterns: []string{"cmd/comparator/**"}, Label: "cmd/comparator/**"},
-				{Patterns: []string{"cmd/query-ce/**"}, Label: "cmd/query-ce/**"},
+				{Patterns: []string{"cmd/service-b/**"}, Label: "cmd/service-b/**"},
+				{Patterns: []string{"cmd/service-a/**"}, Label: "cmd/service-a/**"},
 			},
 		}},
 	}
@@ -522,15 +522,15 @@ func TestEvaluateBoundaryMatrix(t *testing.T) {
 		wantReason     ReasonKind
 	}{
 		{"in-member allowed", false,
-			"m/cmd/query-ce/a", "cmd/query-ce/a", "m/cmd/query-ce/b", "cmd/query-ce/b", 0, ""},
+			"m/cmd/service-a/a", "cmd/service-a/a", "m/cmd/service-a/b", "cmd/service-a/b", 0, ""},
 		{"cross-member denied", false,
-			"m/cmd/comparator/x", "cmd/comparator/x", "m/cmd/query-ce/y", "cmd/query-ce/y", 1, ReasonBoundary},
+			"m/cmd/service-b/x", "cmd/service-b/x", "m/cmd/service-a/y", "cmd/service-a/y", 1, ReasonBoundary},
 		{"member to ungrouped allowed", false,
-			"m/cmd/query-ce/a", "cmd/query-ce/a", "m/internal/shared", "internal/shared", 0, ""},
+			"m/cmd/service-a/a", "cmd/service-a/a", "m/internal/shared", "internal/shared", 0, ""},
 		{"ungrouped to member unsealed allowed", false,
-			"m/internal/shared", "internal/shared", "m/cmd/query-ce/a", "cmd/query-ce/a", 0, ""},
+			"m/internal/shared", "internal/shared", "m/cmd/service-a/a", "cmd/service-a/a", 0, ""},
 		{"ungrouped to member sealed denied", true,
-			"m/internal/shared", "internal/shared", "m/cmd/query-ce/a", "cmd/query-ce/a", 1, ReasonBoundarySealed},
+			"m/internal/shared", "internal/shared", "m/cmd/service-a/a", "cmd/service-a/a", 1, ReasonBoundarySealed},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -559,7 +559,7 @@ func TestEvaluateBoundarySealedComponentlessSource(t *testing.T) {
 	// sealed rule must still fire on its outgoing edge into a member.
 	rs := twoServiceBoundary(true)
 	// No component covers internal/shared, so it is truly component-less.
-	g := boundaryEdge("m/internal/shared", "internal/shared", "m/cmd/query-ce/a", "cmd/query-ce/a", false)
+	g := boundaryEdge("m/internal/shared", "internal/shared", "m/cmd/service-a/a", "cmd/service-a/a", false)
 	res := evaluate(t, g, rs)
 	if len(res.Violations) != 1 || res.Violations[0].Reason != ReasonBoundarySealed {
 		t.Fatalf("a component-less ungrouped source must still be sealed-denied: %+v", res.Violations)
@@ -583,22 +583,22 @@ func TestEvaluateBoundaryWinsOverComponentAllow(t *testing.T) {
 		Policy:    PolicyAllow,
 		TestFiles: TestHybrid,
 		Components: []Component{
-			{Name: "comparator", Patterns: []string{"cmd/comparator/**"}},
-			{Name: "query-ce", Patterns: []string{"cmd/query-ce/**"}},
+			{Name: "service-b", Patterns: []string{"cmd/service-b/**"}},
+			{Name: "service-a", Patterns: []string{"cmd/service-a/**"}},
 		},
 		Rules: map[string]Rule{
-			"comparator": {Allow: []Ref{{Kind: RefAny}}},
-			"query-ce":   {Allow: []Ref{{Kind: RefAny}}},
+			"service-b": {Allow: []Ref{{Kind: RefAny}}},
+			"service-a": {Allow: []Ref{{Kind: RefAny}}},
 		},
 		Boundaries: []Boundary{{
 			Name: "cmd-services",
 			Members: []BoundaryMember{
-				{Patterns: []string{"cmd/comparator/**"}, Label: "cmd/comparator/**"},
-				{Patterns: []string{"cmd/query-ce/**"}, Label: "cmd/query-ce/**"},
+				{Patterns: []string{"cmd/service-b/**"}, Label: "cmd/service-b/**"},
+				{Patterns: []string{"cmd/service-a/**"}, Label: "cmd/service-a/**"},
 			},
 		}},
 	}
-	g := boundaryEdge("m/cmd/comparator/x", "cmd/comparator/x", "m/cmd/query-ce/y", "cmd/query-ce/y", false)
+	g := boundaryEdge("m/cmd/service-b/x", "cmd/service-b/x", "m/cmd/service-a/y", "cmd/service-a/y", false)
 	res := evaluate(t, g, rs)
 	if len(res.Violations) != 1 || res.Violations[0].Reason != ReasonBoundary {
 		t.Fatalf("boundary deny must win over component allow: %+v", res.Violations)
@@ -614,16 +614,16 @@ func TestEvaluateBoundaryMultiComposition(t *testing.T) {
 		Boundaries: []Boundary{
 			// "aaa" sorts before "zzz"; both deny this cross-member edge.
 			{Name: "aaa", Members: []BoundaryMember{
-				{Patterns: []string{"cmd/comparator/**"}, Label: "cmd/comparator/**"},
-				{Patterns: []string{"cmd/query-ce/**"}, Label: "cmd/query-ce/**"},
+				{Patterns: []string{"cmd/service-b/**"}, Label: "cmd/service-b/**"},
+				{Patterns: []string{"cmd/service-a/**"}, Label: "cmd/service-a/**"},
 			}},
 			{Name: "zzz", Members: []BoundaryMember{
-				{Patterns: []string{"cmd/comparator/**"}, Label: "cmd/comparator/**"},
-				{Patterns: []string{"cmd/query-ce/**"}, Label: "cmd/query-ce/**"},
+				{Patterns: []string{"cmd/service-b/**"}, Label: "cmd/service-b/**"},
+				{Patterns: []string{"cmd/service-a/**"}, Label: "cmd/service-a/**"},
 			}},
 		},
 	}
-	g := boundaryEdge("m/cmd/comparator/x", "cmd/comparator/x", "m/cmd/query-ce/y", "cmd/query-ce/y", false)
+	g := boundaryEdge("m/cmd/service-b/x", "cmd/service-b/x", "m/cmd/service-a/y", "cmd/service-a/y", false)
 	res := evaluate(t, g, rs)
 	if len(res.Violations) != 1 {
 		t.Fatalf("multi-boundary edge must emit exactly one violation: %+v", res.Violations)
@@ -647,7 +647,7 @@ func TestEvaluateBoundaryTestFileModes(t *testing.T) {
 	for _, tt := range tests {
 		rs := twoServiceBoundary(false)
 		rs.TestFiles = tt.mode
-		g := boundaryEdge("m/cmd/comparator/x", "cmd/comparator/x", "m/cmd/query-ce/y", "cmd/query-ce/y", true)
+		g := boundaryEdge("m/cmd/service-b/x", "cmd/service-b/x", "m/cmd/service-a/y", "cmd/service-a/y", true)
 		res := evaluate(t, g, rs)
 		if len(res.Violations) != tt.want {
 			t.Errorf("mode %v: got %d violations, want %d: %+v", tt.mode, len(res.Violations), tt.want, res.Violations)
@@ -661,23 +661,23 @@ func TestEvaluateBoundaryOffCycleAxis(t *testing.T) {
 		Policy:    PolicyAllow,
 		TestFiles: TestHybrid,
 		Components: []Component{
-			{Name: "comparator", Patterns: []string{"cmd/comparator/**"}},
-			{Name: "query-ce", Patterns: []string{"cmd/query-ce/**"}},
+			{Name: "service-b", Patterns: []string{"cmd/service-b/**"}},
+			{Name: "service-a", Patterns: []string{"cmd/service-a/**"}},
 		},
 		Boundaries: []Boundary{{
 			Name: "cmd-services",
 			Members: []BoundaryMember{
-				{Patterns: []string{"cmd/comparator/**"}, Label: "cmd/comparator/**"},
-				{Patterns: []string{"cmd/query-ce/**"}, Label: "cmd/query-ce/**"},
+				{Patterns: []string{"cmd/service-b/**"}, Label: "cmd/service-b/**"},
+				{Patterns: []string{"cmd/service-a/**"}, Label: "cmd/service-a/**"},
 			},
 		}},
 	}
 	// A mutual cross-member pair would be a cycle if it fed compEdges.
 	g := &Graph{ModulePath: "m", Packages: []Package{
-		{ImportPath: "m/cmd/comparator/x", RelDir: "cmd/comparator/x", Imports: []Import{
-			mkImport("m/cmd/query-ce/y", ClassInModule, "cmd/query-ce/y", false)}},
-		{ImportPath: "m/cmd/query-ce/y", RelDir: "cmd/query-ce/y", Imports: []Import{
-			mkImport("m/cmd/comparator/x", ClassInModule, "cmd/comparator/x", false)}},
+		{ImportPath: "m/cmd/service-b/x", RelDir: "cmd/service-b/x", Imports: []Import{
+			mkImport("m/cmd/service-a/y", ClassInModule, "cmd/service-a/y", false)}},
+		{ImportPath: "m/cmd/service-a/y", RelDir: "cmd/service-a/y", Imports: []Import{
+			mkImport("m/cmd/service-b/x", ClassInModule, "cmd/service-b/x", false)}},
 	}}
 	res := evaluate(t, g, rs)
 	if len(res.Cycles) != 0 {
@@ -694,13 +694,13 @@ func TestEvaluateEmptyBoundaryMemberWarning(t *testing.T) {
 		Boundaries: []Boundary{{
 			Name: "cmd-services",
 			Members: []BoundaryMember{
-				{Patterns: []string{"cmd/comparator/**"}, Label: "cmd/comparator/**"}, // matched
-				{Patterns: []string{"cmd/ghost/**"}, Label: "cmd/ghost/**"},           // matches nothing
+				{Patterns: []string{"cmd/service-b/**"}, Label: "cmd/service-b/**"}, // matched
+				{Patterns: []string{"cmd/ghost/**"}, Label: "cmd/ghost/**"},         // matches nothing
 			},
 		}},
 	}
 	g := &Graph{ModulePath: "m", Packages: []Package{
-		{ImportPath: "m/cmd/comparator/x", RelDir: "cmd/comparator/x", Imports: nil},
+		{ImportPath: "m/cmd/service-b/x", RelDir: "cmd/service-b/x", Imports: nil},
 	}}
 	res := evaluate(t, g, rs)
 	var empties []Warning

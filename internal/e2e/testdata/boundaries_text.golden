@@ -1,11 +1,11 @@
 depdog check — boundaryfix
 
 ✗ denied by boundary "cmd-services"  (1 violation)
-    boundaryfix/cmd/comparator
-      → boundaryfix/cmd/query-ce  cmd/comparator/comparator.go:5
+    boundaryfix/cmd/service-b
+      → boundaryfix/cmd/service-a  cmd/service-b/service.go:5
 
 ✗ denied by boundary "cmd-services" (sealed)  (1 violation)
     boundaryfix/internal/badshared
-      → boundaryfix/cmd/query-ce  internal/badshared/lib.go:5
+      → boundaryfix/cmd/service-a  internal/badshared/lib.go:5
 
 2 violations · 4 packages · 3 edges checked in X
