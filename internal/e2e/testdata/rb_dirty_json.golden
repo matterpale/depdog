@@ -1,0 +1,82 @@
+{
+  "module": "rbdirty",
+  "default": "deny",
+  "violations": [
+    {
+      "from_package": "rbdirty/domain",
+      "from_component": "domain",
+      "import": "../service/notify",
+      "target": "service",
+      "rule": "domain: allow [std]",
+      "test_only": false,
+      "positions": [
+        {
+          "file": "domain/order.rb",
+          "line": 5
+        }
+      ]
+    },
+    {
+      "from_package": "rbdirty/handler",
+      "from_component": "handler",
+      "import": "../domain/order",
+      "target": "domain",
+      "rule": "handler: allow [service, std, external]",
+      "test_only": false,
+      "positions": [
+        {
+          "file": "handler/api.rb",
+          "line": 6
+        }
+      ]
+    }
+  ],
+  "warnings": [],
+  "components": [
+    {
+      "name": "domain",
+      "stance": "whitelist",
+      "allow": [
+        "std"
+      ],
+      "packages": 1,
+      "edges": 2,
+      "violations": 1
+    },
+    {
+      "name": "handler",
+      "stance": "whitelist",
+      "allow": [
+        "service",
+        "std",
+        "external"
+      ],
+      "packages": 1,
+      "edges": 4,
+      "violations": 1
+    },
+    {
+      "name": "service",
+      "stance": "whitelist",
+      "allow": [
+        "domain",
+        "std"
+      ],
+      "packages": 1,
+      "edges": 4,
+      "violations": 0
+    }
+  ],
+  "boundaries": [],
+  "cycles": [
+    [
+      "domain",
+      "service"
+    ]
+  ],
+  "stats": {
+    "packages": 3,
+    "edges": 10,
+    "duration_ms": 0
+  }
+}

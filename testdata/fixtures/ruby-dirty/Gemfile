@@ -1,0 +1,4 @@
+# depdog fixture: a small layered Ruby app, rooted by the Gemfile.
+source "https://rubygems.org"
+
+gem "sinatra", "~> 3.0"

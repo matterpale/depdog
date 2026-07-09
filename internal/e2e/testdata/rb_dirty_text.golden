@@ -1,0 +1,14 @@
+depdog check — rbdirty
+
+✗ domain: allow [std]  (1 violation)
+    rbdirty/domain
+      → ../service/notify  domain/order.rb:5
+
+✗ handler: allow [service, std, external]  (1 violation)
+    rbdirty/handler
+      → ../domain/order  handler/api.rb:6
+
+! 1 component cycle:
+    domain ↔ service
+
+2 violations · 3 packages · 10 edges checked in X

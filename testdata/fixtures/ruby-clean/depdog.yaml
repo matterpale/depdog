@@ -1,0 +1,8 @@
+version: 2
+
+components:
+  domain:  { path: "domain/**",  allow: [std] }
+  service: { path: "service/**", allow: [domain, std] }
+  handler: { path: "handler/**", allow: [service, std, external] }
+
+default: deny

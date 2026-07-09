@@ -11,6 +11,7 @@ import (
 	"github.com/matterpale/depdog/internal/lang/golang"
 	"github.com/matterpale/depdog/internal/lang/java"
 	"github.com/matterpale/depdog/internal/lang/python"
+	"github.com/matterpale/depdog/internal/lang/ruby"
 	"github.com/matterpale/depdog/internal/lang/rust"
 	"github.com/matterpale/depdog/internal/lang/typescript"
 )
@@ -35,6 +36,11 @@ var languages = []lang.Adapter{
 		Name:    "py",
 		Markers: []string{"pyproject.toml", "setup.py", "setup.cfg"},
 		New:     func(root string) lang.Loader { return &python.Loader{Dir: root} },
+	},
+	{
+		Name:    "rb",
+		Markers: []string{"Gemfile", ".ruby-version", "Rakefile"},
+		New:     func(root string) lang.Loader { return &ruby.Loader{Dir: root} },
 	},
 	{
 		Name:    "rs",
