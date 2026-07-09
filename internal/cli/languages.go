@@ -10,6 +10,7 @@ import (
 	"github.com/matterpale/depdog/internal/lang"
 	"github.com/matterpale/depdog/internal/lang/golang"
 	"github.com/matterpale/depdog/internal/lang/java"
+	"github.com/matterpale/depdog/internal/lang/kotlin"
 	"github.com/matterpale/depdog/internal/lang/python"
 	"github.com/matterpale/depdog/internal/lang/ruby"
 	"github.com/matterpale/depdog/internal/lang/rust"
@@ -51,6 +52,18 @@ var languages = []lang.Adapter{
 		Name:    "java",
 		Markers: []string{"pom.xml", "build.gradle", "build.gradle.kts"},
 		New:     func(root string) lang.Loader { return &java.Loader{Dir: root} },
+	},
+	{
+		// Kotlin projects build with Gradle's Kotlin DSL. The markers are the
+		// Kotlin-DSL scripts only: build.gradle.kts / settings.gradle.kts. The
+		// generic build.gradle and pom.xml are deliberately NOT listed here even
+		// though the loader accepts them as roots — they are shared with the Java
+		// adapter, and claiming them would make every plain-Maven/Groovy-Gradle
+		// project ambiguous between java and kt. A Kotlin project that roots only
+		// on such a shared marker is selected with --lang kt.
+		Name:    "kt",
+		Markers: []string{"build.gradle.kts", "settings.gradle.kts"},
+		New:     func(root string) lang.Loader { return &kotlin.Loader{Dir: root} },
 	},
 }
 

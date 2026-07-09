@@ -381,6 +381,61 @@ func TestCheckJavaLangFlag(t *testing.T) {
 	}
 }
 
+func TestCheckKotlinClean(t *testing.T) {
+	// A layered Kotlin project auto-detected via build.gradle.kts: the same
+	// engine and depdog.yaml format the Go/TS/Py/Rust/Java paths use, exit 0.
+	out, stderr, exit := run(t, fixture("kotlin-clean"), "check")
+	if exit != 0 {
+		t.Fatalf("exit %d\nstdout:\n%s\nstderr:\n%s", exit, out, stderr)
+	}
+	golden(t, "kt_clean_text.golden", reTextDur.ReplaceAllString(out, "checked in X"))
+}
+
+func TestCheckKotlinDirtyText(t *testing.T) {
+	out, _, exit := run(t, fixture("kotlin-dirty"), "check")
+	if exit != 1 {
+		t.Fatalf("exit %d, want 1\n%s", exit, out)
+	}
+	golden(t, "kt_dirty_text.golden", reTextDur.ReplaceAllString(out, "checked in X"))
+}
+
+func TestCheckKotlinDirtyJSON(t *testing.T) {
+	// Proves the stable JSON schema is language-neutral: Kotlin violations render
+	// through the same renderer and field names as Go/TS/Py/Rust/Java ones.
+	out, _, exit := run(t, fixture("kotlin-dirty"), "check", "--format", "json")
+	if exit != 1 {
+		t.Fatalf("exit %d, want 1\n%s", exit, out)
+	}
+	golden(t, "kt_dirty_json.golden", reJSONDur.ReplaceAllString(out, `"duration_ms": 0`))
+}
+
+func TestExplainKotlinComponent(t *testing.T) {
+	out, stderr, exit := run(t, fixture("kotlin-dirty"), "explain", "domain")
+	if exit != 0 {
+		t.Fatalf("exit %d\nstderr:\n%s", exit, stderr)
+	}
+	golden(t, "kt_explain_component.golden", out)
+}
+
+func TestGraphKotlinComponentDOT(t *testing.T) {
+	out, stderr, exit := run(t, fixture("kotlin-dirty"), "graph")
+	if exit != 0 {
+		t.Fatalf("exit %d\nstderr:\n%s", exit, stderr)
+	}
+	golden(t, "kt_graph_component_dot.golden", out)
+}
+
+func TestCheckKotlinLangFlag(t *testing.T) {
+	// Explicit --lang kt selects the adapter (bypassing auto-detect).
+	out, stderr, exit := run(t, fixture("kotlin-clean"), "check", "--lang", "kt")
+	if exit != 0 {
+		t.Fatalf("--lang kt: exit %d\nstdout:\n%s\nstderr:\n%s", exit, out, stderr)
+	}
+	if !strings.Contains(out, "✓ no violations") {
+		t.Errorf("--lang kt on clean fixture should pass:\n%s", out)
+	}
+}
+
 func TestCheckRubyClean(t *testing.T) {
 	// A layered Ruby app auto-detected via the Gemfile: the same engine and
 	// depdog.yaml format the Go/TS/Py/Rust/Java paths use, exit 0.
