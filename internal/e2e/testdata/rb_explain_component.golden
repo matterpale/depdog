@@ -1,0 +1,8 @@
+component domain
+  patterns: domain/**
+  stance:   whitelist (only allowed pass)
+  allow:    [std]
+  packages (1):
+    rbdirty/domain
+  violations (1):
+    rbdirty/domain → ../service/notify  (domain: allow [std])
