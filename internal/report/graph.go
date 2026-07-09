@@ -294,7 +294,7 @@ func writeMermaid(w io.Writer, nodes []graphNode, edges []graphEdge) error {
 }
 
 // nodeLabel is the display label with any boundary membership appended, so a
-// node's boundaries are visible in the rendered graph, e.g. `comparator
+// node's boundaries are visible in the rendered graph, e.g. `service-b
 // «cmd-services»`. Deterministic: boundaries are already sorted.
 func nodeLabel(n graphNode) string {
 	if len(n.boundaries) == 0 {

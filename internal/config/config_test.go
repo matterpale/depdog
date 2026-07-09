@@ -172,11 +172,11 @@ func TestParseBoundariesShorthand(t *testing.T) {
 	rs, err := Parse([]byte(`
 version: 2
 components:
-  query-ce:   { path: "cmd/query-ce/**" }
-  comparator: { path: "cmd/comparator/**" }
+  service-a:   { path: "cmd/service-a/**" }
+  service-b: { path: "cmd/service-b/**" }
 default: allow
 boundaries:
-  services: [query-ce, comparator]
+  services: [service-a, service-b]
 `))
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
@@ -188,12 +188,12 @@ boundaries:
 	if b.Name != "services" || b.Sealed {
 		t.Errorf("boundary = %+v, want services, sealed=false", b)
 	}
-	if len(b.Members) != 2 || b.Members[0].Label != "comparator" || b.Members[1].Label != "query-ce" {
-		t.Errorf("members = %+v, want sorted [comparator query-ce]", b.Members)
+	if len(b.Members) != 2 || b.Members[0].Label != "service-a" || b.Members[1].Label != "service-b" {
+		t.Errorf("members = %+v, want sorted [service-a service-b]", b.Members)
 	}
 	// A component member carries its component's patterns.
-	if b.Members[1].Component != "query-ce" || len(b.Members[1].Patterns) != 1 || b.Members[1].Patterns[0] != "cmd/query-ce/**" {
-		t.Errorf("query-ce member = %+v, want component with its pattern", b.Members[1])
+	if b.Members[1].Component != "service-b" || len(b.Members[1].Patterns) != 1 || b.Members[1].Patterns[0] != "cmd/service-b/**" {
+		t.Errorf("service-b member = %+v, want component with its pattern", b.Members[1])
 	}
 }
 
@@ -201,12 +201,12 @@ func TestParseBoundariesExpanded(t *testing.T) {
 	rs, err := Parse([]byte(`
 version: 2
 components:
-  query-ce:   { path: "cmd/query-ce/**" }
-  comparator: { path: "cmd/comparator/**" }
+  service-a:   { path: "cmd/service-a/**" }
+  service-b: { path: "cmd/service-b/**" }
 default: allow
 boundaries:
   services:
-    members: [query-ce, comparator]
+    members: [service-a, service-b]
     sealed: true
 `))
 	if err != nil {
@@ -225,7 +225,7 @@ components:
 default: allow
 boundaries:
   cmd-services:
-    members: ["cmd/query-ce/**", "cmd/comparator/**"]
+    members: ["cmd/service-a/**", "cmd/service-b/**"]
     sealed: true
 `))
 	if err != nil {
@@ -249,10 +249,10 @@ func TestParseBoundariesMixedMembers(t *testing.T) {
 	rs, err := Parse([]byte(`
 version: 2
 components:
-  query-ce: { path: "cmd/query-ce/**" }
+  service-a: { path: "cmd/service-a/**" }
 default: allow
 boundaries:
-  mix: [query-ce, "cmd/comparator/**"]
+  mix: [service-a, "cmd/service-b/**"]
 `))
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
@@ -261,11 +261,11 @@ boundaries:
 	if len(b.Members) != 2 {
 		t.Fatalf("members = %+v, want a component and a glob", b.Members)
 	}
-	// Sorted by label: "cmd/comparator/**" < "query-ce".
-	if b.Members[0].Component != "" || b.Members[0].Label != "cmd/comparator/**" {
+	// Sorted by label: "cmd/service-b/**" < "service-a".
+	if b.Members[0].Component != "" || b.Members[0].Label != "cmd/service-b/**" {
 		t.Errorf("first member should be the glob: %+v", b.Members[0])
 	}
-	if b.Members[1].Component != "query-ce" {
+	if b.Members[1].Component != "service-a" {
 		t.Errorf("second member should be the component: %+v", b.Members[1])
 	}
 }

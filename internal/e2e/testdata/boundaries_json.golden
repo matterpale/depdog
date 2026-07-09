@@ -3,17 +3,17 @@
   "default": "allow",
   "violations": [
     {
-      "from_package": "boundaryfix/cmd/comparator",
-      "from_component": "comparator",
-      "import": "boundaryfix/cmd/query-ce",
-      "target": "query-ce",
+      "from_package": "boundaryfix/cmd/service-b",
+      "from_component": "service-b",
+      "import": "boundaryfix/cmd/service-a",
+      "target": "service-a",
       "rule": "denied by boundary \"cmd-services\"",
       "test_only": false,
       "boundary": "cmd-services",
       "reason": "boundary",
       "positions": [
         {
-          "file": "cmd/comparator/comparator.go",
+          "file": "cmd/service-b/service.go",
           "line": 5
         }
       ]
@@ -21,8 +21,8 @@
     {
       "from_package": "boundaryfix/internal/badshared",
       "from_component": "shared",
-      "import": "boundaryfix/cmd/query-ce",
-      "target": "query-ce",
+      "import": "boundaryfix/cmd/service-a",
+      "target": "service-a",
       "rule": "denied by boundary \"cmd-services\" (sealed)",
       "test_only": false,
       "boundary": "cmd-services",
@@ -38,17 +38,7 @@
   "warnings": [],
   "components": [
     {
-      "name": "comparator",
-      "stance": "whitelist",
-      "allow": [
-        "*"
-      ],
-      "packages": 1,
-      "edges": 1,
-      "violations": 1
-    },
-    {
-      "name": "query-ce",
+      "name": "service-a",
       "stance": "whitelist",
       "allow": [
         "*"
@@ -56,6 +46,16 @@
       "packages": 1,
       "edges": 1,
       "violations": 0
+    },
+    {
+      "name": "service-b",
+      "stance": "whitelist",
+      "allow": [
+        "*"
+      ],
+      "packages": 1,
+      "edges": 1,
+      "violations": 1
     },
     {
       "name": "shared",
@@ -74,10 +74,10 @@
       "sealed": true,
       "members": [
         {
-          "component": "comparator"
+          "component": "service-a"
         },
         {
-          "component": "query-ce"
+          "component": "service-b"
         }
       ]
     }

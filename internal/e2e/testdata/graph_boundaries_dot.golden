@@ -1,10 +1,10 @@
 digraph depdog {
   rankdir=LR;
   node [shape=box];
-  "comparator" [label="comparator «cmd-services»"];
-  "query-ce" [label="query-ce «cmd-services»"];
+  "service-a" [label="service-a «cmd-services»"];
+  "service-b" [label="service-b «cmd-services»"];
   "shared";
-  "comparator" -> "query-ce" [color="red", penwidth=2];
-  "query-ce" -> "shared";
-  "shared" -> "query-ce" [color="red", penwidth=2];
+  "service-a" -> "shared";
+  "service-b" -> "service-a" [color="red", penwidth=2];
+  "shared" -> "service-a" [color="red", penwidth=2];
 }
