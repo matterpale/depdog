@@ -12,10 +12,11 @@ components:
   ruby:   { path: "internal/lang/ruby/**",   allow: [core, lang, std] } # pure scanner: stdlib only
   rust:   { path: "internal/lang/rust/**",   allow: [core, lang, std] } # pure scanner: stdlib only
   java:   { path: "internal/lang/java/**",   allow: [core, lang, std] } # pure scanner: stdlib only
+  kotlin: { path: "internal/lang/kotlin/**", allow: [core, lang, std] } # pure scanner: stdlib only
   report: { path: "internal/report/**",      allow: [core, std, external] } # lipgloss styles the human output
   wizard: { path: "internal/wizard/**",      allow: [core, std] } # pure heuristics: engine matcher + std only
   tui:    { path: "internal/tui/**",         allow: [core, report, std, external] } # bubbletea view over core; report.RuleSet renders the Config tab
-  cli:    { path: "internal/cli/**",         allow: [core, config, lang, golang, typescript, python, ruby, rust, java, report, wizard, tui, std, external] }
+  cli:    { path: "internal/cli/**",         allow: [core, config, lang, golang, typescript, python, ruby, rust, java, kotlin, report, wizard, tui, std, external] }
   e2e:    { path: "internal/e2e/**",         allow: [std] }
 
 default: deny

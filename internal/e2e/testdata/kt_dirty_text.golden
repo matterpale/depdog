@@ -1,0 +1,14 @@
+depdog check — kotlindirty
+
+✗ domain: allow [std]  (1 violation)
+    kotlindirty/src/main/kotlin/com/example/domain
+      → com.example.service.notify.Notifier  src/main/kotlin/com/example/domain/Order.kt:7
+
+✗ handler: allow [service, std, external]  (1 violation)
+    kotlindirty/src/main/kotlin/com/example/handler
+      → com.example.domain.Order  src/main/kotlin/com/example/handler/OrderHandler.kt:9
+
+! 1 component cycle:
+    domain ↔ service
+
+2 violations · 5 packages · 9 edges checked in X
