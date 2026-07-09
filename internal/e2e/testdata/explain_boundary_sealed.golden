@@ -1,2 +1,2 @@
-boundaryfix/internal/badshared (shared) → cmd/query-ce (query-ce)
+boundaryfix/internal/badshared (shared) → cmd/service-a (service-a)
   denied by boundary "cmd-services" (sealed)

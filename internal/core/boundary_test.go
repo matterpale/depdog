@@ -20,16 +20,16 @@ func TestBoundaryMembershipComponentMembers(t *testing.T) {
 	rs := &RuleSet{Boundaries: []Boundary{{
 		Name: "services",
 		Members: []BoundaryMember{
-			compMember("comparator", "cmd/comparator/**"),
-			compMember("query-ce", "cmd/query-ce/**"),
+			compMember("service-b", "cmd/service-b/**"),
+			compMember("service-a", "cmd/service-a/**"),
 		},
 	}}}
 	cases := []struct {
 		relDir string
 		want   int
 	}{
-		{"cmd/query-ce/x", 1},
-		{"cmd/comparator/y", 0},
+		{"cmd/service-a/x", 1},
+		{"cmd/service-b/y", 0},
 		{"internal/shared", -1}, // ungrouped
 	}
 	for _, c := range cases {
@@ -47,23 +47,23 @@ func TestBoundaryMembershipGlobAndMixed(t *testing.T) {
 	rs := &RuleSet{Boundaries: []Boundary{{
 		Name: "b",
 		Members: []BoundaryMember{
-			globMember("cmd/comparator/**"),
-			compMember("query-ce", "cmd/query-ce/**"),
+			globMember("cmd/service-b/**"),
+			compMember("service-a", "cmd/service-a/**"),
 		},
 	}}}
-	m, err := rs.BoundaryMembership("cmd/comparator/z")
+	m, err := rs.BoundaryMembership("cmd/service-b/z")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if m[0] != 0 {
-		t.Errorf("glob member should own cmd/comparator/z: %d", m[0])
+		t.Errorf("glob member should own cmd/service-b/z: %d", m[0])
 	}
-	m, err = rs.BoundaryMembership("cmd/query-ce/z")
+	m, err = rs.BoundaryMembership("cmd/service-a/z")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if m[0] != 1 {
-		t.Errorf("component member should own cmd/query-ce/z: %d", m[0])
+		t.Errorf("component member should own cmd/service-a/z: %d", m[0])
 	}
 }
 
@@ -73,10 +73,10 @@ func TestBoundaryMembershipMostSpecificWins(t *testing.T) {
 		Name: "b",
 		Members: []BoundaryMember{
 			globMember("cmd/**"),
-			globMember("cmd/query-ce/**"),
+			globMember("cmd/service-a/**"),
 		},
 	}}}
-	m, err := rs.BoundaryMembership("cmd/query-ce/x")
+	m, err := rs.BoundaryMembership("cmd/service-a/x")
 	if err != nil {
 		t.Fatalf("most-specific-wins should resolve, not error: %v", err)
 	}
@@ -110,10 +110,10 @@ func TestBoundaryMembershipEqualSpecificityAmbiguous(t *testing.T) {
 func TestBoundaryMembershipComposableAcrossBoundaries(t *testing.T) {
 	// Overlap ACROSS boundaries is fine: the same package is a member of both.
 	rs := &RuleSet{Boundaries: []Boundary{
-		{Name: "a", Members: []BoundaryMember{globMember("cmd/query-ce/**"), globMember("cmd/other/**")}},
+		{Name: "a", Members: []BoundaryMember{globMember("cmd/service-a/**"), globMember("cmd/other/**")}},
 		{Name: "b", Members: []BoundaryMember{globMember("cmd/**")}},
 	}}
-	m, err := rs.BoundaryMembership("cmd/query-ce/x")
+	m, err := rs.BoundaryMembership("cmd/service-a/x")
 	if err != nil {
 		t.Fatalf("cross-boundary overlap must not error: %v", err)
 	}
@@ -127,8 +127,8 @@ func TestDecideBoundary(t *testing.T) {
 		Name:   "cmd-services",
 		Sealed: true,
 		Members: []BoundaryMember{
-			globMember("cmd/comparator/**"),
-			globMember("cmd/query-ce/**"),
+			globMember("cmd/service-b/**"),
+			globMember("cmd/service-a/**"),
 		},
 	}}}
 	cases := []struct {
@@ -137,10 +137,10 @@ func TestDecideBoundary(t *testing.T) {
 		wantAllowed bool
 		wantSealed  bool
 	}{
-		{"cross-member", "cmd/comparator/x", "cmd/query-ce/y", false, false},
-		{"in-member", "cmd/query-ce/a", "cmd/query-ce/b", true, false},
-		{"member-to-ungrouped", "cmd/query-ce/a", "internal/shared", true, false},
-		{"ungrouped-to-member-sealed", "internal/shared", "cmd/query-ce/a", false, true},
+		{"cross-member", "cmd/service-b/x", "cmd/service-a/y", false, false},
+		{"in-member", "cmd/service-a/a", "cmd/service-a/b", true, false},
+		{"member-to-ungrouped", "cmd/service-a/a", "internal/shared", true, false},
+		{"ungrouped-to-member-sealed", "internal/shared", "cmd/service-a/a", false, true},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

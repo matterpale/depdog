@@ -256,7 +256,7 @@ func stanceName(p core.Policy) string {
 }
 
 // boundaryMembership renders a package's or component's place in one boundary,
-// e.g. `cmd-services (member query-ce, sealed)`, mirroring the config dump's
+// e.g. `cmd-services (member service-a, sealed)`, mirroring the config dump's
 // (sealed) marker.
 func boundaryMembership(boundary, member string, sealed bool) string {
 	s := fmt.Sprintf("%s (member %s", boundary, member)

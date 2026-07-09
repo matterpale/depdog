@@ -2,4 +2,4 @@
 // sealed cmd-services boundary an ungrouped source importing a member is denied.
 package badshared
 
-import _ "boundaryfix/cmd/query-ce"
+import _ "boundaryfix/cmd/service-a"
