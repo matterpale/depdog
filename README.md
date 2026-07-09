@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="docs/logo.svg" alt="depdog" width="330">
+<img src="assets/logo.svg" alt="depdog" width="330">
 
 **A Dependency Watchdog for Go** — your architecture rules, enforced on every build.
 
@@ -13,6 +13,17 @@
 
 </div>
 
+<p align="center">
+  <img src="assets/demo.gif" alt="depdog demo: check, explain, and the TUI on a module with violations" width="820">
+</p>
+
+**depdog** is a *dependency watchdog*: architecture rules — *"the domain imports
+nothing but the standard library," "handlers never import repositories"* —
+usually live in someone's head or a wiki, and they rot. depdog makes them
+executable: you declare which **components** exist and who may import whom in one
+small `depdog.yaml`, and `depdog check` enforces it against every import edge in
+your module, exiting non-zero for CI.
+
 ```
 depdog check — github.com/matterpale/depdog
 
@@ -24,18 +35,15 @@ depdog check — github.com/matterpale/depdog
 2 violations · 10 packages · 107 edges checked in 112ms
 ```
 
-<p align="center">
-  <img src="docs/demo.gif" alt="depdog demo: check, explain, and the TUI on a module with violations" width="820">
-</p>
-
-**depdog** is a *dependency watchdog*: architecture rules — *"the domain imports
-nothing but the standard library," "handlers never import repositories"* —
-usually live in someone's head or a wiki, and they rot. depdog makes them
-executable: you declare which **components** exist and who may import whom in one
-small `depdog.yaml`, and `depdog check` enforces it against every import edge in
-your module, exiting non-zero for CI.
-
 ## Install
+
+**Homebrew** (macOS):
+
+```bash
+brew install --cask matterpale/tap/depdog
+```
+
+**Go:**
 
 ```bash
 go install github.com/matterpale/depdog/cmd/depdog@latest
@@ -127,7 +135,7 @@ Components answer "who may this layer import?" along one axis. **Boundaries** ad
 a second, orthogonal axis: named sets of *members* that may not import across
 each other. A package keeps its most-specific component **and**, independently,
 belongs to every boundary whose region contains it — so
-`cmd/query-ce/services/x` can be the `query-ce-services` component (subject to
+`cmd/service-a/services/x` can be the `service-a-services` component (subject to
 layer rules) and a member of the `cmd-services` boundary (subject to isolation)
 at once. That dissolves two kinds of boilerplate: peer `deny` lists ("layers
 don't import each other") and cross-cutting isolation ("no service imports
@@ -136,11 +144,11 @@ another"), which otherwise needs O(n²) deny lists.
 ```yaml
 boundaries:
   # shorthand — a symmetric peer set; these three may not import each other
-  query-ce-layers: [query-ce-repositories, query-ce-services, query-ce-handlers]
+  service-a-layers: [service-a-repositories, service-a-services, service-a-handlers]
 
   # expanded form — members can be path globs, and sealed adds a one-way wall
   cmd-services:
-    members: ["cmd/query-ce/**", "cmd/comparator/**"]
+    members: ["cmd/service-a/**", "cmd/service-b/**"]
     sealed: true
 ```
 

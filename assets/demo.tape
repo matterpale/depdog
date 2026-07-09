@@ -1,6 +1,6 @@
-# README demo — regenerate from the repo root with: vhs docs/demo.tape
+# README demo — regenerate from the repo root with: vhs assets/demo.tape
 # Uses the dirty test fixture, whose violations are the whole point.
-Output docs/demo.gif
+Output assets/demo.gif
 
 Set FontSize 15
 Set Width 1100
