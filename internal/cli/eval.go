@@ -1,7 +1,6 @@
 package cli
 
 import (
-	"fmt"
 	"os"
 	"path/filepath"
 
@@ -10,8 +9,6 @@ import (
 	"github.com/matterpale/depdog/internal/config"
 	"github.com/matterpale/depdog/internal/core"
 	"github.com/matterpale/depdog/internal/lang"
-	"github.com/matterpale/depdog/internal/lang/golang"
-	"github.com/matterpale/depdog/internal/lang/typescript"
 )
 
 // evaluation bundles a check run's outputs and the inputs commands may still
@@ -24,9 +21,11 @@ type evaluation struct {
 	ConfigPath string
 }
 
-// evaluateModule resolves the config (at configPath, or discovered next to
-// go.mod), loads the module's import graph and evaluates the rules. Shared by
-// check, baseline and the TUI.
+// evaluateModule resolves the config (at configPath, or discovered by walking up
+// to a language's project root), loads the project's import graph via the
+// selected adapter and evaluates the rules. Shared by check, baseline and the
+// TUI. The adapter is chosen from the languages registry — either an explicit
+// --lang or auto-detection.
 func evaluateModule(cmd *cobra.Command, configPath string, args []string) (*evaluation, error) {
 	language, err := languageFlag(cmd)
 	if err != nil {
@@ -34,9 +33,9 @@ func evaluateModule(cmd *cobra.Command, configPath string, args []string) (*eval
 	}
 
 	var (
-		cfgPath  string
-		root     string
-		resolved string
+		adapter lang.Adapter
+		root    string
+		cfgPath string
 	)
 	if configPath != "" {
 		// An explicit --config skips discovery; --lang (or, absent it,
@@ -45,7 +44,7 @@ func evaluateModule(cmd *cobra.Command, configPath string, args []string) (*eval
 			return nil, err
 		}
 		root = filepath.Dir(cfgPath)
-		if resolved, err = resolveLanguage(language, root); err != nil {
+		if adapter, err = pickAdapter(root, language); err != nil {
 			return nil, err
 		}
 	} else {
@@ -53,7 +52,7 @@ func evaluateModule(cmd *cobra.Command, configPath string, args []string) (*eval
 		if err != nil {
 			return nil, err
 		}
-		if cfgPath, root, resolved, err = config.FindWithLanguage(cwd, language); err != nil {
+		if adapter, root, cfgPath, err = resolveProject(cwd, language); err != nil {
 			return nil, err
 		}
 	}
@@ -63,11 +62,7 @@ func evaluateModule(cmd *cobra.Command, configPath string, args []string) (*eval
 		return nil, err
 	}
 
-	loader, err := loaderFor(resolved, root)
-	if err != nil {
-		return nil, err
-	}
-	graph, err := loader.Load(cmd.Context(), args...)
+	graph, err := adapter.New(root).Load(cmd.Context(), args...)
 	if err != nil {
 		return nil, err
 	}
@@ -79,41 +74,19 @@ func evaluateModule(cmd *cobra.Command, configPath string, args []string) (*eval
 	return &evaluation{Result: res, Graph: graph, Rules: rs, ConfigPath: cfgPath}, nil
 }
 
-// languageFlag reads and validates the persistent --lang flag. An empty value
-// means auto-detect; anything other than go/ts is a usage error (exit 2, same
-// style as check.go's --format/--color validation).
+// languageFlag reads and validates the persistent --lang flag against the
+// languages registry. An empty value means auto-detect; anything not registered
+// is a usage error (exit 2, same style as check.go's --format/--color checks).
 func languageFlag(cmd *cobra.Command) (string, error) {
 	language, err := cmd.Flags().GetString("lang")
 	if err != nil {
 		return "", nil // command without the persistent flag: auto-detect
 	}
-	switch language {
-	case "", "go", "ts":
-		return language, nil
-	default:
-		return "", fmt.Errorf("unknown --lang %q (go or ts)", language)
+	if language == "" {
+		return "", nil
 	}
-}
-
-// resolveLanguage picks the adapter when the config path was given explicitly
-// (so discovery is skipped): honor --lang when set, else auto-detect from the
-// config's directory.
-func resolveLanguage(language, root string) (string, error) {
-	if language == "go" || language == "ts" {
-		return language, nil
+	if _, ok := adapterByName(language); !ok {
+		return "", unknownLangError(language)
 	}
-	resolved, _, err := config.DetectLanguage(root)
-	return resolved, err
-}
-
-// loaderFor constructs the adapter for the resolved language.
-func loaderFor(language, root string) (lang.Loader, error) {
-	switch language {
-	case "go":
-		return &golang.Loader{Dir: root}, nil
-	case "ts":
-		return &typescript.Loader{Dir: root}, nil
-	default:
-		return nil, fmt.Errorf("unknown language %q (go or ts)", language)
-	}
+	return language, nil
 }

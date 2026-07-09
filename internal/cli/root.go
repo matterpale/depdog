@@ -2,6 +2,8 @@
 package cli
 
 import (
+	"strings"
+
 	"github.com/spf13/cobra"
 )
 
@@ -23,8 +25,9 @@ declared in depdog.yaml: which components exist, and who may import whom.`,
 		},
 	}
 	// --lang selects the language adapter for every subcommand; empty means
-	// auto-detect by marker file (go.mod ⇒ go, tsconfig/package.json ⇒ ts).
-	root.PersistentFlags().String("lang", "", "language adapter: go or ts (default: auto-detect by go.mod / tsconfig.json)")
+	// auto-detect from each adapter's marker files (see the languages registry).
+	root.PersistentFlags().String("lang", "",
+		"language adapter: "+strings.Join(languageNames(), " or ")+" (default: auto-detect from marker files)")
 	root.AddCommand(initCmd())
 	root.AddCommand(checkCmd())
 	root.AddCommand(configCmd())

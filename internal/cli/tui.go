@@ -9,7 +9,6 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/matterpale/depdog/internal/config"
 	"github.com/matterpale/depdog/internal/core"
 	"github.com/matterpale/depdog/internal/tui"
 )
@@ -85,7 +84,7 @@ func runBare(cmd *cobra.Command) error {
 		if cwd, err := os.Getwd(); err == nil {
 			language, lerr := languageFlag(cmd)
 			if lerr == nil {
-				if _, _, _, ferr := config.FindWithLanguage(cwd, language); ferr == nil {
+				if _, _, _, ferr := resolveProject(cwd, language); ferr == nil {
 					ev, eerr := evaluateModule(cmd, "", nil)
 					if eerr != nil {
 						return eerr

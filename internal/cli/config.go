@@ -32,7 +32,7 @@ Exit codes: 0 shown, 2 configuration or usage error.`,
 				if err != nil {
 					return err
 				}
-				if cfgPath, _, _, err = config.FindWithLanguage(cwd, language); err != nil {
+				if _, _, cfgPath, err = resolveProject(cwd, language); err != nil {
 					return err
 				}
 			} else {
