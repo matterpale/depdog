@@ -1,0 +1,15 @@
+digraph depdog {
+  rankdir=LR;
+  node [shape=box];
+  "crate";
+  "domain";
+  "handler";
+  "service";
+  "crate" -> "domain";
+  "crate" -> "handler";
+  "crate" -> "service";
+  "domain" -> "service" [color="red", penwidth=2];
+  "handler" -> "domain" [color="red", penwidth=2];
+  "handler" -> "service";
+  "service" -> "domain";
+}

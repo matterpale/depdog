@@ -1,0 +1,8 @@
+# depdog fixture: a small layered Rust crate, rooted by Cargo.toml.
+[package]
+name = "rsdirty"
+version = "1.0.0"
+edition = "2021"
+
+[dependencies]
+serde = "1"

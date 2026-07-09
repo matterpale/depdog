@@ -1,0 +1,14 @@
+depdog check — rsdirty
+
+✗ domain: allow [std]  (1 violation)
+    rsdirty/src/domain
+      → crate::service::notify::notify  src/domain/mod.rs:6
+
+✗ handler: allow [service, std, external]  (1 violation)
+    rsdirty/src/handler
+      → crate::domain::new_order  src/handler/mod.rs:7
+
+! 1 component cycle:
+    domain ↔ service
+
+2 violations · 4 packages · 16 edges checked in X
