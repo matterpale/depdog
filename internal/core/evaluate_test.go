@@ -588,7 +588,7 @@ func TestEvaluateBoundaryWinsOverComponentAllow(t *testing.T) {
 		},
 		Rules: map[string]Rule{
 			"service-b": {Allow: []Ref{{Kind: RefAny}}},
-			"service-a":   {Allow: []Ref{{Kind: RefAny}}},
+			"service-a": {Allow: []Ref{{Kind: RefAny}}},
 		},
 		Boundaries: []Boundary{{
 			Name: "cmd-services",
@@ -695,7 +695,7 @@ func TestEvaluateEmptyBoundaryMemberWarning(t *testing.T) {
 			Name: "cmd-services",
 			Members: []BoundaryMember{
 				{Patterns: []string{"cmd/service-b/**"}, Label: "cmd/service-b/**"}, // matched
-				{Patterns: []string{"cmd/ghost/**"}, Label: "cmd/ghost/**"},           // matches nothing
+				{Patterns: []string{"cmd/ghost/**"}, Label: "cmd/ghost/**"},         // matches nothing
 			},
 		}},
 	}
