@@ -1,0 +1,9 @@
+version: 2
+
+components:
+  crate:   { path: "src/**",         allow: ["*"] } # crate root: lib.rs wires the modules together
+  domain:  { path: "src/domain/**",  allow: [std] }
+  service: { path: "src/service/**", allow: [domain, std] }
+  handler: { path: "src/handler/**", allow: [service, std, external] }
+
+default: deny

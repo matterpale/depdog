@@ -9,10 +9,11 @@ components:
   golang: { path: "internal/lang/golang/**", allow: [core, lang, std, external] } # carve-out: deeper pattern wins over lang
   typescript: { path: "internal/lang/typescript/**", allow: [core, lang, std] } # pure scanner: stdlib only
   python: { path: "internal/lang/python/**", allow: [core, lang, std] } # pure scanner: stdlib only
+  rust:   { path: "internal/lang/rust/**",   allow: [core, lang, std] } # pure scanner: stdlib only
   report: { path: "internal/report/**",      allow: [core, std, external] } # lipgloss styles the human output
   wizard: { path: "internal/wizard/**",      allow: [core, std] } # pure heuristics: engine matcher + std only
   tui:    { path: "internal/tui/**",         allow: [core, report, std, external] } # bubbletea view over core; report.RuleSet renders the Config tab
-  cli:    { path: "internal/cli/**",         allow: [core, config, lang, golang, typescript, python, report, wizard, tui, std, external] }
+  cli:    { path: "internal/cli/**",         allow: [core, config, lang, golang, typescript, python, rust, report, wizard, tui, std, external] }
   e2e:    { path: "internal/e2e/**",         allow: [std] }
 
 default: deny

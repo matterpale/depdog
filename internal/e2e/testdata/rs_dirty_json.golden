@@ -1,0 +1,92 @@
+{
+  "module": "rsdirty",
+  "default": "deny",
+  "violations": [
+    {
+      "from_package": "rsdirty/src/domain",
+      "from_component": "domain",
+      "import": "crate::service::notify::notify",
+      "target": "service",
+      "rule": "domain: allow [std]",
+      "test_only": false,
+      "positions": [
+        {
+          "file": "src/domain/mod.rs",
+          "line": 6
+        }
+      ]
+    },
+    {
+      "from_package": "rsdirty/src/handler",
+      "from_component": "handler",
+      "import": "crate::domain::new_order",
+      "target": "domain",
+      "rule": "handler: allow [service, std, external]",
+      "test_only": false,
+      "positions": [
+        {
+          "file": "src/handler/mod.rs",
+          "line": 7
+        }
+      ]
+    }
+  ],
+  "warnings": [],
+  "components": [
+    {
+      "name": "crate",
+      "stance": "whitelist",
+      "allow": [
+        "*"
+      ],
+      "packages": 1,
+      "edges": 3,
+      "violations": 0
+    },
+    {
+      "name": "domain",
+      "stance": "whitelist",
+      "allow": [
+        "std"
+      ],
+      "packages": 1,
+      "edges": 4,
+      "violations": 1
+    },
+    {
+      "name": "handler",
+      "stance": "whitelist",
+      "allow": [
+        "service",
+        "std",
+        "external"
+      ],
+      "packages": 1,
+      "edges": 4,
+      "violations": 1
+    },
+    {
+      "name": "service",
+      "stance": "whitelist",
+      "allow": [
+        "domain",
+        "std"
+      ],
+      "packages": 1,
+      "edges": 5,
+      "violations": 0
+    }
+  ],
+  "boundaries": [],
+  "cycles": [
+    [
+      "domain",
+      "service"
+    ]
+  ],
+  "stats": {
+    "packages": 4,
+    "edges": 16,
+    "duration_ms": 0
+  }
+}
