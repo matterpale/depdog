@@ -1,0 +1,7 @@
+# depdog fixture: a small layered Python app, rooted by pyproject.toml.
+[project]
+name = "pydirty"
+version = "1.0.0"
+dependencies = [
+    "requests>=2.28",
+]

@@ -1,0 +1,14 @@
+depdog check — pydirty
+
+✗ domain: allow [std]  (1 violation)
+    pydirty/domain
+      → service.notify  domain/order.py:6
+
+✗ handler: allow [service, std, external]  (1 violation)
+    pydirty/handler
+      → domain.order  handler/api.py:7
+
+! 1 component cycle:
+    domain ↔ service
+
+2 violations · 3 packages · 11 edges checked in X

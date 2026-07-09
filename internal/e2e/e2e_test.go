@@ -216,6 +216,61 @@ func TestCheckBadLang(t *testing.T) {
 	}
 }
 
+func TestCheckPyClean(t *testing.T) {
+	// A layered Python project auto-detected via pyproject.toml: the same engine
+	// and depdog.yaml format the Go/TS paths use, exit 0.
+	out, stderr, exit := run(t, fixture("python-clean"), "check")
+	if exit != 0 {
+		t.Fatalf("exit %d\nstdout:\n%s\nstderr:\n%s", exit, out, stderr)
+	}
+	golden(t, "py_clean_text.golden", reTextDur.ReplaceAllString(out, "checked in X"))
+}
+
+func TestCheckPyDirtyText(t *testing.T) {
+	out, _, exit := run(t, fixture("python-dirty"), "check")
+	if exit != 1 {
+		t.Fatalf("exit %d, want 1\n%s", exit, out)
+	}
+	golden(t, "py_dirty_text.golden", reTextDur.ReplaceAllString(out, "checked in X"))
+}
+
+func TestCheckPyDirtyJSON(t *testing.T) {
+	// Proves the stable JSON schema is language-neutral: Python violations render
+	// through the same renderer and field names as Go/TS ones.
+	out, _, exit := run(t, fixture("python-dirty"), "check", "--format", "json")
+	if exit != 1 {
+		t.Fatalf("exit %d, want 1\n%s", exit, out)
+	}
+	golden(t, "py_dirty_json.golden", reJSONDur.ReplaceAllString(out, `"duration_ms": 0`))
+}
+
+func TestExplainPyComponent(t *testing.T) {
+	out, stderr, exit := run(t, fixture("python-dirty"), "explain", "domain")
+	if exit != 0 {
+		t.Fatalf("exit %d\nstderr:\n%s", exit, stderr)
+	}
+	golden(t, "py_explain_component.golden", out)
+}
+
+func TestGraphPyComponentDOT(t *testing.T) {
+	out, stderr, exit := run(t, fixture("python-dirty"), "graph")
+	if exit != 0 {
+		t.Fatalf("exit %d\nstderr:\n%s", exit, stderr)
+	}
+	golden(t, "py_graph_component_dot.golden", out)
+}
+
+func TestCheckPyLangFlag(t *testing.T) {
+	// Explicit --lang py selects the adapter (bypassing auto-detect).
+	out, stderr, exit := run(t, fixture("python-clean"), "check", "--lang", "py")
+	if exit != 0 {
+		t.Fatalf("--lang py: exit %d\nstdout:\n%s\nstderr:\n%s", exit, out, stderr)
+	}
+	if !strings.Contains(out, "✓ no violations") {
+		t.Errorf("--lang py on clean fixture should pass:\n%s", out)
+	}
+}
+
 func TestCheckAmbiguousLanguage(t *testing.T) {
 	// A directory carrying both a go.mod and a package.json is not guessed at:
 	// depdog errors (exit 2) and points at --lang rather than silently choosing.
