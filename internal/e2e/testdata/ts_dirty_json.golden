@@ -1,0 +1,82 @@
+{
+  "module": "tsdirty",
+  "default": "deny",
+  "violations": [
+    {
+      "from_package": "tsdirty/src/api",
+      "from_component": "api",
+      "import": "../domain/order",
+      "target": "domain",
+      "rule": "api: allow [service, std, external]",
+      "test_only": false,
+      "positions": [
+        {
+          "file": "src/api/server.ts",
+          "line": 6
+        }
+      ]
+    },
+    {
+      "from_package": "tsdirty/src/domain",
+      "from_component": "domain",
+      "import": "../service/notify",
+      "target": "service",
+      "rule": "domain: allow [std]",
+      "test_only": false,
+      "positions": [
+        {
+          "file": "src/domain/order.ts",
+          "line": 5
+        }
+      ]
+    }
+  ],
+  "warnings": [],
+  "components": [
+    {
+      "name": "api",
+      "stance": "whitelist",
+      "allow": [
+        "service",
+        "std",
+        "external"
+      ],
+      "packages": 1,
+      "edges": 3,
+      "violations": 1
+    },
+    {
+      "name": "domain",
+      "stance": "whitelist",
+      "allow": [
+        "std"
+      ],
+      "packages": 1,
+      "edges": 2,
+      "violations": 1
+    },
+    {
+      "name": "service",
+      "stance": "whitelist",
+      "allow": [
+        "domain",
+        "std"
+      ],
+      "packages": 1,
+      "edges": 4,
+      "violations": 0
+    }
+  ],
+  "boundaries": [],
+  "cycles": [
+    [
+      "domain",
+      "service"
+    ]
+  ],
+  "stats": {
+    "packages": 3,
+    "edges": 9,
+    "duration_ms": 0
+  }
+}

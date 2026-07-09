@@ -151,6 +151,93 @@ func TestCheckBadFormat(t *testing.T) {
 	}
 }
 
+func TestCheckTSClean(t *testing.T) {
+	// A layered TS project auto-detected via tsconfig.json/package.json: the
+	// same engine and depdog.yaml format the Go path uses, exit 0.
+	out, stderr, exit := run(t, fixture("ts-clean"), "check")
+	if exit != 0 {
+		t.Fatalf("exit %d\nstdout:\n%s\nstderr:\n%s", exit, out, stderr)
+	}
+	golden(t, "ts_clean_text.golden", reTextDur.ReplaceAllString(out, "checked in X"))
+}
+
+func TestCheckTSDirtyText(t *testing.T) {
+	out, _, exit := run(t, fixture("ts-dirty"), "check")
+	if exit != 1 {
+		t.Fatalf("exit %d, want 1\n%s", exit, out)
+	}
+	golden(t, "ts_dirty_text.golden", reTextDur.ReplaceAllString(out, "checked in X"))
+}
+
+func TestCheckTSDirtyJSON(t *testing.T) {
+	// Proves the stable JSON schema is language-neutral: TS violations render
+	// through the same renderer and field names as Go ones.
+	out, _, exit := run(t, fixture("ts-dirty"), "check", "--format", "json")
+	if exit != 1 {
+		t.Fatalf("exit %d, want 1\n%s", exit, out)
+	}
+	golden(t, "ts_dirty_json.golden", reJSONDur.ReplaceAllString(out, `"duration_ms": 0`))
+}
+
+func TestExplainTSComponent(t *testing.T) {
+	out, stderr, exit := run(t, fixture("ts-dirty"), "explain", "domain")
+	if exit != 0 {
+		t.Fatalf("exit %d\nstderr:\n%s", exit, stderr)
+	}
+	golden(t, "ts_explain_component.golden", out)
+}
+
+func TestGraphTSComponentDOT(t *testing.T) {
+	out, stderr, exit := run(t, fixture("ts-dirty"), "graph")
+	if exit != 0 {
+		t.Fatalf("exit %d\nstderr:\n%s", exit, stderr)
+	}
+	golden(t, "ts_graph_component_dot.golden", out)
+}
+
+func TestCheckTSLangFlag(t *testing.T) {
+	// Explicit --lang ts selects the adapter (bypassing auto-detect).
+	out, stderr, exit := run(t, fixture("ts-clean"), "check", "--lang", "ts")
+	if exit != 0 {
+		t.Fatalf("--lang ts: exit %d\nstdout:\n%s\nstderr:\n%s", exit, out, stderr)
+	}
+	if !strings.Contains(out, "✓ no violations") {
+		t.Errorf("--lang ts on clean fixture should pass:\n%s", out)
+	}
+}
+
+func TestCheckBadLang(t *testing.T) {
+	_, stderr, exit := run(t, fixture("ts-clean"), "check", "--lang", "python")
+	if exit != 2 {
+		t.Fatalf("exit %d, want 2", exit)
+	}
+	if !strings.Contains(stderr, "lang") {
+		t.Errorf("stderr should mention --lang:\n%s", stderr)
+	}
+}
+
+func TestCheckAmbiguousLanguage(t *testing.T) {
+	// A directory carrying both a go.mod and a package.json is not guessed at:
+	// depdog errors (exit 2) and points at --lang rather than silently choosing.
+	dir := t.TempDir()
+	write := func(name, body string) {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write("go.mod", "module example.test/poly\n\ngo 1.21\n")
+	write("package.json", `{"name":"poly"}`+"\n")
+	write("depdog.yaml", "version: 2\ncomponents:\n  a: { path: \"**\", allow: [\"*\"] }\ndefault: deny\n")
+
+	_, stderr, exit := run(t, dir, "check")
+	if exit != 2 {
+		t.Fatalf("exit %d, want 2\nstderr:\n%s", exit, stderr)
+	}
+	if !strings.Contains(stderr, "--lang") {
+		t.Errorf("stderr should point at --lang:\n%s", stderr)
+	}
+}
+
 func TestConfigDumpClean(t *testing.T) {
 	out, stderr, exit := run(t, fixture("clean"), "config")
 	if exit != 0 {

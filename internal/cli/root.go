@@ -2,6 +2,8 @@
 package cli
 
 import (
+	"strings"
+
 	"github.com/spf13/cobra"
 )
 
@@ -22,6 +24,10 @@ declared in depdog.yaml: which components exist, and who may import whom.`,
 			return runBare(cmd)
 		},
 	}
+	// --lang selects the language adapter for every subcommand; empty means
+	// auto-detect from each adapter's marker files (see the languages registry).
+	root.PersistentFlags().String("lang", "",
+		"language adapter: "+strings.Join(languageNames(), " or ")+" (default: auto-detect from marker files)")
 	root.AddCommand(initCmd())
 	root.AddCommand(checkCmd())
 	root.AddCommand(configCmd())

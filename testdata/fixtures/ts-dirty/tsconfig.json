@@ -1,0 +1,11 @@
+{
+  // depdog fixture: exercises baseUrl + a single paths alias.
+  "compilerOptions": {
+    "baseUrl": ".",
+    "paths": {
+      "@app/*": ["src/*"]
+    },
+    "strict": true,
+    "module": "ESNext"
+  }
+}

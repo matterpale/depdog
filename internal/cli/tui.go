@@ -9,7 +9,6 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/matterpale/depdog/internal/config"
 	"github.com/matterpale/depdog/internal/core"
 	"github.com/matterpale/depdog/internal/tui"
 )
@@ -83,12 +82,15 @@ func configRelPath(root, configPath string) string {
 func runBare(cmd *cobra.Command) error {
 	if isInteractive(cmd) {
 		if cwd, err := os.Getwd(); err == nil {
-			if _, _, ferr := config.Find(cwd); ferr == nil {
-				ev, eerr := evaluateModule(cmd, "", nil)
-				if eerr != nil {
-					return eerr
+			language, lerr := languageFlag(cmd)
+			if lerr == nil {
+				if _, _, _, ferr := resolveProject(cwd, language); ferr == nil {
+					ev, eerr := evaluateModule(cmd, "", nil)
+					if eerr != nil {
+						return eerr
+					}
+					return launch(cmd, "", nil, ev)
 				}
-				return launch(cmd, "", nil, ev)
 			}
 		}
 	}

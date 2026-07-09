@@ -38,20 +38,6 @@ func ModuleRoot(startDir string) (string, error) {
 	return root, nil
 }
 
-// Find locates the module root and expects the config beside its go.mod. It
-// refuses to run inside a Go workspace: v1 checks exactly one module.
-func Find(startDir string) (configPath, moduleRoot string, err error) {
-	root, err := ModuleRoot(startDir)
-	if err != nil {
-		return "", "", err
-	}
-	cfg := filepath.Join(root, DefaultName)
-	if !exists(cfg) {
-		return "", "", fmt.Errorf("no %s next to %s — run `depdog init` to create one", DefaultName, filepath.Join(root, "go.mod"))
-	}
-	return cfg, root, nil
-}
-
 func exists(path string) bool {
 	_, err := os.Stat(path)
 	return err == nil

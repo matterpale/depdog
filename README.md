@@ -261,6 +261,36 @@ standard library only, language knowledge lives behind an adapter interface,
 and the layers above may only import inward. A failing architecture is a
 failing build.
 
+## Multi-language support
+
+depdog checks **Go** and **TypeScript/JavaScript** projects with the *same*
+`depdog.yaml`, the *same* commands (`check`, `graph`, `explain`, `config`, TUI),
+and the *same* engine. Only a thin language adapter differs; the rule format is
+neutral — component `path` globs match module-relative directories, and `std` /
+`external` are abstract buckets each adapter fills (Go stdlib vs Node builtins;
+a Go module vs an `node_modules` package). The TypeScript adapter is a pure-Go
+static import scanner: no Node.js or `tsc` is required, depdog stays a single
+binary.
+
+**Auto-detection.** depdog picks the adapter from the project's marker files,
+walking up from the working directory:
+
+- a `go.mod` ⇒ the Go adapter;
+- a `tsconfig.json` or `package.json` ⇒ the TypeScript/JS adapter;
+- the marker nearest the working directory wins in a nested layout.
+
+**Explicit override.** The persistent `--lang go|ts` flag (available to every
+subcommand) bypasses detection:
+
+```bash
+depdog check --lang ts        # force the TypeScript adapter
+depdog graph --lang go        # force the Go adapter
+```
+
+A directory that carries **both** a `go.mod` and a `tsconfig.json`/`package.json`
+with no `--lang` is genuinely ambiguous: depdog exits with a usage error naming
+`--lang` rather than silently guessing.
+
 ## Limitations
 
 - **One build configuration.** depdog loads packages for the host's
@@ -273,8 +303,9 @@ failing build.
 ## Status
 
 v0.2.0 — the current release. It brings the config v2 format (per-component
-`allow`/`deny` in one block, `default` stance) among a round of post-v0.1
-refinements. The M0–M5 roadmap in [`PLAN.md`](PLAN.md) is complete;
+`allow`/`deny` in one block, `default` stance) and a second language adapter
+(TypeScript/JavaScript, selected by auto-detect or `--lang`) among a round of
+post-v0.1 refinements. The M0–M5 roadmap in [`PLAN.md`](PLAN.md) is complete;
 [`BACKLOG.md`](BACKLOG.md) tracks what's next.
 
 ## License

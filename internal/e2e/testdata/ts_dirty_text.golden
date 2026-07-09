@@ -1,0 +1,14 @@
+depdog check — tsdirty
+
+✗ api: allow [service, std, external]  (1 violation)
+    tsdirty/src/api
+      → ../domain/order  src/api/server.ts:6
+
+✗ domain: allow [std]  (1 violation)
+    tsdirty/src/domain
+      → ../service/notify  src/domain/order.ts:5
+
+! 1 component cycle:
+    domain ↔ service
+
+2 violations · 3 packages · 9 edges checked in X
