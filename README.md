@@ -311,8 +311,8 @@ depdog is built to be driven by tools and agents, not just humans:
 - **Machine-readable output.** `depdog check --format json` emits a stable
   schema (violations, components, boundaries, stats); the [exit codes](#commands)
   are a contract (`0` clean, `1` violations, `2` config/usage error). `depdog
-  config --format json` dumps the compiled rules so an agent can inspect what a
-  config actually means before changing it.
+  config` prints the compiled rule set so an agent can inspect what a config
+  actually means before changing it.
 - **Polyglot-aware.** Auto-detect or `--lang` means an agent doesn't need to
   know the language up front; a monorepo can be checked per subtree.
 - **A playbook for authoring `depdog.yaml`.**

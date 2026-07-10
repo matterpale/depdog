@@ -1,5 +1,6 @@
 # README demo — regenerate from the repo root with: vhs assets/demo.tape
 # Uses the dirty test fixture, whose violations are the whole point.
+# Records check → explain → TUI (Violations, Packages, and the Config tab).
 Output assets/demo.gif
 
 Set FontSize 15
@@ -35,12 +36,10 @@ Sleep 700ms
 Type "j"
 Sleep 1.5s
 Type "3"
-Sleep 2.5s
+Sleep 2s
 Type "4"
 Sleep 2.5s
-Type "j"
-Sleep 700ms
-Type "j"
-Sleep 1.5s
+Type "jjj"
+Sleep 2s
 Type "q"
 Sleep 1s
