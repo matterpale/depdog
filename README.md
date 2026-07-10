@@ -4,9 +4,8 @@
 
 **A Codebase Dependency Watchdog** — your architecture rules, enforced on every build.
 
-[![Go Reference](https://pkg.go.dev/badge/github.com/matterpale/depdog.svg)](https://pkg.go.dev/github.com/matterpale/depdog)
-[![CI](https://github.com/matterpale/depdog/actions/workflows/ci.yml/badge.svg)](https://github.com/matterpale/depdog/actions/workflows/ci.yml)
 [![Latest release](https://img.shields.io/github/v/release/matterpale/depdog?color=d68a1e)](https://github.com/matterpale/depdog/releases)
+[![CI](https://github.com/matterpale/depdog/actions/workflows/ci.yml/badge.svg)](https://github.com/matterpale/depdog/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-d68a1e)](LICENSE)
 
 [**Install**](#install)&nbsp;·&nbsp;[**Quick start**](#quick-start)&nbsp;·&nbsp;[**Configuration**](#configuration)
