@@ -81,7 +81,11 @@ func TestLSPRealWiring(t *testing.T) {
 		t.Fatalf("depdog lsp: %v\nstderr: %s", err, errOut.String())
 	}
 
-	wantURI := "file://" + filepath.ToSlash(filepath.Join(root, "src", "api", "server.ts"))
+	wantPath := filepath.ToSlash(filepath.Join(root, "src", "api", "server.ts"))
+	if !strings.HasPrefix(wantPath, "/") {
+		wantPath = "/" + wantPath // Windows drive paths need the leading slash file URIs require
+	}
+	wantURI := "file://" + wantPath
 	found := false
 	for _, body := range lspDecode(t, out.Bytes()) {
 		var m struct {
