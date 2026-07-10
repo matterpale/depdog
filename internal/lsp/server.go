@@ -10,6 +10,8 @@ import (
 	"log"
 	"net/url"
 	"sort"
+	"strconv"
+	"strings"
 
 	"github.com/matterpale/depdog/internal/core"
 )
@@ -36,14 +38,24 @@ type CheckFunc func(ctx context.Context) (*Check, error)
 // diagnostics in the previous round and are clean now are cleared with an
 // empty diagnostics array (lsp-02, see docs/lsp.md). textDocument/hover on an
 // import line renders the `depdog explain` verdict for that edge (lsp-03,
-// hover.go).
+// hover.go). When the client supports dynamic registration of
+// workspace/didChangeWatchedFiles, the server asks it to watch the config
+// file, so external edits (git checkout, terminal, `depdog baseline`)
+// re-check too (lsp-04); clients without that capability keep the exact
+// didSave-only behavior.
 type Server struct {
-	check   CheckFunc
-	version string // stamped into serverInfo.version (cli.Version)
+	check      CheckFunc
+	version    string // stamped into serverInfo.version (cli.Version)
+	configBase string // basename of the loaded config file, watched via didChangeWatchedFiles
 }
 
-func NewServer(check CheckFunc, version string) *Server {
-	return &Server{check: check, version: version}
+// NewServer builds a Server around the injected check. configBase is the
+// basename of the loaded config file (e.g. "depdog.yaml"); when the client
+// supports dynamic registration of workspace/didChangeWatchedFiles, the
+// server asks it to watch "**/"+configBase so external config edits re-check
+// without a save. An empty configBase disables the registration.
+func NewServer(check CheckFunc, version, configBase string) *Server {
+	return &Server{check: check, version: version, configBase: configBase}
 }
 
 // initializeResult is the subset of the LSP InitializeResult depdog serves.
@@ -78,6 +90,38 @@ type serverInfo struct {
 	Version string `json:"version"`
 }
 
+// watchRegistrationID is the server-issued JSON-RPC id of the session's
+// single client/registerCapability request, and the registration id inside
+// it. One constant is enough: the server sends exactly one server→client
+// request per session, so routing the client's response is a string
+// comparison instead of a pending-request table.
+const watchRegistrationID = "depdog-watch-1"
+
+// registrationParams is the client/registerCapability payload asking the
+// client to watch the config file. workspace/didChangeWatchedFiles has no
+// static server capability — dynamic registration is the only way to get it —
+// which is why depdog needs its one server→client request here.
+type registrationParams struct {
+	Registrations []registration `json:"registrations"`
+}
+
+type registration struct {
+	ID              string       `json:"id"`
+	Method          string       `json:"method"`
+	RegisterOptions watchOptions `json:"registerOptions"`
+}
+
+type watchOptions struct {
+	Watchers []fileSystemWatcher `json:"watchers"`
+}
+
+// fileSystemWatcher deliberately omits `kind`: the LSP default is 7
+// (create|change|delete), and depdog wants all three — a config file being
+// created or deleted changes the verdict as much as an edit does.
+type fileSystemWatcher struct {
+	GlobPattern string `json:"globPattern"`
+}
+
 // Serve runs the JSON-RPC loop on in/out until the client sends exit (or the
 // stream ends). It is deliberately single-goroutine: messages are handled in
 // arrival order and diagnostics are published in sorted order, so a session
@@ -93,6 +137,13 @@ func (s *Server) Serve(ctx context.Context, in io.Reader, out, logw io.Writer) e
 	var (
 		clientRoot string // from initialize rootUri/rootPath, if given
 		shutdown   bool
+		// canWatch records whether the client announced dynamic-registration
+		// support for workspace/didChangeWatchedFiles in initialize; only then
+		// is the config-watcher registration sent on initialized.
+		canWatch bool
+		// watchPending is true between sending the client/registerCapability
+		// request and consuming the client's response to it.
+		watchPending bool
 		// lastPublished tracks the URIs that received non-empty diagnostics
 		// in the previous round, so the next round can clear the ones that
 		// went clean. Deliberately Serve-local: the loop is single-goroutine
@@ -123,11 +174,30 @@ func (s *Server) Serve(ctx context.Context, in io.Reader, out, logw io.Writer) e
 			return fmt.Errorf("cannot recover the message stream: %w — restart the server", err)
 		}
 
+		if msg.ID != nil && msg.Method == "" {
+			// An id without a method is a RESPONSE to a server→client request
+			// — it must be consumed, never answered (routing it into the
+			// request branch below would bounce a MethodNotFound error back at
+			// the client for its own answer). The only request this server
+			// sends is the watcher registration.
+			if watchPending && string(*msg.ID) == strconv.Quote(watchRegistrationID) {
+				watchPending = false
+				if msg.Error != nil {
+					logger.Printf("client refused the %q watcher registration (code %d: %s) — external config edits will not re-check; saving a file still does",
+						s.configBase, msg.Error.Code, msg.Error.Message)
+				}
+			} else {
+				logger.Printf("dropping response to unknown request id %s", string(*msg.ID))
+			}
+			continue
+		}
+
 		if msg.ID != nil { // request: must be answered
 			var resp *message
 			switch msg.Method {
 			case "initialize":
 				clientRoot = rootFromInitialize(msg.Params)
+				canWatch = watchDynamicRegistration(msg.Params)
 				resp, err = response(msg.ID, initializeResult{
 					Capabilities: serverCapabilities{
 						TextDocumentSync: textDocumentSyncOptions{
@@ -163,6 +233,46 @@ func (s *Server) Serve(ctx context.Context, in io.Reader, out, logw io.Writer) e
 		// Notification: never answered.
 		switch msg.Method {
 		case "initialized":
+			// Register the config watcher before the first round, so a
+			// capable client covers the whole session: external edits to
+			// depdog.yaml (git checkout, terminal, `depdog baseline`)
+			// re-check without a save. Incapable clients get nothing and
+			// behave exactly as before this increment.
+			if canWatch && s.configBase != "" {
+				req, err := request(watchRegistrationID, "client/registerCapability", registrationParams{
+					Registrations: []registration{{
+						ID:     watchRegistrationID,
+						Method: "workspace/didChangeWatchedFiles",
+						RegisterOptions: watchOptions{
+							Watchers: []fileSystemWatcher{{GlobPattern: "**/" + s.configBase}},
+						},
+					}},
+				})
+				if err != nil {
+					return err
+				}
+				if err := writeMessage(out, req); err != nil {
+					return err
+				}
+				watchPending = true
+				logger.Printf("asked the client to watch **/%s", s.configBase)
+			}
+			next, snap, err := s.publish(ctx, out, logger, clientRoot, lastPublished)
+			if err != nil {
+				return err
+			}
+			lastPublished = next
+			if snap != nil {
+				hover = snap
+			}
+		case "workspace/didChangeWatchedFiles":
+			// The client watched the config file for us (see the
+			// registration above). However many FileEvents the notification
+			// carries, they coalesce into ONE re-check: the check re-reads
+			// the whole project from disk anyway. Failure semantics are
+			// identical to didSave — publish keeps the previous diagnostics,
+			// stale set and hover snapshot on a failed check.
+			logger.Printf("didChangeWatchedFiles %s — re-checking", strings.Join(changedURIs(msg.Params), " "))
 			next, snap, err := s.publish(ctx, out, logger, clientRoot, lastPublished)
 			if err != nil {
 				return err
@@ -273,6 +383,43 @@ func savedURI(params json.RawMessage) string {
 		return ""
 	}
 	return p.TextDocument.URI
+}
+
+// watchDynamicRegistration reports whether the initialize params announce
+// client support for dynamically registering workspace/didChangeWatchedFiles
+// — the gate for the config-watcher registration.
+func watchDynamicRegistration(params json.RawMessage) bool {
+	var p struct {
+		Capabilities struct {
+			Workspace struct {
+				DidChangeWatchedFiles struct {
+					DynamicRegistration bool `json:"dynamicRegistration"`
+				} `json:"didChangeWatchedFiles"`
+			} `json:"workspace"`
+		} `json:"capabilities"`
+	}
+	if err := json.Unmarshal(params, &p); err != nil {
+		return false
+	}
+	return p.Capabilities.Workspace.DidChangeWatchedFiles.DynamicRegistration
+}
+
+// changedURIs extracts the FileEvent URIs from didChangeWatchedFiles params
+// for the log line; nil when the params do not parse.
+func changedURIs(params json.RawMessage) []string {
+	var p struct {
+		Changes []struct {
+			URI string `json:"uri"`
+		} `json:"changes"`
+	}
+	if err := json.Unmarshal(params, &p); err != nil {
+		return nil
+	}
+	uris := make([]string, 0, len(p.Changes))
+	for _, c := range p.Changes {
+		uris = append(uris, c.URI)
+	}
+	return uris
 }
 
 // rootFromInitialize extracts the workspace root the client announced:

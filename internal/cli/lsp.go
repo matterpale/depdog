@@ -6,6 +6,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/matterpale/depdog/internal/config"
 	"github.com/matterpale/depdog/internal/lsp"
 )
 
@@ -19,7 +20,9 @@ editor can show depdog's rule violations as inline diagnostics (squiggles).
 
 The server runs one check when the editor finishes initializing and again on
 every save, publishing every violation at its import statement's file and line
-and clearing diagnostics from files that went clean. Hovering an import line
+and clearing diagnostics from files that went clean. Editors that support
+client-side file watching also trigger a re-check when depdog.yaml changes
+outside the editor (git checkout, terminal edits). Hovering an import line
 shows the ` + "`depdog explain`" + ` verdict for that edge — the rule or boundary that
 allows or denies it (design and roadmap: docs/lsp.md).
 
@@ -43,7 +46,14 @@ all diagnostics carry source "depdog". Logs go to stderr, never stdout.`,
 					Root:   filepath.Dir(ev.ConfigPath),
 				}, nil
 			}
-			srv := lsp.NewServer(check, Version)
+			// The watcher registration needs the config basename before the
+			// first check runs: an explicit --config names it directly, and
+			// discovery only ever resolves the default name.
+			configBase := config.DefaultName
+			if configPath != "" {
+				configBase = filepath.Base(configPath)
+			}
+			srv := lsp.NewServer(check, Version, configBase)
 			return srv.Serve(cmd.Context(), cmd.InOrStdin(), cmd.OutOrStdout(), cmd.ErrOrStderr())
 		},
 	}

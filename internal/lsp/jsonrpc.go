@@ -126,6 +126,18 @@ func errorResponse(id *json.RawMessage, code int, msg string) *message {
 	return &message{JSONRPC: "2.0", ID: id, Error: &responseError{Code: code, Message: msg}}
 }
 
+// request builds a server-to-client request with a server-issued string id.
+// The client answers with a response echoing that id and carrying no method —
+// the Serve loop routes on exactly that shape.
+func request(id, method string, params any) (*message, error) {
+	raw, err := json.Marshal(params)
+	if err != nil {
+		return nil, err
+	}
+	rawID := json.RawMessage(strconv.Quote(id))
+	return &message{JSONRPC: "2.0", ID: &rawID, Method: method, Params: raw}, nil
+}
+
 // notification builds a server-to-client notification.
 func notification(method string, params any) (*message, error) {
 	raw, err := json.Marshal(params)

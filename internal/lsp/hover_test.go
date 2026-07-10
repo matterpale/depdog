@@ -237,7 +237,7 @@ func TestHoverVerdicts(t *testing.T) {
 
 	var out, logs bytes.Buffer
 	chk := hoverCheck()
-	srv := NewServer(func(ctx context.Context) (*Check, error) { return chk, nil }, "test")
+	srv := NewServer(func(ctx context.Context) (*Check, error) { return chk, nil }, "test", "depdog.yaml")
 	if err := srv.Serve(context.Background(), clientInput(bodies...), &out, &logs); err != nil {
 		t.Fatalf("Serve: %v\nlogs: %s", err, logs.String())
 	}
@@ -291,7 +291,7 @@ func TestHoverBeforeFirstRoundIsNull(t *testing.T) {
 	srv := NewServer(func(ctx context.Context) (*Check, error) {
 		checked++
 		return hoverCheck(), nil
-	}, "test")
+	}, "test", "depdog.yaml")
 	if err := srv.Serve(context.Background(), in, &out, &logs); err != nil {
 		t.Fatalf("Serve: %v", err)
 	}
@@ -319,7 +319,7 @@ func TestHoverAfterFailedRecheckUsesLastSnapshot(t *testing.T) {
 	srv := NewServer(seqCheck(t, "/work/proj", []checkStep{
 		{chk: hoverCheck()},                             // round 1: good snapshot
 		{err: errors.New("depdog.yaml: mid-edit boom")}, // round 2: transient failure
-	}), "test")
+	}), "test", "depdog.yaml")
 	if err := srv.Serve(context.Background(), in, &out, &logs); err != nil {
 		t.Fatalf("Serve: %v", err)
 	}

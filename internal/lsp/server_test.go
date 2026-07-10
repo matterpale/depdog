@@ -168,7 +168,7 @@ func TestSessionPublishesDiagnostics(t *testing.T) {
 		`{"jsonrpc":"2.0","method":"exit"}`,
 	)
 	var out, logs bytes.Buffer
-	srv := NewServer(stubCheck(stubResult(), "/work/proj"), "1.2.3")
+	srv := NewServer(stubCheck(stubResult(), "/work/proj"), "1.2.3", "depdog.yaml")
 	if err := srv.Serve(context.Background(), in, &out, &logs); err != nil {
 		t.Fatalf("Serve: %v", err)
 	}
@@ -312,7 +312,7 @@ func TestInitializeRootURIWins(t *testing.T) {
 		`{"jsonrpc":"2.0","method":"exit"}`,
 	)
 	var out, logs bytes.Buffer
-	srv := NewServer(stubCheck(stubResult(), "/work/proj"), "test")
+	srv := NewServer(stubCheck(stubResult(), "/work/proj"), "test", "depdog.yaml")
 	if err := srv.Serve(context.Background(), in, &out, &logs); err != nil {
 		t.Fatalf("Serve: %v", err)
 	}
@@ -348,7 +348,7 @@ func TestUnknownMethodAndNotification(t *testing.T) {
 		checked++
 		return &Check{Result: &core.Result{}, Root: "/r"}, nil
 	}
-	srv := NewServer(check, "test")
+	srv := NewServer(check, "test", "depdog.yaml")
 	if err := srv.Serve(context.Background(), in, &out, &logs); err != nil {
 		t.Fatalf("Serve: %v — unknown methods must not kill the session", err)
 	}
@@ -380,7 +380,7 @@ func TestUnknownMethodAndNotification(t *testing.T) {
 func TestExitWithoutShutdownIsNotClean(t *testing.T) {
 	in := clientInput(`{"jsonrpc":"2.0","method":"exit"}`)
 	var out, logs bytes.Buffer
-	srv := NewServer(stubCheck(&core.Result{}, "/r"), "test")
+	srv := NewServer(stubCheck(&core.Result{}, "/r"), "test", "depdog.yaml")
 	if err := srv.Serve(context.Background(), in, &out, &logs); err == nil {
 		t.Error("Serve returned nil for exit before shutdown, want an error")
 	}
@@ -391,7 +391,7 @@ func TestEOFWithoutExitIsNotClean(t *testing.T) {
 		`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}`,
 	)
 	var out, logs bytes.Buffer
-	srv := NewServer(stubCheck(&core.Result{}, "/r"), "test")
+	srv := NewServer(stubCheck(&core.Result{}, "/r"), "test", "depdog.yaml")
 	if err := srv.Serve(context.Background(), in, &out, &logs); err == nil {
 		t.Error("Serve returned nil after the client vanished mid-session, want an error")
 	}
@@ -408,7 +408,7 @@ func TestCheckErrorIsLoggedNotPublished(t *testing.T) {
 	check := func(ctx context.Context) (*Check, error) {
 		return nil, errors.New("depdog.yaml: boom")
 	}
-	srv := NewServer(check, "test")
+	srv := NewServer(check, "test", "depdog.yaml")
 	if err := srv.Serve(context.Background(), in, &out, &logs); err != nil {
 		t.Fatalf("Serve: %v — a failing check must not kill the session", err)
 	}
@@ -434,7 +434,7 @@ func TestDidSaveRechecksAndClearsStale(t *testing.T) {
 	srv := NewServer(seqCheck(t, "/work/proj", []checkStep{
 		{chk: &Check{Result: stubResult()}},      // round 1: violations in src/a.go and src/b.go
 		{chk: &Check{Result: stubResultOnlyA()}}, // round 2 (didSave): src/b.go fixed
-	}), "test")
+	}), "test", "depdog.yaml")
 	if err := srv.Serve(context.Background(), in, &out, &logs); err != nil {
 		t.Fatalf("Serve: %v", err)
 	}
@@ -479,7 +479,7 @@ func TestDidSaveCheckFailureKeepsStaleSet(t *testing.T) {
 		{chk: &Check{Result: stubResult()}},             // round 1: a.go and b.go dirty
 		{err: errors.New("depdog.yaml: mid-edit boom")}, // round 2: transient failure
 		{chk: &Check{Result: stubResultOnlyA()}},        // round 3: b.go fixed
-	}), "test")
+	}), "test", "depdog.yaml")
 	if err := srv.Serve(context.Background(), in, &out, &logs); err != nil {
 		t.Fatalf("Serve: %v — a failing didSave check must not kill the session", err)
 	}
@@ -523,7 +523,7 @@ func TestFixingAllViolationsClearsEverythingThenGoesQuiet(t *testing.T) {
 		{chk: &Check{Result: stubResult()}},   // round 1: a.go and b.go dirty
 		{chk: &Check{Result: &core.Result{}}}, // round 2: everything fixed
 		{chk: &Check{Result: &core.Result{}}}, // round 3: still clean
-	}), "test")
+	}), "test", "depdog.yaml")
 	if err := srv.Serve(context.Background(), in, &out, &logs); err != nil {
 		t.Fatalf("Serve: %v", err)
 	}
@@ -556,6 +556,276 @@ func TestFixingAllViolationsClearsEverythingThenGoesQuiet(t *testing.T) {
 	}
 }
 
+// initializeWithWatchCap is an initialize request from a client that supports
+// dynamic registration of workspace/didChangeWatchedFiles (VS Code, Neovim
+// ≥0.10, Helix ≥23.10, …).
+const initializeWithWatchCap = `{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"capabilities":{"workspace":{"didChangeWatchedFiles":{"dynamicRegistration":true}}}}}`
+
+// watchRegistration is one decoded entry of a client/registerCapability
+// registrations array, for assertions on the watcher payload.
+type watchRegistration struct {
+	ID              string `json:"id"`
+	Method          string `json:"method"`
+	RegisterOptions struct {
+		Watchers []struct {
+			GlobPattern string `json:"globPattern"`
+		} `json:"watchers"`
+	} `json:"registerOptions"`
+}
+
+// watchRegistrations returns every registration carried by any
+// client/registerCapability request in the stream.
+func watchRegistrations(t *testing.T, msgs []*message) []watchRegistration {
+	t.Helper()
+	var regs []watchRegistration
+	for _, m := range msgs {
+		if m.Method != "client/registerCapability" {
+			continue
+		}
+		if m.ID == nil {
+			t.Error("client/registerCapability carries no id — it must be a REQUEST the client can answer")
+		}
+		var p struct {
+			Registrations []watchRegistration `json:"registrations"`
+		}
+		if err := json.Unmarshal(m.Params, &p); err != nil {
+			t.Fatalf("registerCapability params: %v", err)
+		}
+		regs = append(regs, p.Registrations...)
+	}
+	return regs
+}
+
+func TestWatchRegistrationSentForCapableClient(t *testing.T) {
+	in := clientInput(
+		initializeWithWatchCap,
+		`{"jsonrpc":"2.0","method":"initialized","params":{}}`,
+		`{"jsonrpc":"2.0","id":"depdog-watch-1","result":null}`,
+		`{"jsonrpc":"2.0","id":2,"method":"shutdown"}`,
+		`{"jsonrpc":"2.0","method":"exit"}`,
+	)
+	var out, logs bytes.Buffer
+	srv := NewServer(stubCheck(stubResult(), "/work/proj"), "test", "depdog.custom.yaml")
+	if err := srv.Serve(context.Background(), in, &out, &logs); err != nil {
+		t.Fatalf("Serve: %v", err)
+	}
+	msgs := decodeStream(t, out.Bytes())
+
+	regs := watchRegistrations(t, msgs)
+	if len(regs) != 1 {
+		t.Fatalf("got %d didChangeWatchedFiles registrations, want exactly 1", len(regs))
+	}
+	r := regs[0]
+	if r.Method != "workspace/didChangeWatchedFiles" {
+		t.Errorf("registrations[0].method = %q, want workspace/didChangeWatchedFiles", r.Method)
+	}
+	if r.ID == "" {
+		t.Error("registrations[0].id is empty — clients key unregistration on it")
+	}
+	if len(r.RegisterOptions.Watchers) != 1 {
+		t.Fatalf("got %d watchers, want 1", len(r.RegisterOptions.Watchers))
+	}
+	if g := r.RegisterOptions.Watchers[0].GlobPattern; !strings.HasSuffix(g, "depdog.custom.yaml") {
+		t.Errorf("globPattern = %q, want it to end with the config basename passed to NewServer", g)
+	}
+
+	// The registration request precedes the initial diagnostics round.
+	regAt, publishAt := -1, -1
+	for i, m := range msgs {
+		if m.Method == "client/registerCapability" && regAt == -1 {
+			regAt = i
+		}
+		if m.Method == "textDocument/publishDiagnostics" && publishAt == -1 {
+			publishAt = i
+		}
+	}
+	if regAt == -1 || publishAt == -1 || regAt > publishAt {
+		t.Errorf("registerCapability at message %d, first publish at %d — registration must come first", regAt, publishAt)
+	}
+}
+
+func TestNoWatchRegistrationWithoutCapability(t *testing.T) {
+	cases := []struct {
+		name string
+		init string
+	}{
+		{"no capability announced", `{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}`},
+		{"dynamicRegistration false", `{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"capabilities":{"workspace":{"didChangeWatchedFiles":{"dynamicRegistration":false}}}}}`},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			in := clientInput(
+				c.init,
+				`{"jsonrpc":"2.0","method":"initialized","params":{}}`,
+				`{"jsonrpc":"2.0","id":2,"method":"shutdown"}`,
+				`{"jsonrpc":"2.0","method":"exit"}`,
+			)
+			var out, logs bytes.Buffer
+			srv := NewServer(stubCheck(stubResult(), "/work/proj"), "test", "depdog.yaml")
+			if err := srv.Serve(context.Background(), in, &out, &logs); err != nil {
+				t.Fatalf("Serve: %v", err)
+			}
+			msgs := decodeStream(t, out.Bytes())
+			for _, m := range msgs {
+				if m.Method == "client/registerCapability" {
+					t.Error("client/registerCapability sent although the client cannot honor it")
+				}
+			}
+			// Byte-identical to a pre-lsp-04 session: init resp, 2 publishes,
+			// shutdown resp — nothing else.
+			if len(msgs) != 4 {
+				t.Errorf("got %d server messages, want 4 (init resp, 2 publishes, shutdown resp)", len(msgs))
+			}
+		})
+	}
+}
+
+func TestWatchRegistrationResponseIsConsumed(t *testing.T) {
+	cases := []struct {
+		name     string
+		response string
+		wantLog  string
+	}{
+		{"success", `{"jsonrpc":"2.0","id":"depdog-watch-1","result":null}`, ""},
+		{"error", `{"jsonrpc":"2.0","id":"depdog-watch-1","error":{"code":-32601,"message":"dynamic registration disabled"}}`, "dynamic registration disabled"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			in := clientInput(
+				initializeWithWatchCap,
+				`{"jsonrpc":"2.0","method":"initialized","params":{}}`,
+				c.response,
+				`{"jsonrpc":"2.0","id":2,"method":"shutdown"}`,
+				`{"jsonrpc":"2.0","method":"exit"}`,
+			)
+			var out, logs bytes.Buffer
+			srv := NewServer(stubCheck(stubResult(), "/work/proj"), "test", "depdog.yaml")
+			if err := srv.Serve(context.Background(), in, &out, &logs); err != nil {
+				t.Fatalf("Serve: %v — the session must survive the client's response", err)
+			}
+			msgs := decodeStream(t, out.Bytes())
+			// The response is consumed, never answered: no error responses at
+			// all (in particular no MethodNotFound), and exactly the expected
+			// frames: init resp, register req, 2 publishes, shutdown resp.
+			for _, m := range msgs {
+				if m.Error != nil {
+					t.Errorf("server emitted error response %+v — the client's response must be consumed, not answered", m.Error)
+				}
+			}
+			if len(msgs) != 5 {
+				t.Errorf("got %d server messages, want 5 (init resp, register req, 2 publishes, shutdown resp)", len(msgs))
+			}
+			if c.wantLog != "" && !strings.Contains(logs.String(), c.wantLog) {
+				t.Errorf("stderr log %q does not carry the registration refusal", logs.String())
+			}
+		})
+	}
+}
+
+func TestDidChangeWatchedFilesCoalescesToOneRecheck(t *testing.T) {
+	in := clientInput(
+		initializeWithWatchCap,
+		`{"jsonrpc":"2.0","method":"initialized","params":{}}`,
+		`{"jsonrpc":"2.0","id":"depdog-watch-1","result":null}`,
+		// One notification, three FileEvents (created, changed, deleted):
+		// must coalesce into exactly ONE re-check.
+		`{"jsonrpc":"2.0","method":"workspace/didChangeWatchedFiles","params":{"changes":[{"uri":"file:///work/proj/depdog.yaml","type":1},{"uri":"file:///work/proj/depdog.yaml","type":2},{"uri":"file:///work/proj/sub/depdog.yaml","type":3}]}}`,
+		`{"jsonrpc":"2.0","id":2,"method":"shutdown"}`,
+		`{"jsonrpc":"2.0","method":"exit"}`,
+	)
+	var out, logs bytes.Buffer
+	// seqCheck plans exactly 2 outcomes and fails the test on a 3rd call, so
+	// a notification fanning out into one check per FileEvent would fatal.
+	srv := NewServer(seqCheck(t, "/work/proj", []checkStep{
+		{chk: &Check{Result: stubResult()}},      // round 1: a.go and b.go dirty
+		{chk: &Check{Result: stubResultOnlyA()}}, // round 2 (watched files): b.go fixed
+	}), "test", "depdog.yaml")
+	if err := srv.Serve(context.Background(), in, &out, &logs); err != nil {
+		t.Fatalf("Serve: %v", err)
+	}
+
+	decoded, raw := publishedParams(t, decodeStream(t, out.Bytes()))
+	wantURIs := []string{
+		"file:///work/proj/src/a.go", // round 1
+		"file:///work/proj/src/b.go",
+		"file:///work/proj/src/a.go", // round 2: fresh + cleared, sorted by URI
+		"file:///work/proj/src/b.go",
+	}
+	if len(decoded) != len(wantURIs) {
+		t.Fatalf("got %d publishes, want %d (2 per round)", len(decoded), len(wantURIs))
+	}
+	for i, want := range wantURIs {
+		if decoded[i].URI != want {
+			t.Errorf("publish %d uri = %q, want %q", i, decoded[i].URI, want)
+		}
+	}
+	if len(decoded[2].Diagnostics) != 1 {
+		t.Errorf("round 2 src/a.go has %d diagnostics, want 1 (still dirty)", len(decoded[2].Diagnostics))
+	}
+	if len(decoded[3].Diagnostics) != 0 || !strings.Contains(raw[3], `"diagnostics":[]`) {
+		t.Errorf("round 2 src/b.go was not cleared with a literal \"diagnostics\":[]: params = %s", raw[3])
+	}
+}
+
+func TestDidChangeWatchedFilesFailureKeepsStateAndHover(t *testing.T) {
+	in := clientInput(
+		initializeWithWatchCap,
+		`{"jsonrpc":"2.0","method":"initialized","params":{}}`,
+		`{"jsonrpc":"2.0","id":"depdog-watch-1","result":null}`,
+		`{"jsonrpc":"2.0","method":"workspace/didChangeWatchedFiles","params":{"changes":[{"uri":"file:///work/proj/depdog.yaml","type":2}]}}`,
+		hoverRequest(9, "file:///work/proj/domain/order.go", 2),
+		`{"jsonrpc":"2.0","method":"workspace/didChangeWatchedFiles","params":{"changes":[{"uri":"file:///work/proj/depdog.yaml","type":2}]}}`,
+		`{"jsonrpc":"2.0","id":2,"method":"shutdown"}`,
+		`{"jsonrpc":"2.0","method":"exit"}`,
+	)
+	var out, logs bytes.Buffer
+	round1 := hoverCheck()
+	round1.Result = stubResult() // violations in src/a.go and src/b.go, hover-capable snapshot
+	srv := NewServer(seqCheck(t, "/work/proj", []checkStep{
+		{chk: round1}, // round 1: good snapshot
+		{err: errors.New("depdog.yaml: mid-edit boom")}, // round 2: transient failure
+		{chk: &Check{Result: stubResultOnlyA()}},        // round 3: b.go fixed
+	}), "test", "depdog.yaml")
+	if err := srv.Serve(context.Background(), in, &out, &logs); err != nil {
+		t.Fatalf("Serve: %v — a failing watched-files check must not kill the session", err)
+	}
+	msgs := decodeStream(t, out.Bytes())
+
+	decoded, raw := publishedParams(t, msgs)
+	// Round 1 publishes both files, the failed round publishes nothing, and
+	// the stale set survived the failure: round 3 still clears src/b.go.
+	wantURIs := []string{
+		"file:///work/proj/src/a.go",
+		"file:///work/proj/src/b.go",
+		"file:///work/proj/src/a.go",
+		"file:///work/proj/src/b.go",
+	}
+	if len(decoded) != len(wantURIs) {
+		t.Fatalf("got %d publishes, want %d (failed round must publish nothing)", len(decoded), len(wantURIs))
+	}
+	for i, want := range wantURIs {
+		if decoded[i].URI != want {
+			t.Errorf("publish %d uri = %q, want %q", i, decoded[i].URI, want)
+		}
+	}
+	if len(decoded[3].Diagnostics) != 0 || !strings.Contains(raw[3], `"diagnostics":[]`) {
+		t.Errorf("src/b.go was not cleared after the failed round: params = %s", raw[3])
+	}
+	if !strings.Contains(logs.String(), "boom") {
+		t.Errorf("stderr log %q does not carry the watched-files check error", logs.String())
+	}
+
+	// Hover after the failed round still answers from the round-1 snapshot.
+	resp := responseByID(t, msgs, 9)
+	var h decodedHover
+	if err := json.Unmarshal(resp.Result, &h); err != nil {
+		t.Fatalf("hover result after failed re-check = %s: %v", string(resp.Result), err)
+	}
+	if !strings.Contains(h.Contents.Value, "allowed by `domain: allow [std]`") {
+		t.Errorf("hover after a failed re-check = %q, want the last good snapshot's verdict", h.Contents.Value)
+	}
+}
+
 func TestDocumentSyncNotificationsAreIgnored(t *testing.T) {
 	in := clientInput(
 		`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}`,
@@ -571,7 +841,7 @@ func TestDocumentSyncNotificationsAreIgnored(t *testing.T) {
 		checked++
 		return &Check{Result: &core.Result{}, Root: "/r"}, nil
 	}
-	srv := NewServer(check, "test")
+	srv := NewServer(check, "test", "depdog.yaml")
 	if err := srv.Serve(context.Background(), in, &out, &logs); err != nil {
 		t.Fatalf("Serve: %v — didOpen/didChange/didClose must be ignored without error", err)
 	}
