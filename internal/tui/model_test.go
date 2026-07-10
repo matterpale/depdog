@@ -472,9 +472,9 @@ func TestSwitchToConfig(t *testing.T) {
 	v := m.View()
 	for _, want := range []string{
 		"Config", "depdog.yaml", // the active config path
-		"default:", "deny", "test_files:", "components:",
-		"internal/domain/**", "stance: whitelist", "allow:  [std]",
-		"skip:", "internal/legacy/**",
+		"default", "deny", "test_files", "hybrid", "components",
+		"internal/domain/**", "whitelist", "allow", "std",
+		"skip", "internal/legacy/**",
 	} {
 		if !strings.Contains(v, want) {
 			t.Errorf("config view missing %q\n%s", want, v)
