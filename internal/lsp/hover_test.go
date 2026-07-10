@@ -285,6 +285,38 @@ func TestHoverVerdicts(t *testing.T) {
 	}
 }
 
+// TestHoverOmitsConfigLinkWhenConfigBaseEmpty: a server built without a config
+// basename has no depdog.yaml to link, so hover markdown ends at the verdict.
+// This is the hover mirror of the diagnostics relatedInformation suppression
+// (TestDiagnosticsOmitConfigLinkWhenConfigBaseEmpty).
+func TestHoverOmitsConfigLinkWhenConfigBaseEmpty(t *testing.T) {
+	in := clientInput(
+		`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}`,
+		`{"jsonrpc":"2.0","method":"initialized","params":{}}`,
+		hoverRequest(9, "file:///work/proj/domain/order.go", 2),
+		`{"jsonrpc":"2.0","id":2,"method":"shutdown"}`,
+		`{"jsonrpc":"2.0","method":"exit"}`,
+	)
+	var out, logs bytes.Buffer
+	chk := hoverCheck()
+	srv := NewServer(func(ctx context.Context) (*Check, error) { return chk, nil }, "test", "")
+	if err := srv.Serve(context.Background(), in, &out, &logs); err != nil {
+		t.Fatalf("Serve: %v", err)
+	}
+	resp := responseByID(t, decodeStream(t, out.Bytes()), 9)
+	var h decodedHover
+	if err := json.Unmarshal(resp.Result, &h); err != nil {
+		t.Fatalf("hover result: %v", err)
+	}
+	if strings.Contains(h.Contents.Value, "depdog.yaml") {
+		t.Errorf("hover =\n%q\nwant no [depdog.yaml] link when the server has no config to link", h.Contents.Value)
+	}
+	// Suppression drops only the trailing link; the verdict itself remains.
+	if !strings.Contains(h.Contents.Value, "allowed by `domain: allow [std]`") {
+		t.Errorf("hover =\n%q\nwant the verdict text intact", h.Contents.Value)
+	}
+}
+
 // TestHoverBeforeFirstRoundIsNull covers a hover arriving between initialize
 // and initialized: no check has run, so there is no snapshot to answer from.
 func TestHoverBeforeFirstRoundIsNull(t *testing.T) {

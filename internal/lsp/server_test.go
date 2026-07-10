@@ -153,10 +153,16 @@ type diagsParams struct {
 				Character int `json:"character"`
 			} `json:"end"`
 		} `json:"range"`
-		Severity int    `json:"severity"`
-		Code     string `json:"code"`
-		Source   string `json:"source"`
-		Message  string `json:"message"`
+		Severity           int    `json:"severity"`
+		Code               string `json:"code"`
+		Source             string `json:"source"`
+		Message            string `json:"message"`
+		RelatedInformation []struct {
+			Location struct {
+				URI string `json:"uri"`
+			} `json:"location"`
+			Message string `json:"message"`
+		} `json:"relatedInformation"`
 	} `json:"diagnostics"`
 }
 
@@ -301,6 +307,85 @@ func TestSessionPublishesDiagnostics(t *testing.T) {
 	}
 	if sd.Error != nil {
 		t.Errorf("shutdown returned error %v", sd.Error)
+	}
+}
+
+// TestDiagnosticsCarryConfigRelatedInformation locks the diagnostics half of
+// the "open depdog.yaml" affordance: every published diagnostic points back at
+// the config it was decided by, via a single relatedInformation whose location
+// is the config URI and whose message names the fired rule.
+func TestDiagnosticsCarryConfigRelatedInformation(t *testing.T) {
+	in := clientInput(
+		`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}`,
+		`{"jsonrpc":"2.0","method":"initialized","params":{}}`,
+		`{"jsonrpc":"2.0","id":2,"method":"shutdown"}`,
+		`{"jsonrpc":"2.0","method":"exit"}`,
+	)
+	var out, logs bytes.Buffer
+	srv := NewServer(stubCheck(stubResult(), "/work/proj"), "test", "depdog.yaml")
+	if err := srv.Serve(context.Background(), in, &out, &logs); err != nil {
+		t.Fatalf("Serve: %v", err)
+	}
+
+	decoded, raw := publishedParams(t, decodeStream(t, out.Bytes()))
+	seen := 0
+	for i, p := range decoded {
+		for j, d := range p.Diagnostics {
+			seen++
+			if len(d.RelatedInformation) != 1 {
+				t.Fatalf("publish %d diag %d has %d relatedInformation, want 1 (the config link)",
+					i, j, len(d.RelatedInformation))
+			}
+			ri := d.RelatedInformation[0]
+			if ri.Location.URI != "file:///work/proj/depdog.yaml" {
+				t.Errorf("publish %d diag %d relatedInformation uri = %q, want the config file URI",
+					i, j, ri.Location.URI)
+			}
+			// The message keys off the fired rule, which is also the code.
+			if want := "rule: " + d.Code; ri.Message != want {
+				t.Errorf("publish %d diag %d relatedInformation message = %q, want %q", i, j, ri.Message, want)
+			}
+		}
+	}
+	if seen == 0 {
+		t.Fatal("stubResult produced no diagnostics to check")
+	}
+	// The link travels on the wire, not just through the decode struct.
+	if !strings.Contains(raw[0], `"relatedInformation"`) {
+		t.Errorf("published params carry no relatedInformation on the wire: %s", raw[0])
+	}
+}
+
+// TestDiagnosticsOmitConfigLinkWhenConfigBaseEmpty is the diagnostics mirror of
+// TestHoverOmitsConfigLinkWhenConfigBaseEmpty: a server with no config basename
+// has nothing to link, so relatedInformation is suppressed — and omitempty
+// drops the key from the wire entirely rather than emitting null or [].
+func TestDiagnosticsOmitConfigLinkWhenConfigBaseEmpty(t *testing.T) {
+	in := clientInput(
+		`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}`,
+		`{"jsonrpc":"2.0","method":"initialized","params":{}}`,
+		`{"jsonrpc":"2.0","id":2,"method":"shutdown"}`,
+		`{"jsonrpc":"2.0","method":"exit"}`,
+	)
+	var out, logs bytes.Buffer
+	srv := NewServer(stubCheck(stubResult(), "/work/proj"), "test", "")
+	if err := srv.Serve(context.Background(), in, &out, &logs); err != nil {
+		t.Fatalf("Serve: %v", err)
+	}
+
+	decoded, raw := publishedParams(t, decodeStream(t, out.Bytes()))
+	if len(decoded) == 0 {
+		t.Fatal("no diagnostics published")
+	}
+	for i, p := range decoded {
+		for j, d := range p.Diagnostics {
+			if len(d.RelatedInformation) != 0 {
+				t.Errorf("publish %d diag %d carries relatedInformation although there is no config to link", i, j)
+			}
+		}
+		if strings.Contains(raw[i], "relatedInformation") {
+			t.Errorf("published params carry a relatedInformation key with an empty configBase: %s", raw[i])
+		}
 	}
 }
 

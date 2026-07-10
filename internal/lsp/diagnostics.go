@@ -65,7 +65,7 @@ type lspPosition struct {
 // Output is deterministic: payloads sorted by URI, diagnostics by line, then
 // message. core.Warnings carry no positions and are not mapped. configURI is
 // the depdog.yaml this check ran against ("" suppresses relatedInformation,
-// e.g. in tests that don't care about it).
+// e.g. when the server has no config file to link).
 func diagnosticsFor(res *core.Result, root, configURI string) []publishDiagnosticsParams {
 	byURI := make(map[string][]diagnostic)
 	for _, v := range res.Violations {
