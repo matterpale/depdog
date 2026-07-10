@@ -101,6 +101,50 @@ func emptyIfNil(c [][]string) [][]string {
 }
 
 func JSON(w io.Writer, res *core.Result, rs *core.RuleSet, elapsed time.Duration) error {
+	enc := json.NewEncoder(w)
+	enc.SetIndent("", "  ")
+	return enc.Encode(buildReport(res, rs, elapsed))
+}
+
+// jsonWorkspaceReport is the aggregate envelope for a workspace check: one
+// jsonReport per analyzed member, the members skipped for lack of a config, and
+// rolled-up stats. A single-module run keeps emitting jsonReport at the top
+// level (no envelope), so existing consumers are unaffected; the presence of
+// the "modules" array is the discriminator.
+type jsonWorkspaceReport struct {
+	Modules []jsonReport `json:"modules"`
+	Skipped []jsonSkip   `json:"skipped"`
+	Stats   jsonStats    `json:"stats"`
+}
+
+type jsonSkip struct {
+	Dir    string `json:"dir"`
+	Reason string `json:"reason"`
+}
+
+// JSONWorkspace encodes the workspace envelope. Per-module duration is left at 0
+// (only the aggregate carries elapsed); each member self-identifies by its
+// module path, so no machine-specific directory leaks into the output.
+func JSONWorkspace(w io.Writer, mods []Module, skipped []Skipped, elapsed time.Duration) error {
+	out := jsonWorkspaceReport{
+		Modules: make([]jsonReport, 0, len(mods)),
+		Skipped: make([]jsonSkip, 0, len(skipped)),
+	}
+	for _, m := range mods {
+		out.Modules = append(out.Modules, buildReport(m.Result, m.Rules, 0))
+		out.Stats.Packages += m.Result.Stats.Packages
+		out.Stats.Edges += m.Result.Stats.Edges
+	}
+	for _, s := range skipped {
+		out.Skipped = append(out.Skipped, jsonSkip{Dir: "./" + s.Rel, Reason: s.Reason})
+	}
+	out.Stats.DurationMS = elapsed.Milliseconds()
+	enc := json.NewEncoder(w)
+	enc.SetIndent("", "  ")
+	return enc.Encode(out)
+}
+
+func buildReport(res *core.Result, rs *core.RuleSet, elapsed time.Duration) jsonReport {
 	out := jsonReport{
 		Module:     res.ModulePath,
 		Default:    policyName(rs.Policy),
@@ -166,7 +210,5 @@ func JSON(w io.Writer, res *core.Result, rs *core.RuleSet, elapsed time.Duration
 			Packages: c.Packages, Edges: c.Edges, Violations: c.Violations,
 		})
 	}
-	enc := json.NewEncoder(w)
-	enc.SetIndent("", "  ")
-	return enc.Encode(out)
+	return out
 }

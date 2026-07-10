@@ -1,0 +1,10 @@
+version: 2
+
+# app is a workspace member. Its handler deliberately imports a sibling
+# workspace module (example.test/libs) which, under W1 fan-out, classifies as
+# external — and handler allows only std, so it is a violation.
+components:
+  main:    { path: "cmd/**", allow: ["*"] }
+  handler: { path: "internal/handler/**", allow: [std] }
+
+default: deny

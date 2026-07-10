@@ -344,9 +344,13 @@ depdog is built to be driven by tools and agents, not just humans:
   the host's `GOOS`/`GOARCH` and default build tags; imports guarded by other
   build constraints (e.g. `//go:build windows` on a non-Windows machine) aren't
   seen.
-- **Go adapter — single module.** Go workspaces (`go.work`) aren't supported:
-  depdog checks one module and declines to run inside a workspace with a clear
-  message (set `GOWORK=off` to bypass a workspace and check the module directly).
+- **Go workspaces — per-module checks.** In a Go workspace (`go.work`), `depdog
+  check` fans out over every member module that has its own `depdog.yaml`,
+  reporting them together (members without one are advisory-skipped); narrow the
+  run with `--module <path-or-dir>` (repeatable). Each member is still checked as
+  a single module, so an import between two workspace members classifies as
+  `external` — depdog does not yet govern edges *between* members. `GOWORK=off`
+  forces the classic single-module check.
 
 ## Status
 

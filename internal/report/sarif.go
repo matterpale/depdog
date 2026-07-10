@@ -14,6 +14,24 @@ import (
 // version stamps the tool driver. Output is deterministic given a sorted
 // Result.
 func SARIF(w io.Writer, res *core.Result, version string) error {
+	return encodeSARIF(w, []sarifRun{sarifRunFor(res, version, "")})
+}
+
+// SARIFWorkspace merges the workspace's members into one SARIF log with one run
+// per member (SARIF's runs array is built for exactly this). Each member's file
+// URIs are prefixed with its workspace-relative directory so code-scanning
+// resolves them from the repo root.
+func SARIFWorkspace(w io.Writer, mods []Module, version string) error {
+	runs := make([]sarifRun, 0, len(mods))
+	for _, m := range mods {
+		runs = append(runs, sarifRunFor(m.Result, version, m.Rel))
+	}
+	return encodeSARIF(w, runs)
+}
+
+// sarifRunFor builds one SARIF run for a result. prefix (a member's workspace-
+// relative dir, "" for a single module) is joined onto every file URI.
+func sarifRunFor(res *core.Result, version, prefix string) sarifRun {
 	const unassignedRule = "unassigned-package"
 
 	descriptions := map[string]string{}
@@ -40,7 +58,7 @@ func SARIF(w io.Writer, res *core.Result, version string) error {
 		locs := make([]sarifLocation, 0, len(v.Positions))
 		for _, p := range v.Positions {
 			locs = append(locs, sarifLocation{PhysicalLocation: sarifPhysical{
-				ArtifactLocation: sarifArtifact{URI: p.File},
+				ArtifactLocation: sarifArtifact{URI: joinPrefix(prefix, p.File)},
 				Region:           &sarifRegion{StartLine: p.Line},
 			}})
 		}
@@ -57,23 +75,27 @@ func SARIF(w io.Writer, res *core.Result, version string) error {
 			Level:   "note",
 			Message: sarifText{Text: wr.Package + " is not covered by any component"},
 			Locations: []sarifLocation{{PhysicalLocation: sarifPhysical{
-				ArtifactLocation: sarifArtifact{URI: wr.RelDir},
+				ArtifactLocation: sarifArtifact{URI: joinPrefix(prefix, wr.RelDir)},
 			}}},
 		})
 	}
 
+	return sarifRun{
+		Tool: sarifTool{Driver: sarifDriver{
+			Name:           "depdog",
+			InformationURI: "https://github.com/matterpale/depdog",
+			Version:        version,
+			Rules:          rules,
+		}},
+		Results: results,
+	}
+}
+
+func encodeSARIF(w io.Writer, runs []sarifRun) error {
 	doc := sarifLog{
 		Schema:  "https://json.schemastore.org/sarif-2.1.0.json",
 		Version: "2.1.0",
-		Runs: []sarifRun{{
-			Tool: sarifTool{Driver: sarifDriver{
-				Name:           "depdog",
-				InformationURI: "https://github.com/matterpale/depdog",
-				Version:        version,
-				Rules:          rules,
-			}},
-			Results: results,
-		}},
+		Runs:    runs,
 	}
 	enc := json.NewEncoder(w)
 	enc.SetIndent("", "  ")

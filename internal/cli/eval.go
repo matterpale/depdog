@@ -57,6 +57,13 @@ func evaluateModule(cmd *cobra.Command, configPath string, args []string) (*eval
 		}
 	}
 
+	return evaluateAt(cmd, adapter, root, cfgPath, args)
+}
+
+// evaluateAt loads and evaluates one already-resolved module: its config at
+// cfgPath, its import graph via the adapter rooted at root. It is the shared
+// core of single-module discovery (evaluateModule) and workspace fan-out.
+func evaluateAt(cmd *cobra.Command, adapter lang.Adapter, root, cfgPath string, args []string) (*evaluation, error) {
 	rs, err := config.Load(cfgPath)
 	if err != nil {
 		return nil, err

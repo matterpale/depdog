@@ -7,21 +7,18 @@ import (
 )
 
 // ModuleRoot walks up from startDir to the nearest go.mod and returns its
-// directory. It refuses to run inside a Go workspace: v1 works on exactly one
-// module. This is the module discovery shared by `check` and `init`.
+// directory — the single module a command operates on. Workspaces are handled a
+// layer up (see config.FindWorkspace and the CLI's workspace fan-out); this
+// function always resolves exactly one module, which is also the module a
+// workspace member is checked as. Shared by `check`, `init`, and friends.
 func ModuleRoot(startDir string) (string, error) {
 	dir, err := filepath.Abs(startDir)
 	if err != nil {
 		return "", err
 	}
-
-	root := ""
 	for d := dir; ; {
-		if root == "" && exists(filepath.Join(d, "go.mod")) {
-			root = d
-		}
-		if w := filepath.Join(d, "go.work"); exists(w) && os.Getenv("GOWORK") != "off" {
-			return "", fmt.Errorf("go workspaces are not supported yet: found %s — depdog v1 works on a single module (run with GOWORK=off to bypass the workspace)", w)
+		if exists(filepath.Join(d, "go.mod")) {
+			return d, nil
 		}
 		parent := filepath.Dir(d)
 		if parent == d {
@@ -29,13 +26,7 @@ func ModuleRoot(startDir string) (string, error) {
 		}
 		d = parent
 	}
-	if gw := os.Getenv("GOWORK"); gw != "" && gw != "off" {
-		return "", fmt.Errorf("go workspaces are not supported yet: GOWORK=%s — depdog v1 works on a single module", gw)
-	}
-	if root == "" {
-		return "", fmt.Errorf("no go.mod found from %s upward — depdog runs inside a Go module", dir)
-	}
-	return root, nil
+	return "", fmt.Errorf("no go.mod found from %s upward — depdog runs inside a Go module", dir)
 }
 
 func exists(path string) bool {

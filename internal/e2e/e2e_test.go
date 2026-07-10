@@ -608,6 +608,96 @@ func TestCheckSelf(t *testing.T) {
 	}
 }
 
+// runWS is run() with the Go workspace left active (GOWORK unset → auto), for
+// the go.work fixture. The base run() forces GOWORK=off for hermeticity, which
+// would suppress workspace mode.
+func runWS(t *testing.T, dir string, args ...string) (stdout, stderr string, exit int) {
+	t.Helper()
+	cmd := exec.Command(binary, args...)
+	cmd.Dir = dir
+	cmd.Env = append(os.Environ(), "GOWORK=", "NO_COLOR=1", "TERM=dumb")
+	var out, errb bytes.Buffer
+	cmd.Stdout, cmd.Stderr = &out, &errb
+	if err := cmd.Run(); err != nil {
+		if _, ok := err.(*exec.ExitError); !ok {
+			t.Fatalf("running depdog: %v", err)
+		}
+	}
+	return out.String(), errb.String(), cmd.ProcessState.ExitCode()
+}
+
+func TestCheckWorkspaceText(t *testing.T) {
+	// A whole-workspace check: app fails (a cross-module import classifies as
+	// external), libs is clean, tools is advisory-skipped (no depdog.yaml).
+	// Aggregate exit is 1.
+	out, stderr, exit := runWS(t, fixture("workspace"), "check")
+	if exit != 1 {
+		t.Fatalf("exit %d, want 1\nstdout:\n%s\nstderr:\n%s", exit, out, stderr)
+	}
+	golden(t, "ws_text.golden", reTextDur.ReplaceAllString(out, "checked in X"))
+}
+
+func TestCheckWorkspaceJSON(t *testing.T) {
+	// The workspace envelope: modules[] with a per-member jsonReport, skipped[],
+	// and rolled-up stats. Each member self-identifies by module path, so no
+	// machine-specific path leaks in.
+	out, _, exit := runWS(t, fixture("workspace"), "check", "--format", "json")
+	if exit != 1 {
+		t.Fatalf("exit %d, want 1\n%s", exit, out)
+	}
+	golden(t, "ws_json.golden", reJSONDur.ReplaceAllString(out, `"duration_ms": 0`))
+}
+
+func TestCheckWorkspaceModuleSelector(t *testing.T) {
+	// --module narrows the run to a single member (by directory here); the clean
+	// libs member passes, and app is not checked.
+	out, stderr, exit := runWS(t, fixture("workspace"), "check", "--module", "libs")
+	if exit != 0 {
+		t.Fatalf("exit %d, want 0\nstdout:\n%s\nstderr:\n%s", exit, out, stderr)
+	}
+	if !strings.Contains(out, "example.test/libs") || strings.Contains(out, "example.test/app") {
+		t.Errorf("--module libs should check only libs:\n%s", out)
+	}
+	if !strings.Contains(out, "1 checked module") {
+		t.Errorf("expected a one-module aggregate footer:\n%s", out)
+	}
+}
+
+func TestCheckWorkspaceModuleByPath(t *testing.T) {
+	// --module also accepts a go.mod module path.
+	_, _, exit := runWS(t, fixture("workspace"), "check", "--module", "example.test/app")
+	if exit != 1 {
+		t.Fatalf("exit %d, want 1 (app has the cross-module violation)", exit)
+	}
+}
+
+func TestCheckWorkspaceGOWORKOffSingleModule(t *testing.T) {
+	// GOWORK=off (the base run helper) inside a member drops to single-module
+	// mode: classic output, no workspace envelope/aggregate.
+	out, stderr, exit := run(t, filepath.Join(fixture("workspace"), "libs"), "check")
+	if exit != 0 {
+		t.Fatalf("exit %d, want 0\nstdout:\n%s\nstderr:\n%s", exit, out, stderr)
+	}
+	if strings.Contains(out, "checked module") {
+		t.Errorf("GOWORK=off must not produce the workspace aggregate:\n%s", out)
+	}
+	if !strings.HasPrefix(out, "depdog check — example.test/libs") {
+		t.Errorf("expected classic single-module output:\n%s", out)
+	}
+}
+
+func TestCheckWorkspaceGitHubPrefixesPaths(t *testing.T) {
+	// GitHub annotations in a workspace must prefix each file with the member's
+	// directory so they resolve from the repo root.
+	out, _, exit := runWS(t, fixture("workspace"), "check", "--format", "github")
+	if exit != 1 {
+		t.Fatalf("exit %d, want 1\n%s", exit, out)
+	}
+	if !strings.Contains(out, "file=app/internal/handler/handler.go") {
+		t.Errorf("annotation path should be workspace-relative:\n%s", out)
+	}
+}
+
 // initModule lays down a fixed module tree for the init wizard to scan. The
 // layout matches the ddd preset (cmd + domain/handler/service/repository) plus
 // two extras (internal/telemetry, pkg/util) that exercise the "propose a
