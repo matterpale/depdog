@@ -353,12 +353,14 @@ depdog is built to be driven by tools and agents, not just humans:
 
 ## Status
 
-v0.5.0 — the current release. depdog now checks **seven** languages (Go,
+v0.6.0 — the current release. depdog now checks **seven** languages (Go,
 TypeScript/JS, Python, Rust, Java, Ruby, Kotlin) through a pluggable adapter
 registry, on top of the config v2 format (per-component `allow`/`deny`,
-`default` stance) and `boundaries` (orthogonal mutual-exclusion groups). The
-M0–M5 roadmap is complete, and editor/LSP integration has landed: `depdog lsp`
-plus a per-editor [setup guide](docs/editors.md).
+`default` stance) and `boundaries` (orthogonal mutual-exclusion groups). In a Go
+workspace, `depdog check` now fans out over the member modules, each checked
+against its own `depdog.yaml` (see [Limitations](#limitations)). The M0–M5
+roadmap is complete, and editor/LSP integration has landed: `depdog lsp` plus a
+per-editor [setup guide](docs/editors.md).
 
 ## License
 
