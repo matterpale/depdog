@@ -201,6 +201,7 @@ strict, `relaxed` exempts test files entirely.
 | `depdog graph`                                   | Emit the dependency graph as DOT or Mermaid                                                                                                                                                                  |
 | `depdog explain <component-or-package> [import]` | Explain why something is red (the rule or boundary that fired, with file:line), how a component is constrained, its boundary membership, or whether *A* may import *B* and which rule or boundary decides it |
 | `depdog config`                                  | Print the compiled rule set — components, patterns, inferred stances, boundaries, options — for debugging a config                                                                                           |
+| `depdog lsp`                                     | LSP server over stdio: violations become inline editor diagnostics at their import lines ([editor setup](docs/editors.md) · [design](docs/lsp.md))                                                           |
 | `depdog tui` (or bare `depdog`)                  | Interactive terminal UI: component dashboard, browsable violations, per-package imports and importers, and a Config tab showing the compiled rules                                                           |
 
 <details>
@@ -213,6 +214,11 @@ strict, `relaxed` exempts test files entirely.
 | `graph` | `--format dot\|mermaid` · `--level component\|package` · `--violations-only` · `--focus <component>`                                                                                             |
 
 </details>
+
+**Editor setup:** wire `depdog lsp` into Neovim, Helix, VS Code (via the
+bundled [`editors/vscode`](editors/vscode) extension scaffold), Zed,
+GoLand/JetBrains (via the LSP4IJ plugin), or Emacs for inline architecture
+diagnostics — per-editor snippets in [docs/editors.md](docs/editors.md).
 
 In the TUI, <kbd>1</kbd>–<kbd>4</kbd> (or <kbd>tab</kbd>) switch between the
 Dashboard, Violations, Packages and Config screens. The Violations and Packages
@@ -348,7 +354,8 @@ v0.5.0 — the current release. depdog now checks **seven** languages (Go,
 TypeScript/JS, Python, Rust, Java, Ruby, Kotlin) through a pluggable adapter
 registry, on top of the config v2 format (per-component `allow`/`deny`,
 `default` stance) and `boundaries` (orthogonal mutual-exclusion groups). The
-M0–M5 roadmap is complete; editor/LSP integration is the main item still ahead.
+M0–M5 roadmap is complete, and editor/LSP integration has landed: `depdog lsp`
+plus a per-editor [setup guide](docs/editors.md).
 
 ## License
 

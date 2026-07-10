@@ -19,3 +19,7 @@ PLAN.md
 
 # design/plan scratch — kept local; real assets (logo, demo) live in assets/
 docs/
+
+# editors/ build artifacts — the VS Code scaffold builds locally, never committed
+editors/**/node_modules/
+editors/**/*.vsix

@@ -1,0 +1,43 @@
+{
+  "name": "depdog",
+  "displayName": "depdog",
+  "description": "Inline architecture diagnostics from depdog: rule violations as squiggles on import lines, with `depdog explain` verdicts on hover.",
+  "version": "0.0.1",
+  "publisher": "depdog-placeholder",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/matterpale/depdog.git",
+    "directory": "editors/vscode"
+  },
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Linters",
+    "Other"
+  ],
+  "keywords": [
+    "architecture",
+    "dependencies",
+    "lint",
+    "lsp"
+  ],
+  "main": "./extension.js",
+  "activationEvents": [
+    "onLanguage:go",
+    "onLanguage:typescript",
+    "onLanguage:javascript",
+    "onLanguage:typescriptreact",
+    "onLanguage:javascriptreact",
+    "onLanguage:python",
+    "onLanguage:rust",
+    "onLanguage:java",
+    "onLanguage:ruby",
+    "onLanguage:kotlin",
+    "workspaceContains:depdog.yaml"
+  ],
+  "dependencies": {
+    "vscode-languageclient": "^9.0.1"
+  }
+}
