@@ -201,6 +201,7 @@ strict, `relaxed` exempts test files entirely.
 | `depdog graph`                                   | Emit the dependency graph as DOT or Mermaid                                                                                                                                                                  |
 | `depdog explain <component-or-package> [import]` | Explain why something is red (the rule or boundary that fired, with file:line), how a component is constrained, its boundary membership, or whether *A* may import *B* and which rule or boundary decides it |
 | `depdog config`                                  | Print the compiled rule set — components, patterns, inferred stances, boundaries, options — for debugging a config                                                                                           |
+| `depdog lsp`                                     | LSP server over stdio: violations become inline editor diagnostics at their import lines ([design + roadmap](docs/lsp.md))                                                                                   |
 | `depdog tui` (or bare `depdog`)                  | Interactive terminal UI: component dashboard, browsable violations, per-package imports and importers, and a Config tab showing the compiled rules                                                           |
 
 <details>
