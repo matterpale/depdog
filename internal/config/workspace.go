@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"golang.org/x/mod/modfile"
 )
@@ -48,6 +49,27 @@ func FindWorkspace(startDir string) (*Workspace, error) {
 		}
 		return parseWorkspace(work)
 	}
+}
+
+// OwningModule returns the member module directory that contains path — the
+// nearest member that is path itself or an ancestor of it — reporting false
+// when path lies outside every member. It lets a caller resolve the workspace
+// member a given file belongs to, so an edit inside ./app is checked as app
+// rather than the workspace root.
+func (w *Workspace) OwningModule(path string) (string, bool) {
+	abs, err := filepath.Abs(path)
+	if err != nil {
+		return "", false
+	}
+	best := ""
+	for _, m := range w.Modules {
+		if abs == m || strings.HasPrefix(abs, m+string(filepath.Separator)) {
+			if len(m) > len(best) {
+				best = m
+			}
+		}
+	}
+	return best, best != ""
 }
 
 // ModulePathOf reads the module directive from the go.mod in moduleDir.

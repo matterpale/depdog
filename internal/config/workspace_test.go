@@ -123,6 +123,43 @@ func TestModuleRootInWorkspaceResolvesMember(t *testing.T) {
 	}
 }
 
+func TestWorkspaceOwningModule(t *testing.T) {
+	t.Setenv("GOWORK", "")
+	dir := mkWorkspaceTree(t)
+	ws, err := FindWorkspace(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	appDir := filepath.Join(dir, "app")
+	libsDir := filepath.Join(dir, "libs")
+
+	cases := []struct {
+		name string
+		path string
+		want string // "" means: expect ok=false
+	}{
+		{"file inside app", filepath.Join(appDir, "internal", "handler", "handler.go"), appDir},
+		{"the app dir itself", appDir, appDir},
+		{"file inside libs", filepath.Join(libsDir, "store", "store.go"), libsDir},
+		{"the workspace root owns no member", dir, ""},
+		{"a sibling outside the workspace", filepath.Dir(dir), ""},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got, ok := ws.OwningModule(tc.path)
+			if tc.want == "" {
+				if ok {
+					t.Errorf("OwningModule(%s) = %s, want no owner", tc.path, got)
+				}
+				return
+			}
+			if !ok || got != tc.want {
+				t.Errorf("OwningModule(%s) = %q, %v; want %q, true", tc.path, got, ok, tc.want)
+			}
+		})
+	}
+}
+
 func TestModulePathOf(t *testing.T) {
 	dir := mkWorkspaceTree(t)
 	mp, err := ModulePathOf(filepath.Join(dir, "libs"))

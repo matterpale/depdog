@@ -60,6 +60,23 @@ func evaluateModule(cmd *cobra.Command, configPath string, args []string) (*eval
 	return evaluateAt(cmd, adapter, root, cfgPath, args)
 }
 
+// evaluateDiscovered resolves and evaluates the single module discovered by
+// walking up from startDir (adapter auto-detected unless --lang pins one). It
+// is the working-directory-independent counterpart of evaluateModule's
+// discovery branch, letting the LSP resolve a project from a triggering file's
+// directory rather than the process cwd.
+func evaluateDiscovered(cmd *cobra.Command, startDir string) (*evaluation, error) {
+	language, err := languageFlag(cmd)
+	if err != nil {
+		return nil, err
+	}
+	adapter, root, cfgPath, err := resolveProject(startDir, language)
+	if err != nil {
+		return nil, err
+	}
+	return evaluateAt(cmd, adapter, root, cfgPath, nil)
+}
+
 // evaluateAt loads and evaluates one already-resolved module: its config at
 // cfgPath, its import graph via the adapter rooted at root. It is the shared
 // core of single-module discovery (evaluateModule) and workspace fan-out.
