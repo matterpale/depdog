@@ -1,0 +1,101 @@
+{
+  "workspace": "workspace",
+  "modules": [
+    {
+      "module": "example.test/app",
+      "default": "deny",
+      "violations": [
+        {
+          "from_package": "example.test/app/internal/handler",
+          "from_component": "handler",
+          "import": "example.test/libs/store",
+          "target": "external",
+          "rule": "handler: allow [std]",
+          "test_only": false,
+          "positions": [
+            {
+              "file": "internal/handler/handler.go",
+              "line": 6
+            }
+          ]
+        }
+      ],
+      "warnings": [],
+      "components": [
+        {
+          "name": "handler",
+          "stance": "whitelist",
+          "allow": [
+            "std"
+          ],
+          "packages": 1,
+          "edges": 2,
+          "violations": 1
+        },
+        {
+          "name": "main",
+          "stance": "whitelist",
+          "allow": [
+            "*"
+          ],
+          "packages": 1,
+          "edges": 1,
+          "violations": 0
+        }
+      ],
+      "boundaries": [],
+      "cycles": [],
+      "stats": {
+        "packages": 2,
+        "edges": 3,
+        "duration_ms": 0
+      }
+    },
+    {
+      "module": "example.test/libs",
+      "default": "deny",
+      "violations": [],
+      "warnings": [],
+      "components": [
+        {
+          "name": "secret",
+          "stance": "whitelist",
+          "allow": [
+            "std"
+          ],
+          "packages": 1,
+          "edges": 0,
+          "violations": 0
+        },
+        {
+          "name": "store",
+          "stance": "whitelist",
+          "allow": [
+            "std"
+          ],
+          "packages": 1,
+          "edges": 0,
+          "violations": 0
+        }
+      ],
+      "boundaries": [],
+      "cycles": [],
+      "stats": {
+        "packages": 2,
+        "edges": 0,
+        "duration_ms": 0
+      }
+    }
+  ],
+  "skipped": [
+    {
+      "dir": "./tools",
+      "reason": "no depdog.yaml"
+    }
+  ],
+  "stats": {
+    "packages": 4,
+    "edges": 3,
+    "duration_ms": 0
+  }
+}

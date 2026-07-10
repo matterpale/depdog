@@ -1,0 +1,18 @@
+▸ module ./app
+depdog check — example.test/app
+
+✗ handler: allow [std]  (1 violation)
+    example.test/app/internal/handler
+      → example.test/libs/store  internal/handler/handler.go:6
+
+1 violation · 2 packages · 3 edges checked in X
+
+▸ module ./libs
+depdog check — example.test/libs
+
+✓ no violations · 2 packages · 0 edges checked in X
+
+! 1 module skipped (no depdog.yaml):
+    ./tools
+
+✗ 1 violation across 2 checked modules (1 skipped) · 4 packages · 3 edges · checked in X

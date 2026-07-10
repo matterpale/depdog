@@ -245,7 +245,7 @@ func TestHoverVerdicts(t *testing.T) {
 
 	var out, logs bytes.Buffer
 	chk := hoverCheck()
-	srv := NewServer(func(ctx context.Context) (*Check, error) { return chk, nil }, "test", "depdog.yaml")
+	srv := NewServer(func(ctx context.Context, _ string) (*Check, error) { return chk, nil }, "test", "depdog.yaml")
 	if err := srv.Serve(context.Background(), clientInput(bodies...), &out, &logs); err != nil {
 		t.Fatalf("Serve: %v\nlogs: %s", err, logs.String())
 	}
@@ -299,7 +299,7 @@ func TestHoverOmitsConfigLinkWhenConfigBaseEmpty(t *testing.T) {
 	)
 	var out, logs bytes.Buffer
 	chk := hoverCheck()
-	srv := NewServer(func(ctx context.Context) (*Check, error) { return chk, nil }, "test", "")
+	srv := NewServer(func(ctx context.Context, _ string) (*Check, error) { return chk, nil }, "test", "")
 	if err := srv.Serve(context.Background(), in, &out, &logs); err != nil {
 		t.Fatalf("Serve: %v", err)
 	}
@@ -328,7 +328,7 @@ func TestHoverBeforeFirstRoundIsNull(t *testing.T) {
 	)
 	var out, logs bytes.Buffer
 	checked := 0
-	srv := NewServer(func(ctx context.Context) (*Check, error) {
+	srv := NewServer(func(ctx context.Context, _ string) (*Check, error) {
 		checked++
 		return hoverCheck(), nil
 	}, "test", "depdog.yaml")

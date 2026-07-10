@@ -91,7 +91,7 @@ func stubResultOnlyA() *core.Result {
 // stubCheck returns a CheckFunc serving a fixed Result-only snapshot — enough
 // for diagnostics rounds; hover tests use fuller snapshots from hover_test.go.
 func stubCheck(res *core.Result, root string) CheckFunc {
-	return func(ctx context.Context) (*Check, error) {
+	return func(ctx context.Context, _ string) (*Check, error) {
 		return &Check{Result: res, Root: root}, nil
 	}
 }
@@ -107,7 +107,7 @@ type checkStep struct {
 // failing the test if it is invoked more often than planned.
 func seqCheck(t *testing.T, root string, steps []checkStep) CheckFunc {
 	call := 0
-	return func(ctx context.Context) (*Check, error) {
+	return func(ctx context.Context, _ string) (*Check, error) {
 		if call >= len(steps) {
 			t.Fatalf("CheckFunc call %d, but only %d outcomes were planned", call+1, len(steps))
 		}
@@ -419,6 +419,42 @@ func TestInitializeRootURIWins(t *testing.T) {
 	}
 }
 
+func TestPublishRebasesWorkspaceMember(t *testing.T) {
+	// In a workspace the check returns a member snapshot: Root is the member
+	// dir and Rel is that dir relative to the client's announced root. The URIs
+	// must resolve under clientRoot/Rel, so a violation in ./app's src/a.go
+	// lands at client/root/app/src/a.go — the member dir, not the workspace root.
+	in := clientInput(
+		`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"rootUri":"file:///client/root"}}`,
+		`{"jsonrpc":"2.0","method":"initialized"}`,
+		`{"jsonrpc":"2.0","id":2,"method":"shutdown"}`,
+		`{"jsonrpc":"2.0","method":"exit"}`,
+	)
+	var out, logs bytes.Buffer
+	check := func(ctx context.Context, _ string) (*Check, error) {
+		return &Check{Result: stubResult(), Root: "/abs/ws/app", Rel: "app"}, nil
+	}
+	srv := NewServer(check, "test", "depdog.yaml")
+	if err := srv.Serve(context.Background(), in, &out, &logs); err != nil {
+		t.Fatalf("Serve: %v", err)
+	}
+	var uris []string
+	for _, m := range decodeStream(t, out.Bytes()) {
+		if m.Method != "textDocument/publishDiagnostics" {
+			continue
+		}
+		var p diagsParams
+		if err := json.Unmarshal(m.Params, &p); err != nil {
+			t.Fatal(err)
+		}
+		uris = append(uris, p.URI)
+	}
+	want := []string{"file:///client/root/app/src/a.go", "file:///client/root/app/src/b.go"}
+	if len(uris) != 2 || uris[0] != want[0] || uris[1] != want[1] {
+		t.Errorf("uris = %v, want %v", uris, want)
+	}
+}
+
 func TestUnknownMethodAndNotification(t *testing.T) {
 	in := clientInput(
 		`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}`,
@@ -429,7 +465,7 @@ func TestUnknownMethodAndNotification(t *testing.T) {
 	)
 	var out, logs bytes.Buffer
 	checked := 0
-	check := func(ctx context.Context) (*Check, error) {
+	check := func(ctx context.Context, _ string) (*Check, error) {
 		checked++
 		return &Check{Result: &core.Result{}, Root: "/r"}, nil
 	}
@@ -490,7 +526,7 @@ func TestCheckErrorIsLoggedNotPublished(t *testing.T) {
 		`{"jsonrpc":"2.0","method":"exit"}`,
 	)
 	var out, logs bytes.Buffer
-	check := func(ctx context.Context) (*Check, error) {
+	check := func(ctx context.Context, _ string) (*Check, error) {
 		return nil, errors.New("depdog.yaml: boom")
 	}
 	srv := NewServer(check, "test", "depdog.yaml")
@@ -922,7 +958,7 @@ func TestDocumentSyncNotificationsAreIgnored(t *testing.T) {
 	)
 	var out, logs bytes.Buffer
 	checked := 0
-	check := func(ctx context.Context) (*Check, error) {
+	check := func(ctx context.Context, _ string) (*Check, error) {
 		checked++
 		return &Check{Result: &core.Result{}, Root: "/r"}, nil
 	}

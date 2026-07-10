@@ -1,0 +1,8 @@
+version: 2
+
+# libs is a clean workspace member: both components import only std.
+components:
+  store:  { path: "store/**", allow: [std] }
+  secret: { path: "internal/**", allow: [std] }
+
+default: deny

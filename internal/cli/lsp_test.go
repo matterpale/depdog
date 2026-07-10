@@ -10,6 +10,8 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+
+	"github.com/matterpale/depdog/internal/config"
 )
 
 // lspFrames encodes JSON bodies with LSP Content-Length framing, the way an
@@ -55,6 +57,62 @@ func lspDecode(t *testing.T, out []byte) []json.RawMessage {
 		}
 		bodies = append(bodies, json.RawMessage(body))
 	}
+}
+
+// TestLSPWorkspaceTarget proves the LSP resolves the workspace member owning a
+// triggering file — the member dir, not the workspace root — purely from the
+// filesystem (no project loading), which is what evaluateForLSP feeds to
+// evaluateAt and hands the server as Check.Rel.
+func TestLSPWorkspaceTarget(t *testing.T) {
+	t.Setenv("GOWORK", "")
+	wsDir := mustAbs(t, filepath.Join("..", "..", "testdata", "fixtures", "workspace"))
+	ws, err := config.FindWorkspace(wsDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ws == nil {
+		t.Fatal("expected the fixture workspace")
+	}
+
+	t.Run("file in app resolves to the app member", func(t *testing.T) {
+		dir, cfgPath, rel, err := lspWorkspaceTarget(ws, filepath.Join(wsDir, "app", "internal", "handler"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if rel != "app" {
+			t.Errorf("rel = %q, want app", rel)
+		}
+		if filepath.Base(dir) != "app" {
+			t.Errorf("dir = %s, want the app member (not the workspace root)", dir)
+		}
+		if cfgPath != filepath.Join(wsDir, "app", config.DefaultName) {
+			t.Errorf("cfgPath = %s", cfgPath)
+		}
+	})
+
+	t.Run("file in libs resolves to the libs member", func(t *testing.T) {
+		_, _, rel, err := lspWorkspaceTarget(ws, filepath.Join(wsDir, "libs", "store"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if rel != "libs" {
+			t.Errorf("rel = %q, want libs", rel)
+		}
+	})
+
+	t.Run("a member without a config is a clear error", func(t *testing.T) {
+		if _, _, _, err := lspWorkspaceTarget(ws, filepath.Join(wsDir, "tools")); err == nil ||
+			!strings.Contains(err.Error(), config.DefaultName) {
+			t.Errorf("want a 'no depdog.yaml' error, got %v", err)
+		}
+	})
+
+	t.Run("the workspace root owns no member", func(t *testing.T) {
+		if _, _, _, err := lspWorkspaceTarget(ws, wsDir); err == nil ||
+			!strings.Contains(err.Error(), "no workspace member owns") {
+			t.Errorf("want a 'no owner' error, got %v", err)
+		}
+	})
 }
 
 // TestLSPRealWiring drives `depdog lsp` end to end — real evaluateModule, real

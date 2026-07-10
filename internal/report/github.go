@@ -14,26 +14,50 @@ import (
 // line closes the run log. Output is deterministic given a sorted Result.
 func GitHub(w io.Writer, res *core.Result) error {
 	var b strings.Builder
+	githubAnnotations(&b, res, "")
+	fmt.Fprintf(&b, "depdog check — %s · %s · %s\n",
+		res.ModulePath, plural(len(res.Violations), "violation"), plural(res.Stats.Packages, "package"))
+	_, err := io.WriteString(w, b.String())
+	return err
+}
+
+// GitHubWorkspace emits annotations for every analyzed member, each file path
+// prefixed with the member's workspace-relative directory so annotations land
+// on the right file from the repo root, then one aggregate summary line.
+func GitHubWorkspace(w io.Writer, mods []Module) error {
+	var b strings.Builder
+	var totalV, totalP int
+	for _, m := range mods {
+		githubAnnotations(&b, m.Result, m.Rel)
+		totalV += len(m.Result.Violations)
+		totalP += m.Result.Stats.Packages
+	}
+	fmt.Fprintf(&b, "depdog check — workspace · %s · %s across %s\n",
+		plural(totalV, "violation"), plural(totalP, "package"), plural(len(mods), "module"))
+	_, err := io.WriteString(w, b.String())
+	return err
+}
+
+// githubAnnotations writes the ::error::/::warning:: lines for one result.
+// prefix (a member's workspace-relative dir, "" for a single module) is joined
+// onto each file location.
+func githubAnnotations(b *strings.Builder, res *core.Result, prefix string) {
 	for _, v := range res.Violations {
 		msg := fmt.Sprintf("%s imports %s (%s)", v.FromComponent, v.ImportPath, v.Rule)
 		if v.TestOnly {
 			msg += " [test]"
 		}
 		if len(v.Positions) == 0 {
-			fmt.Fprintf(&b, "::error::%s\n", ghData(msg))
+			fmt.Fprintf(b, "::error::%s\n", ghData(msg))
 			continue
 		}
 		for _, p := range v.Positions {
-			fmt.Fprintf(&b, "::error file=%s,line=%d::%s\n", ghProp(p.File), p.Line, ghData(msg))
+			fmt.Fprintf(b, "::error file=%s,line=%d::%s\n", ghProp(joinPrefix(prefix, p.File)), p.Line, ghData(msg))
 		}
 	}
 	for _, wr := range res.Warnings {
-		fmt.Fprintf(&b, "::warning::%s is not covered by any component (%s)\n", ghData(wr.Package), ghData(wr.RelDir))
+		fmt.Fprintf(b, "::warning::%s is not covered by any component (%s)\n", ghData(wr.Package), ghData(joinPrefix(prefix, wr.RelDir)))
 	}
-	fmt.Fprintf(&b, "depdog check — %s · %s · %s\n",
-		res.ModulePath, plural(len(res.Violations), "violation"), plural(res.Stats.Packages, "package"))
-	_, err := io.WriteString(w, b.String())
-	return err
 }
 
 // ghData escapes a workflow-command message body: only %, CR and LF are

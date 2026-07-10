@@ -9,6 +9,7 @@ import (
 	"io"
 	"log"
 	"net/url"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -25,12 +26,20 @@ type Check struct {
 	Graph  *core.Graph
 	Rules  *core.RuleSet
 	Root   string
+	// Rel is the checked module's directory relative to the client's announced
+	// workspace root (slash-separated), or "" for a single-module project. In a
+	// Go workspace the server checks the member owning the triggering file, so
+	// Rel ("app") rebases the member's Positions onto the client's root.
+	Rel string
 }
 
-// CheckFunc runs one architecture check and returns its snapshot. The server
-// takes it injected so this package never learns about config discovery,
-// language adapters or cobra — internal/cli owns that wiring.
-type CheckFunc func(ctx context.Context) (*Check, error)
+// CheckFunc runs one architecture check and returns its snapshot. path is the
+// filesystem path of the file that triggered this round (a saved or watched
+// file), or "" when none is known (the initialize round); a workspace check
+// uses it to resolve the file's owning member. The server takes CheckFunc
+// injected so this package never learns about config discovery, language
+// adapters or cobra — internal/cli owns that wiring.
+type CheckFunc func(ctx context.Context, path string) (*Check, error)
 
 // Server is a stdio LSP server that runs the check once the client finishes
 // initializing and again on every textDocument/didSave, publishing every
@@ -257,7 +266,10 @@ func (s *Server) Serve(ctx context.Context, in io.Reader, out, logw io.Writer) e
 				watchPending = true
 				logger.Printf("asked the client to watch **/%s", s.configBase)
 			}
-			next, snap, err := s.publish(ctx, out, logger, clientRoot, lastPublished)
+			// No file has been named yet: resolve from the process working
+			// directory (in a workspace this only pins a member once the client
+			// saves or watches a file inside one).
+			next, snap, err := s.publish(ctx, out, logger, clientRoot, "", lastPublished)
 			if err != nil {
 				return err
 			}
@@ -272,8 +284,13 @@ func (s *Server) Serve(ctx context.Context, in io.Reader, out, logw io.Writer) e
 			// the whole project from disk anyway. Failure semantics are
 			// identical to didSave — publish keeps the previous diagnostics,
 			// stale set and hover snapshot on a failed check.
-			logger.Printf("didChangeWatchedFiles %s — re-checking", strings.Join(changedURIs(msg.Params), " "))
-			next, snap, err := s.publish(ctx, out, logger, clientRoot, lastPublished)
+			changed := changedURIs(msg.Params)
+			logger.Printf("didChangeWatchedFiles %s — re-checking", strings.Join(changed, " "))
+			var trigger string
+			if len(changed) > 0 {
+				trigger = pathFromURI(changed[0])
+			}
+			next, snap, err := s.publish(ctx, out, logger, clientRoot, trigger, lastPublished)
 			if err != nil {
 				return err
 			}
@@ -284,8 +301,9 @@ func (s *Server) Serve(ctx context.Context, in io.Reader, out, logw io.Writer) e
 		case "textDocument/didSave":
 			// The saved URI is informational only: the check re-reads the
 			// whole project from disk, so one save re-checks everything.
-			logger.Printf("didSave %s — re-checking", savedURI(msg.Params))
-			next, snap, err := s.publish(ctx, out, logger, clientRoot, lastPublished)
+			saved := savedURI(msg.Params)
+			logger.Printf("didSave %s — re-checking", saved)
+			next, snap, err := s.publish(ctx, out, logger, clientRoot, pathFromURI(saved), lastPublished)
 			if err != nil {
 				return err
 			}
@@ -321,15 +339,18 @@ func (s *Server) Serve(ctx context.Context, in io.Reader, out, logw io.Writer) e
 // snapshot stay live, the session stays alive, and the next successful round
 // still clears whatever became stale. The returned error is a protocol write
 // failure only.
-func (s *Server) publish(ctx context.Context, out io.Writer, logger *log.Logger, clientRoot string, prev map[string]struct{}) (map[string]struct{}, *hoverState, error) {
-	chk, err := s.check(ctx)
+func (s *Server) publish(ctx context.Context, out io.Writer, logger *log.Logger, clientRoot, triggerPath string, prev map[string]struct{}) (map[string]struct{}, *hoverState, error) {
+	chk, err := s.check(ctx, triggerPath)
 	if err != nil {
 		logger.Printf("check failed, no diagnostics published: %v", err)
 		return prev, nil, nil
 	}
 	root := chk.Root
 	if clientRoot != "" {
-		root = clientRoot
+		// The client's announced root wins for URI construction; a workspace
+		// member rebases onto it via Rel, so its files resolve under the root
+		// the editor opened (Rel is "" for a single-module project).
+		root = filepath.Join(clientRoot, filepath.FromSlash(chk.Rel))
 	}
 
 	var configURI string
@@ -387,6 +408,21 @@ func savedURI(params json.RawMessage) string {
 		return ""
 	}
 	return p.TextDocument.URI
+}
+
+// pathFromURI turns a file:// URI into a local filesystem path, or "" when the
+// URI is empty, unparseable, or not a file URI. The server uses it to learn
+// which file a didSave/didChangeWatchedFiles round is about, so the check can
+// resolve that file's workspace member.
+func pathFromURI(uri string) string {
+	if uri == "" {
+		return ""
+	}
+	u, err := url.Parse(uri)
+	if err != nil || u.Scheme != "file" {
+		return ""
+	}
+	return u.Path
 }
 
 // watchDynamicRegistration reports whether the initialize params announce

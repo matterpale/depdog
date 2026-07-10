@@ -12,8 +12,11 @@ package lang
 //  3. Add a self-check rule for the new package to depdog.yaml, and ship the
 //     usual tests + fixtures.
 //
-// internal/core, internal/config, and the reporters never change: they operate
-// on the language-neutral core.Graph the Loader produces.
+// Adding a language never changes internal/core or the reporters: they operate
+// on the language-neutral core.Graph the Loader produces. internal/config is
+// likewise neutral for rules; its one language-aware corner is Go-workspace
+// discovery (config.FindWorkspace), which the CLI fans out over — see
+// docs/go-workspaces.md.
 type Adapter struct {
 	// Name is the language's identifier — the --lang value and the label used in
 	// errors, e.g. "go" or "ts".
