@@ -21,5 +21,11 @@ components:
 
 default: deny
 
+boundaries:
+  # Language adapters are mutually isolated peers: no adapter may ever import
+  # another, even if a future allow-list edit would otherwise permit it.
+  # Not sealed: cli legitimately imports every adapter to register it.
+  adapters: [golang, typescript, python, ruby, rust, java, kotlin]
+
 options:
   test_files: hybrid
