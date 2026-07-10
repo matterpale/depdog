@@ -70,10 +70,66 @@ func stubResult() *core.Result {
 	}
 }
 
+// stubResultOnlyA is stubResult after the src/b.go violation was fixed: only
+// the src/a.go violation remains, so b.go must be cleared on the next round.
+func stubResultOnlyA() *core.Result {
+	return &core.Result{
+		ModulePath: "example.com/stub",
+		Violations: []core.Violation{
+			{
+				FromPackage:   "example.com/stub/domain",
+				FromComponent: "domain",
+				ImportPath:    "example.com/stub/util",
+				Target:        "util",
+				Rule:          "domain: allow [std]",
+				Positions:     []core.Position{{File: "src/a.go", Line: 9}},
+			},
+		},
+	}
+}
+
 func stubCheck(res *core.Result, root string) CheckFunc {
 	return func(ctx context.Context) (*core.Result, string, error) {
 		return res, root, nil
 	}
+}
+
+// checkStep is one planned outcome of a seqCheck CheckFunc.
+type checkStep struct {
+	res *core.Result
+	err error
+}
+
+// seqCheck returns a CheckFunc that replays the given outcomes in call order,
+// failing the test if it is invoked more often than planned.
+func seqCheck(t *testing.T, root string, steps []checkStep) CheckFunc {
+	call := 0
+	return func(ctx context.Context) (*core.Result, string, error) {
+		if call >= len(steps) {
+			t.Fatalf("CheckFunc call %d, but only %d outcomes were planned", call+1, len(steps))
+		}
+		s := steps[call]
+		call++
+		return s.res, root, s.err
+	}
+}
+
+// publishedParams returns every publishDiagnostics notification in stream
+// order, both decoded and as raw params bytes for wire-level assertions.
+func publishedParams(t *testing.T, msgs []*message) (decoded []diagsParams, raw []string) {
+	t.Helper()
+	for _, m := range msgs {
+		if m.Method != "textDocument/publishDiagnostics" {
+			continue
+		}
+		var p diagsParams
+		if err := json.Unmarshal(m.Params, &p); err != nil {
+			t.Fatalf("publishDiagnostics params: %v", err)
+		}
+		decoded = append(decoded, p)
+		raw = append(raw, string(m.Params))
+	}
+	return decoded, raw
 }
 
 type diagsParams struct {
@@ -135,8 +191,34 @@ func TestSessionPublishesDiagnostics(t *testing.T) {
 	if initRes.ServerInfo.Version != "1.2.3" {
 		t.Errorf("serverInfo.version = %q, want 1.2.3", initRes.ServerInfo.Version)
 	}
-	if len(initRes.Capabilities) == 0 {
-		t.Error("initialize result has no capabilities")
+	var caps struct {
+		TextDocumentSync struct {
+			OpenClose bool            `json:"openClose"`
+			Change    int             `json:"change"`
+			Save      json.RawMessage `json:"save"`
+		} `json:"textDocumentSync"`
+	}
+	if err := json.Unmarshal(initRes.Capabilities, &caps); err != nil {
+		t.Fatalf("capabilities: %v", err)
+	}
+	if !caps.TextDocumentSync.OpenClose {
+		t.Error("textDocumentSync.openClose = false, want true (clients gate didSave delivery on it)")
+	}
+	if caps.TextDocumentSync.Change != 0 {
+		t.Errorf("textDocumentSync.change = %d, want 0 (document contents are never tracked)",
+			caps.TextDocumentSync.Change)
+	}
+	if len(caps.TextDocumentSync.Save) == 0 {
+		t.Fatal("textDocumentSync.save is absent — clients will not deliver didSave")
+	}
+	var save struct {
+		IncludeText bool `json:"includeText"`
+	}
+	if err := json.Unmarshal(caps.TextDocumentSync.Save, &save); err != nil {
+		t.Fatalf("textDocumentSync.save: %v", err)
+	}
+	if save.IncludeText {
+		t.Error("save.includeText = true, want false (saved text is ignored; the check re-reads from disk)")
 	}
 
 	// 2) publishDiagnostics notifications, sorted by URI, diagnostics by line.
@@ -325,5 +407,167 @@ func TestCheckErrorIsLoggedNotPublished(t *testing.T) {
 	}
 	if !strings.Contains(logs.String(), "boom") {
 		t.Errorf("stderr log %q does not carry the check error", logs.String())
+	}
+}
+
+func TestDidSaveRechecksAndClearsStale(t *testing.T) {
+	in := clientInput(
+		`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}`,
+		`{"jsonrpc":"2.0","method":"initialized","params":{}}`,
+		`{"jsonrpc":"2.0","method":"textDocument/didSave","params":{"textDocument":{"uri":"file:///work/proj/src/b.go"}}}`,
+		`{"jsonrpc":"2.0","id":2,"method":"shutdown"}`,
+		`{"jsonrpc":"2.0","method":"exit"}`,
+	)
+	var out, logs bytes.Buffer
+	srv := NewServer(seqCheck(t, "/work/proj", []checkStep{
+		{res: stubResult()},      // round 1: violations in src/a.go and src/b.go
+		{res: stubResultOnlyA()}, // round 2 (didSave): src/b.go fixed
+	}), "test")
+	if err := srv.Serve(context.Background(), in, &out, &logs); err != nil {
+		t.Fatalf("Serve: %v", err)
+	}
+
+	decoded, raw := publishedParams(t, decodeStream(t, out.Bytes()))
+	wantURIs := []string{
+		"file:///work/proj/src/a.go", // round 1
+		"file:///work/proj/src/b.go",
+		"file:///work/proj/src/a.go", // round 2: fresh + cleared, sorted by URI
+		"file:///work/proj/src/b.go",
+	}
+	if len(decoded) != len(wantURIs) {
+		t.Fatalf("got %d publishes, want %d (2 per round)", len(decoded), len(wantURIs))
+	}
+	for i, want := range wantURIs {
+		if decoded[i].URI != want {
+			t.Errorf("publish %d uri = %q, want %q", i, decoded[i].URI, want)
+		}
+	}
+	if len(decoded[2].Diagnostics) != 1 {
+		t.Errorf("round 2 src/a.go has %d diagnostics, want 1 (still dirty)", len(decoded[2].Diagnostics))
+	}
+	if len(decoded[3].Diagnostics) != 0 {
+		t.Errorf("round 2 src/b.go has %d diagnostics, want 0 (cleared)", len(decoded[3].Diagnostics))
+	}
+	if !strings.Contains(raw[3], `"diagnostics":[]`) {
+		t.Errorf("cleared publish params = %s, want a literal \"diagnostics\":[] (never null)", raw[3])
+	}
+}
+
+func TestDidSaveCheckFailureKeepsStaleSet(t *testing.T) {
+	in := clientInput(
+		`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}`,
+		`{"jsonrpc":"2.0","method":"initialized","params":{}}`,
+		`{"jsonrpc":"2.0","method":"textDocument/didSave","params":{"textDocument":{"uri":"file:///work/proj/depdog.yaml"}}}`,
+		`{"jsonrpc":"2.0","method":"textDocument/didSave","params":{"textDocument":{"uri":"file:///work/proj/src/b.go"}}}`,
+		`{"jsonrpc":"2.0","id":2,"method":"shutdown"}`,
+		`{"jsonrpc":"2.0","method":"exit"}`,
+	)
+	var out, logs bytes.Buffer
+	srv := NewServer(seqCheck(t, "/work/proj", []checkStep{
+		{res: stubResult()},                             // round 1: a.go and b.go dirty
+		{err: errors.New("depdog.yaml: mid-edit boom")}, // round 2: transient failure
+		{res: stubResultOnlyA()},                        // round 3: b.go fixed
+	}), "test")
+	if err := srv.Serve(context.Background(), in, &out, &logs); err != nil {
+		t.Fatalf("Serve: %v — a failing didSave check must not kill the session", err)
+	}
+
+	decoded, raw := publishedParams(t, decodeStream(t, out.Bytes()))
+	// Round 1 publishes both files, the failed round publishes nothing, and the
+	// stale set survived the failure: round 3 still clears src/b.go.
+	wantURIs := []string{
+		"file:///work/proj/src/a.go",
+		"file:///work/proj/src/b.go",
+		"file:///work/proj/src/a.go",
+		"file:///work/proj/src/b.go",
+	}
+	if len(decoded) != len(wantURIs) {
+		t.Fatalf("got %d publishes, want %d (failed round must publish nothing)", len(decoded), len(wantURIs))
+	}
+	for i, want := range wantURIs {
+		if decoded[i].URI != want {
+			t.Errorf("publish %d uri = %q, want %q", i, decoded[i].URI, want)
+		}
+	}
+	if len(decoded[3].Diagnostics) != 0 || !strings.Contains(raw[3], `"diagnostics":[]`) {
+		t.Errorf("src/b.go was not cleared after the failed round: params = %s", raw[3])
+	}
+	if !strings.Contains(logs.String(), "boom") {
+		t.Errorf("stderr log %q does not carry the didSave check error", logs.String())
+	}
+}
+
+func TestFixingAllViolationsClearsEverythingThenGoesQuiet(t *testing.T) {
+	in := clientInput(
+		`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}`,
+		`{"jsonrpc":"2.0","method":"initialized","params":{}}`,
+		`{"jsonrpc":"2.0","method":"textDocument/didSave","params":{"textDocument":{"uri":"file:///work/proj/src/a.go"}}}`,
+		`{"jsonrpc":"2.0","method":"textDocument/didSave","params":{"textDocument":{"uri":"file:///work/proj/src/a.go"}}}`,
+		`{"jsonrpc":"2.0","id":2,"method":"shutdown"}`,
+		`{"jsonrpc":"2.0","method":"exit"}`,
+	)
+	var out, logs bytes.Buffer
+	srv := NewServer(seqCheck(t, "/work/proj", []checkStep{
+		{res: stubResult()},   // round 1: a.go and b.go dirty
+		{res: &core.Result{}}, // round 2: everything fixed
+		{res: &core.Result{}}, // round 3: still clean
+	}), "test")
+	if err := srv.Serve(context.Background(), in, &out, &logs); err != nil {
+		t.Fatalf("Serve: %v", err)
+	}
+
+	decoded, raw := publishedParams(t, decodeStream(t, out.Bytes()))
+	// Round 2 clears every previously dirty URI (sorted); round 3, with both
+	// rounds clean, publishes nothing at all.
+	wantURIs := []string{
+		"file:///work/proj/src/a.go",
+		"file:///work/proj/src/b.go",
+		"file:///work/proj/src/a.go",
+		"file:///work/proj/src/b.go",
+	}
+	if len(decoded) != len(wantURIs) {
+		t.Fatalf("got %d publishes, want %d (clean-in-both-rounds files must stay silent)",
+			len(decoded), len(wantURIs))
+	}
+	for i, want := range wantURIs {
+		if decoded[i].URI != want {
+			t.Errorf("publish %d uri = %q, want %q", i, decoded[i].URI, want)
+		}
+	}
+	for i := 2; i < 4; i++ {
+		if len(decoded[i].Diagnostics) != 0 {
+			t.Errorf("clearing publish %d has %d diagnostics, want 0", i, len(decoded[i].Diagnostics))
+		}
+		if !strings.Contains(raw[i], `"diagnostics":[]`) {
+			t.Errorf("clearing publish %d params = %s, want a literal \"diagnostics\":[] (never null)", i, raw[i])
+		}
+	}
+}
+
+func TestDocumentSyncNotificationsAreIgnored(t *testing.T) {
+	in := clientInput(
+		`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}`,
+		`{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":{"uri":"file:///w/a.go","languageId":"go","version":1,"text":""}}}`,
+		`{"jsonrpc":"2.0","method":"textDocument/didChange","params":{"textDocument":{"uri":"file:///w/a.go","version":2},"contentChanges":[]}}`,
+		`{"jsonrpc":"2.0","method":"textDocument/didClose","params":{"textDocument":{"uri":"file:///w/a.go"}}}`,
+		`{"jsonrpc":"2.0","id":2,"method":"shutdown"}`,
+		`{"jsonrpc":"2.0","method":"exit"}`,
+	)
+	var out, logs bytes.Buffer
+	checked := 0
+	check := func(ctx context.Context) (*core.Result, string, error) {
+		checked++
+		return &core.Result{}, "/r", nil
+	}
+	srv := NewServer(check, "test")
+	if err := srv.Serve(context.Background(), in, &out, &logs); err != nil {
+		t.Fatalf("Serve: %v — didOpen/didChange/didClose must be ignored without error", err)
+	}
+	if checked != 0 {
+		t.Errorf("CheckFunc ran %d times — document sync notifications must not trigger a check", checked)
+	}
+	msgs := decodeStream(t, out.Bytes())
+	if len(msgs) != 2 {
+		t.Errorf("got %d server messages, want 2 (init, shutdown) — sync notifications must not be answered", len(msgs))
 	}
 }
