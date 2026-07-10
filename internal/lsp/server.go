@@ -14,18 +14,29 @@ import (
 	"github.com/matterpale/depdog/internal/core"
 )
 
-// CheckFunc runs one architecture check and returns the result plus the
-// absolute project root its Positions are relative to. The server takes it
-// injected so this package never learns about config discovery, language
-// adapters or cobra — internal/cli owns that wiring.
-type CheckFunc func(ctx context.Context) (*core.Result, string, error)
+// Check is one architecture-check snapshot: the evaluation result plus the
+// graph and rule set it was computed from, and the absolute project root its
+// Positions are relative to. Diagnostics and hover both answer from the same
+// snapshot, so they can never describe different check rounds.
+type Check struct {
+	Result *core.Result
+	Graph  *core.Graph
+	Rules  *core.RuleSet
+	Root   string
+}
+
+// CheckFunc runs one architecture check and returns its snapshot. The server
+// takes it injected so this package never learns about config discovery,
+// language adapters or cobra — internal/cli owns that wiring.
+type CheckFunc func(ctx context.Context) (*Check, error)
 
 // Server is a stdio LSP server that runs the check once the client finishes
 // initializing and again on every textDocument/didSave, publishing every
 // violation as a textDocument/publishDiagnostics notification. Files that had
 // diagnostics in the previous round and are clean now are cleared with an
-// empty diagnostics array (lsp-02, see docs/lsp.md). Hover explain is the
-// next increment (lsp-03).
+// empty diagnostics array (lsp-02, see docs/lsp.md). textDocument/hover on an
+// import line renders the `depdog explain` verdict for that edge (lsp-03,
+// hover.go).
 type Server struct {
 	check   CheckFunc
 	version string // stamped into serverInfo.version (cli.Version)
@@ -47,6 +58,7 @@ type initializeResult struct {
 
 type serverCapabilities struct {
 	TextDocumentSync textDocumentSyncOptions `json:"textDocumentSync"`
+	HoverProvider    bool                    `json:"hoverProvider"`
 }
 
 type textDocumentSyncOptions struct {
@@ -86,6 +98,11 @@ func (s *Server) Serve(ctx context.Context, in io.Reader, out, logw io.Writer) e
 		// went clean. Deliberately Serve-local: the loop is single-goroutine
 		// (no lock needed) and the state must not leak across sessions.
 		lastPublished map[string]struct{}
+		// hover is the last successful round's snapshot plus its file→edge
+		// index; textDocument/hover answers from it. nil until the first
+		// successful check; a failed re-check keeps the previous value, the
+		// same way stale diagnostics stay visible.
+		hover *hoverState
 	)
 	for {
 		msg, err := readMessage(r)
@@ -118,9 +135,15 @@ func (s *Server) Serve(ctx context.Context, in io.Reader, out, logw io.Writer) e
 							Change:    0,
 							Save:      saveOptions{IncludeText: false},
 						},
+						HoverProvider: true,
 					},
 					ServerInfo: serverInfo{Name: "depdog", Version: s.version},
 				})
+				if err != nil {
+					return err
+				}
+			case "textDocument/hover":
+				resp, err = s.hoverResponse(logger, msg, hover)
 				if err != nil {
 					return err
 				}
@@ -140,20 +163,26 @@ func (s *Server) Serve(ctx context.Context, in io.Reader, out, logw io.Writer) e
 		// Notification: never answered.
 		switch msg.Method {
 		case "initialized":
-			next, err := s.publish(ctx, out, logger, clientRoot, lastPublished)
+			next, snap, err := s.publish(ctx, out, logger, clientRoot, lastPublished)
 			if err != nil {
 				return err
 			}
 			lastPublished = next
+			if snap != nil {
+				hover = snap
+			}
 		case "textDocument/didSave":
 			// The saved URI is informational only: the check re-reads the
 			// whole project from disk, so one save re-checks everything.
 			logger.Printf("didSave %s — re-checking", savedURI(msg.Params))
-			next, err := s.publish(ctx, out, logger, clientRoot, lastPublished)
+			next, snap, err := s.publish(ctx, out, logger, clientRoot, lastPublished)
 			if err != nil {
 				return err
 			}
 			lastPublished = next
+			if snap != nil {
+				hover = snap
+			}
 		case "exit":
 			if shutdown {
 				return nil
@@ -174,23 +203,26 @@ func (s *Server) Serve(ctx context.Context, in io.Reader, out, logw io.Writer) e
 // on an explicit empty publish). All notifications of a round are emitted in
 // one sorted-by-URI pass over the union of current and cleared URIs, so
 // session transcripts stay deterministic. It returns the URI set of this
-// round's non-empty publishes, to be passed back in as the next prev.
+// round's non-empty publishes (to be passed back in as the next prev) plus
+// the round's hover snapshot: the Check and a file→edge index over its graph.
 //
 // A failing check is logged to stderr, publishes nothing and returns prev
-// unchanged — existing diagnostics stay visible, the session stays alive, and
-// the next successful round still clears whatever became stale. The returned
-// error is a protocol write failure only.
-func (s *Server) publish(ctx context.Context, out io.Writer, logger *log.Logger, clientRoot string, prev map[string]struct{}) (map[string]struct{}, error) {
-	res, root, err := s.check(ctx)
+// unchanged with a nil snapshot — existing diagnostics and the previous hover
+// snapshot stay live, the session stays alive, and the next successful round
+// still clears whatever became stale. The returned error is a protocol write
+// failure only.
+func (s *Server) publish(ctx context.Context, out io.Writer, logger *log.Logger, clientRoot string, prev map[string]struct{}) (map[string]struct{}, *hoverState, error) {
+	chk, err := s.check(ctx)
 	if err != nil {
 		logger.Printf("check failed, no diagnostics published: %v", err)
-		return prev, nil
+		return prev, nil, nil
 	}
+	root := chk.Root
 	if clientRoot != "" {
 		root = clientRoot
 	}
 
-	params := diagnosticsFor(res, root)
+	params := diagnosticsFor(chk.Result, root)
 	byURI := make(map[string]publishDiagnosticsParams, len(params))
 	current := make(map[string]struct{}, len(params))
 	uris := make([]string, 0, len(params)+len(prev))
@@ -217,16 +249,16 @@ func (s *Server) publish(ctx context.Context, out io.Writer, logger *log.Logger,
 		}
 		n, err := notification("textDocument/publishDiagnostics", p)
 		if err != nil {
-			return prev, err
+			return prev, nil, err
 		}
 		if err := writeMessage(out, n); err != nil {
-			return prev, err
+			return prev, nil, err
 		}
 		total += len(p.Diagnostics)
 	}
 	logger.Printf("published %d diagnostic(s) across %d file(s), cleared %d file(s)",
 		total, len(params), cleared)
-	return current, nil
+	return current, &hoverState{check: chk, root: root, index: buildEdgeIndex(chk.Graph, chk.Rules)}, nil
 }
 
 // savedURI extracts textDocument.uri from didSave params for the log line;

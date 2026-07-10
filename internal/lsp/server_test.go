@@ -88,15 +88,18 @@ func stubResultOnlyA() *core.Result {
 	}
 }
 
+// stubCheck returns a CheckFunc serving a fixed Result-only snapshot — enough
+// for diagnostics rounds; hover tests use fuller snapshots from hover_test.go.
 func stubCheck(res *core.Result, root string) CheckFunc {
-	return func(ctx context.Context) (*core.Result, string, error) {
-		return res, root, nil
+	return func(ctx context.Context) (*Check, error) {
+		return &Check{Result: res, Root: root}, nil
 	}
 }
 
-// checkStep is one planned outcome of a seqCheck CheckFunc.
+// checkStep is one planned outcome of a seqCheck CheckFunc: a snapshot (whose
+// Root seqCheck fills in) or an error.
 type checkStep struct {
-	res *core.Result
+	chk *Check
 	err error
 }
 
@@ -104,13 +107,18 @@ type checkStep struct {
 // failing the test if it is invoked more often than planned.
 func seqCheck(t *testing.T, root string, steps []checkStep) CheckFunc {
 	call := 0
-	return func(ctx context.Context) (*core.Result, string, error) {
+	return func(ctx context.Context) (*Check, error) {
 		if call >= len(steps) {
 			t.Fatalf("CheckFunc call %d, but only %d outcomes were planned", call+1, len(steps))
 		}
 		s := steps[call]
 		call++
-		return s.res, root, s.err
+		if s.err != nil {
+			return nil, s.err
+		}
+		chk := *s.chk
+		chk.Root = root
+		return &chk, nil
 	}
 }
 
@@ -197,9 +205,13 @@ func TestSessionPublishesDiagnostics(t *testing.T) {
 			Change    int             `json:"change"`
 			Save      json.RawMessage `json:"save"`
 		} `json:"textDocumentSync"`
+		HoverProvider bool `json:"hoverProvider"`
 	}
 	if err := json.Unmarshal(initRes.Capabilities, &caps); err != nil {
 		t.Fatalf("capabilities: %v", err)
+	}
+	if !caps.HoverProvider {
+		t.Error("hoverProvider = false, want true (clients gate textDocument/hover on it)")
 	}
 	if !caps.TextDocumentSync.OpenClose {
 		t.Error("textDocumentSync.openClose = false, want true (clients gate didSave delivery on it)")
@@ -332,9 +344,9 @@ func TestUnknownMethodAndNotification(t *testing.T) {
 	)
 	var out, logs bytes.Buffer
 	checked := 0
-	check := func(ctx context.Context) (*core.Result, string, error) {
+	check := func(ctx context.Context) (*Check, error) {
 		checked++
-		return &core.Result{}, "/r", nil
+		return &Check{Result: &core.Result{}, Root: "/r"}, nil
 	}
 	srv := NewServer(check, "test")
 	if err := srv.Serve(context.Background(), in, &out, &logs); err != nil {
@@ -393,8 +405,8 @@ func TestCheckErrorIsLoggedNotPublished(t *testing.T) {
 		`{"jsonrpc":"2.0","method":"exit"}`,
 	)
 	var out, logs bytes.Buffer
-	check := func(ctx context.Context) (*core.Result, string, error) {
-		return nil, "", errors.New("depdog.yaml: boom")
+	check := func(ctx context.Context) (*Check, error) {
+		return nil, errors.New("depdog.yaml: boom")
 	}
 	srv := NewServer(check, "test")
 	if err := srv.Serve(context.Background(), in, &out, &logs); err != nil {
@@ -420,8 +432,8 @@ func TestDidSaveRechecksAndClearsStale(t *testing.T) {
 	)
 	var out, logs bytes.Buffer
 	srv := NewServer(seqCheck(t, "/work/proj", []checkStep{
-		{res: stubResult()},      // round 1: violations in src/a.go and src/b.go
-		{res: stubResultOnlyA()}, // round 2 (didSave): src/b.go fixed
+		{chk: &Check{Result: stubResult()}},      // round 1: violations in src/a.go and src/b.go
+		{chk: &Check{Result: stubResultOnlyA()}}, // round 2 (didSave): src/b.go fixed
 	}), "test")
 	if err := srv.Serve(context.Background(), in, &out, &logs); err != nil {
 		t.Fatalf("Serve: %v", err)
@@ -464,9 +476,9 @@ func TestDidSaveCheckFailureKeepsStaleSet(t *testing.T) {
 	)
 	var out, logs bytes.Buffer
 	srv := NewServer(seqCheck(t, "/work/proj", []checkStep{
-		{res: stubResult()},                             // round 1: a.go and b.go dirty
+		{chk: &Check{Result: stubResult()}},             // round 1: a.go and b.go dirty
 		{err: errors.New("depdog.yaml: mid-edit boom")}, // round 2: transient failure
-		{res: stubResultOnlyA()},                        // round 3: b.go fixed
+		{chk: &Check{Result: stubResultOnlyA()}},        // round 3: b.go fixed
 	}), "test")
 	if err := srv.Serve(context.Background(), in, &out, &logs); err != nil {
 		t.Fatalf("Serve: %v — a failing didSave check must not kill the session", err)
@@ -508,9 +520,9 @@ func TestFixingAllViolationsClearsEverythingThenGoesQuiet(t *testing.T) {
 	)
 	var out, logs bytes.Buffer
 	srv := NewServer(seqCheck(t, "/work/proj", []checkStep{
-		{res: stubResult()},   // round 1: a.go and b.go dirty
-		{res: &core.Result{}}, // round 2: everything fixed
-		{res: &core.Result{}}, // round 3: still clean
+		{chk: &Check{Result: stubResult()}},   // round 1: a.go and b.go dirty
+		{chk: &Check{Result: &core.Result{}}}, // round 2: everything fixed
+		{chk: &Check{Result: &core.Result{}}}, // round 3: still clean
 	}), "test")
 	if err := srv.Serve(context.Background(), in, &out, &logs); err != nil {
 		t.Fatalf("Serve: %v", err)
@@ -555,9 +567,9 @@ func TestDocumentSyncNotificationsAreIgnored(t *testing.T) {
 	)
 	var out, logs bytes.Buffer
 	checked := 0
-	check := func(ctx context.Context) (*core.Result, string, error) {
+	check := func(ctx context.Context) (*Check, error) {
 		checked++
-		return &core.Result{}, "/r", nil
+		return &Check{Result: &core.Result{}, Root: "/r"}, nil
 	}
 	srv := NewServer(check, "test")
 	if err := srv.Serve(context.Background(), in, &out, &logs); err != nil {
