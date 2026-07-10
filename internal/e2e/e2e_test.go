@@ -649,17 +649,22 @@ func TestCheckWorkspaceJSON(t *testing.T) {
 }
 
 func TestCheckWorkspaceModuleSelector(t *testing.T) {
-	// --module narrows the run to a single member (by directory here); the clean
-	// libs member passes, and app is not checked.
+	// --module narrows the run to a single member (by directory here). With one
+	// analyzed member and nothing skipped, output collapses to the classic
+	// single-module form (no workspace aggregate); the clean libs member passes
+	// and app is not checked.
 	out, stderr, exit := runWS(t, fixture("workspace"), "check", "--module", "libs")
 	if exit != 0 {
 		t.Fatalf("exit %d, want 0\nstdout:\n%s\nstderr:\n%s", exit, out, stderr)
 	}
-	if !strings.Contains(out, "example.test/libs") || strings.Contains(out, "example.test/app") {
-		t.Errorf("--module libs should check only libs:\n%s", out)
+	if !strings.HasPrefix(out, "depdog check — example.test/libs") {
+		t.Errorf("--module libs should render classic single-module output:\n%s", out)
 	}
-	if !strings.Contains(out, "1 checked module") {
-		t.Errorf("expected a one-module aggregate footer:\n%s", out)
+	if strings.Contains(out, "checked module") {
+		t.Errorf("a single analyzed member must not produce the workspace aggregate:\n%s", out)
+	}
+	if strings.Contains(out, "example.test/app") {
+		t.Errorf("--module libs should not check app:\n%s", out)
 	}
 }
 

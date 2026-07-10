@@ -179,19 +179,24 @@ func relSlash(base, dir string) string {
 }
 
 // reportCheck renders a resolved check run and returns the total violation
-// count (for the exit code). A single-module run renders byte-identically to
-// the pre-workspace output; a workspace run uses the aggregate reporters.
+// count (for the exit code). A run with a single analyzed member and nothing
+// skipped renders byte-identically to the pre-workspace single-module output —
+// whether it is a plain module, `--module <one>`, or a one-member workspace.
+// The aggregate reporters (and the JSON envelope) are reserved for runs that
+// genuinely span members: more than one analyzed member, or a skipped-member
+// advisory to report.
 func reportCheck(cmd *cobra.Command, run *checkRun, format, color string, elapsed time.Duration) (int, error) {
 	out := cmd.OutOrStdout()
-	if run.Workspace == nil {
-		ev := run.Members[0].Eval
-		if err := renderSingle(out, format, ev.Result, ev.Rules, elapsed, color); err != nil {
+	mods, skipped := run.split()
+
+	if len(mods) == 1 && len(skipped) == 0 {
+		m := mods[0]
+		if err := renderSingle(out, format, m.Result, m.Rules, elapsed, color); err != nil {
 			return 0, err
 		}
-		return len(ev.Result.Violations), nil
+		return len(m.Result.Violations), nil
 	}
 
-	mods, skipped := run.split()
 	total := 0
 	for _, m := range mods {
 		total += len(m.Result.Violations)
@@ -200,7 +205,7 @@ func reportCheck(cmd *cobra.Command, run *checkRun, format, color string, elapse
 	case "text":
 		return total, report.TextWorkspace(out, mods, skipped, elapsed, color)
 	case "json":
-		return total, report.JSONWorkspace(out, mods, skipped, elapsed)
+		return total, report.JSONWorkspace(out, workspaceName(run), mods, skipped, elapsed)
 	case "github":
 		return total, report.GitHubWorkspace(out, mods)
 	case "sarif":
@@ -208,6 +213,16 @@ func reportCheck(cmd *cobra.Command, run *checkRun, format, color string, elapse
 	default:
 		return 0, fmt.Errorf("unknown --format %q (text, json, github or sarif)", format)
 	}
+}
+
+// workspaceName is the go.work directory's basename, labelling the JSON
+// envelope without leaking an absolute path. The aggregate branch is only
+// reached in workspace mode, but the nil guard keeps it defensive.
+func workspaceName(run *checkRun) string {
+	if run.Workspace == nil {
+		return ""
+	}
+	return filepath.Base(run.Workspace.Dir)
 }
 
 func renderSingle(out io.Writer, format string, res *core.Result, rules *core.RuleSet, elapsed time.Duration, color string) error {

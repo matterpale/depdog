@@ -106,15 +106,16 @@ func JSON(w io.Writer, res *core.Result, rs *core.RuleSet, elapsed time.Duration
 	return enc.Encode(buildReport(res, rs, elapsed))
 }
 
-// jsonWorkspaceReport is the aggregate envelope for a workspace check: one
-// jsonReport per analyzed member, the members skipped for lack of a config, and
-// rolled-up stats. A single-module run keeps emitting jsonReport at the top
-// level (no envelope), so existing consumers are unaffected; the presence of
-// the "modules" array is the discriminator.
+// jsonWorkspaceReport is the aggregate envelope for a workspace check: the
+// go.work directory's basename, one jsonReport per analyzed member, the members
+// skipped for lack of a config, and rolled-up stats. A single-module run keeps
+// emitting jsonReport at the top level (no envelope), so existing consumers are
+// unaffected; the presence of the "modules" array is the discriminator.
 type jsonWorkspaceReport struct {
-	Modules []jsonReport `json:"modules"`
-	Skipped []jsonSkip   `json:"skipped"`
-	Stats   jsonStats    `json:"stats"`
+	Workspace string       `json:"workspace"`
+	Modules   []jsonReport `json:"modules"`
+	Skipped   []jsonSkip   `json:"skipped"`
+	Stats     jsonStats    `json:"stats"`
 }
 
 type jsonSkip struct {
@@ -123,12 +124,14 @@ type jsonSkip struct {
 }
 
 // JSONWorkspace encodes the workspace envelope. Per-module duration is left at 0
-// (only the aggregate carries elapsed); each member self-identifies by its
-// module path, so no machine-specific directory leaks into the output.
-func JSONWorkspace(w io.Writer, mods []Module, skipped []Skipped, elapsed time.Duration) error {
+// (only the aggregate carries elapsed); workspace is the go.work directory's
+// basename and each member self-identifies by its module path, so no
+// machine-specific absolute path leaks into the output.
+func JSONWorkspace(w io.Writer, workspace string, mods []Module, skipped []Skipped, elapsed time.Duration) error {
 	out := jsonWorkspaceReport{
-		Modules: make([]jsonReport, 0, len(mods)),
-		Skipped: make([]jsonSkip, 0, len(skipped)),
+		Workspace: workspace,
+		Modules:   make([]jsonReport, 0, len(mods)),
+		Skipped:   make([]jsonSkip, 0, len(skipped)),
 	}
 	for _, m := range mods {
 		out.Modules = append(out.Modules, buildReport(m.Result, m.Rules, 0))

@@ -1,4 +1,5 @@
 {
+  "workspace": "workspace",
   "modules": [
     {
       "module": "example.test/app",
