@@ -19,9 +19,10 @@ import (
 // graph's import positions. A failed re-check keeps the previous hoverState,
 // mirroring how stale diagnostics stay visible after a failed round.
 type hoverState struct {
-	check *Check
-	root  string
-	index map[string][]edgeRef
+	check     *Check
+	root      string
+	configURI string // "" when the server has no configBase to link (see Server.configBase)
+	index     map[string][]edgeRef
 }
 
 // edgeRef locates one import edge for hover: the importing package's
@@ -158,7 +159,7 @@ func (s *Server) hoverResponse(logger *log.Logger, msg *message, hs *hoverState)
 	if len(edges) == 0 {
 		return null, nil
 	}
-	value, err := hoverMarkdown(hs.check.Rules, edges)
+	value, err := hoverMarkdown(hs.check.Rules, edges, hs.configURI)
 	if err != nil {
 		// Unreachable after a successful Evaluate (the same assignments
 		// already resolved); answer null rather than fail the request.
@@ -177,8 +178,10 @@ func (s *Server) hoverResponse(logger *log.Logger, msg *message, hs *hoverState)
 // hoverMarkdown renders one markdown block per edge (already sorted by import
 // path): a header naming the edge, a blank line, then the verdict in the
 // explain vocabulary. TestOnly edges gain the same " [test]" suffix as
-// diagnostics messages.
-func hoverMarkdown(rs *core.RuleSet, edges []edgeRef) (string, error) {
+// diagnostics messages. configURI ("" if the server has none) is appended as
+// a trailing link so hover offers the same "open the config" jump-off point
+// as a diagnostic's relatedInformation (see diagnostics.go).
+func hoverMarkdown(rs *core.RuleSet, edges []edgeRef, configURI string) (string, error) {
 	blocks := make([]string, 0, len(edges))
 	for _, e := range edges {
 		v, err := verdictFor(rs, e.fromRelDir, e.imp)
@@ -203,6 +206,9 @@ func hoverMarkdown(rs *core.RuleSet, edges []edgeRef) (string, error) {
 		}
 		blocks = append(blocks, fmt.Sprintf("**depdog** — `%s` (%s) → `%s` (%s)\n\n%s",
 			e.fromImportPath, comp, e.imp.Path, v.Target, verdict))
+	}
+	if configURI != "" {
+		blocks = append(blocks, fmt.Sprintf("[depdog.yaml](%s)", configURI))
 	}
 	return strings.Join(blocks, "\n\n"), nil
 }

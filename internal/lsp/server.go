@@ -332,7 +332,11 @@ func (s *Server) publish(ctx context.Context, out io.Writer, logger *log.Logger,
 		root = clientRoot
 	}
 
-	params := diagnosticsFor(chk.Result, root)
+	var configURI string
+	if s.configBase != "" {
+		configURI = fileURI(root, s.configBase)
+	}
+	params := diagnosticsFor(chk.Result, root, configURI)
 	byURI := make(map[string]publishDiagnosticsParams, len(params))
 	current := make(map[string]struct{}, len(params))
 	uris := make([]string, 0, len(params)+len(prev))
@@ -368,7 +372,7 @@ func (s *Server) publish(ctx context.Context, out io.Writer, logger *log.Logger,
 	}
 	logger.Printf("published %d diagnostic(s) across %d file(s), cleared %d file(s)",
 		total, len(params), cleared)
-	return current, &hoverState{check: chk, root: root, index: buildEdgeIndex(chk.Graph, chk.Rules)}, nil
+	return current, &hoverState{check: chk, root: root, configURI: configURI, index: buildEdgeIndex(chk.Graph, chk.Rules)}, nil
 }
 
 // savedURI extracts textDocument.uri from didSave params for the log line;

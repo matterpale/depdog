@@ -169,31 +169,36 @@ func TestHoverVerdicts(t *testing.T) {
 			name: "boundary denied",
 			uri:  uri("api/handler.go"), line: 4,
 			want: "**depdog** — `example.com/stub/api` (api) → `example.com/stub/domain` (domain)\n\n" +
-				"denied by `boundary \"walls\"`",
+				"denied by `boundary \"walls\"`\n\n" +
+				"[depdog.yaml](file:///work/proj/depdog.yaml)",
 		},
 		{
 			name: "std allowed",
 			uri:  uri("domain/order.go"), line: 2,
 			want: "**depdog** — `example.com/stub/domain` (domain) → `strings` (std)\n\n" +
-				"allowed by `domain: allow [std]`",
+				"allowed by `domain: allow [std]`\n\n" +
+				"[depdog.yaml](file:///work/proj/depdog.yaml)",
 		},
 		{
 			name: "sealed boundary denied",
 			uri:  uri("service/svc.go"), line: 6,
 			want: "**depdog** — `example.com/stub/service` (service) → `example.com/stub/secret` (unassigned)\n\n" +
-				"denied by `boundary \"sealedbox\" (sealed)`",
+				"denied by `boundary \"sealedbox\" (sealed)`\n\n" +
+				"[depdog.yaml](file:///work/proj/depdog.yaml)",
 		},
 		{
 			name: "external denied by whitelist",
 			uri:  uri("api/handler.go"), line: 3,
 			want: "**depdog** — `example.com/stub/api` (api) → `github.com/pkg/errors` (external)\n\n" +
-				"denied by `api: allow [service, std]`",
+				"denied by `api: allow [service, std]`\n\n" +
+				"[depdog.yaml](file:///work/proj/depdog.yaml)",
 		},
 		{
 			name: "external module allowed by prefix",
 			uri:  uri("service/svc.go"), line: 4,
 			want: "**depdog** — `example.com/stub/service` (service) → `golang.org/x/sync/errgroup` (external)\n\n" +
-				"allowed by `service: allow [domain, std, golang.org/x]`",
+				"allowed by `service: allow [domain, std, golang.org/x]`\n\n" +
+				"[depdog.yaml](file:///work/proj/depdog.yaml)",
 		},
 		{
 			name: "two edges on one line, sorted by import path",
@@ -201,19 +206,22 @@ func TestHoverVerdicts(t *testing.T) {
 			want: "**depdog** — `example.com/stub/api` (api) → `example.com/stub/service` (service)\n\n" +
 				"allowed by `api: allow [service, std]`\n\n" +
 				"**depdog** — `example.com/stub/api` (api) → `fmt` (std)\n\n" +
-				"allowed by `api: allow [service, std]`",
+				"allowed by `api: allow [service, std]`\n\n" +
+				"[depdog.yaml](file:///work/proj/depdog.yaml)",
 		},
 		{
 			name: "test-only edge carries the [test] suffix",
 			uri:  uri("service/svc_test.go"), line: 3,
 			want: "**depdog** — `example.com/stub/service` (service) → `example.com/stub/util` (unassigned)\n\n" +
-				"denied by `service: allow [domain, std, golang.org/x]` [test]",
+				"denied by `service: allow [domain, std, golang.org/x]` [test]\n\n" +
+				"[depdog.yaml](file:///work/proj/depdog.yaml)",
 		},
 		{
 			name: "unassigned source",
 			uri:  uri("util/u.go"), line: 2,
 			want: "**depdog** — `example.com/stub/util` (unassigned) → `fmt` (std)\n\n" +
-				"the source package is unassigned — no rule governs its imports",
+				"the source package is unassigned — no rule governs its imports\n\n" +
+				"[depdog.yaml](file:///work/proj/depdog.yaml)",
 		},
 		{name: "non-import line", uri: uri("api/handler.go"), line: 0, want: ""},
 		{name: "unknown file under the root", uri: uri("api/nope.go"), line: 4, want: ""},

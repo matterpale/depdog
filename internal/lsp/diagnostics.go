@@ -21,11 +21,29 @@ type publishDiagnosticsParams struct {
 }
 
 type diagnostic struct {
-	Range    lspRange `json:"range"`
-	Severity int      `json:"severity"`
-	Code     string   `json:"code"`
-	Source   string   `json:"source"`
+	Range              lspRange             `json:"range"`
+	Severity           int                  `json:"severity"`
+	Code               string               `json:"code"`
+	Source             string               `json:"source"`
+	Message            string               `json:"message"`
+	RelatedInformation []relatedInformation `json:"relatedInformation,omitempty"`
+}
+
+// relatedInformation points a diagnostic back at the rule that decided it, in
+// depdog.yaml. Editors render it as a clickable link under the diagnostic
+// (or in its hover), the same "open the config" affordance the TUI's config
+// tab already offers via `e` — this is that affordance for the LSP surface.
+// The location is always line 0 of the config file: depdog does not track
+// which yaml line declared a given component/rule (config.Parse discards
+// that), so this opens the file rather than jumping to the exact rule.
+type relatedInformation struct {
+	Location location `json:"location"`
 	Message  string   `json:"message"`
+}
+
+type location struct {
+	URI   string   `json:"uri"`
+	Range lspRange `json:"range"`
 }
 
 type lspRange struct {
@@ -45,13 +63,22 @@ type lspPosition struct {
 // range covers character 0 of the line only (line-level squiggle).
 //
 // Output is deterministic: payloads sorted by URI, diagnostics by line, then
-// message. core.Warnings carry no positions and are not mapped.
-func diagnosticsFor(res *core.Result, root string) []publishDiagnosticsParams {
+// message. core.Warnings carry no positions and are not mapped. configURI is
+// the depdog.yaml this check ran against ("" suppresses relatedInformation,
+// e.g. in tests that don't care about it).
+func diagnosticsFor(res *core.Result, root, configURI string) []publishDiagnosticsParams {
 	byURI := make(map[string][]diagnostic)
 	for _, v := range res.Violations {
 		msg := fmt.Sprintf("%s imports %s (%s): %s", v.FromComponent, v.ImportPath, v.Target, v.Rule)
 		if v.TestOnly {
 			msg += " [test]"
+		}
+		var related []relatedInformation
+		if configURI != "" {
+			related = []relatedInformation{{
+				Location: location{URI: configURI},
+				Message:  "rule: " + v.Rule,
+			}}
 		}
 		for _, p := range v.Positions {
 			uri := fileURI(root, p.File)
@@ -60,10 +87,11 @@ func diagnosticsFor(res *core.Result, root string) []publishDiagnosticsParams {
 					Start: lspPosition{Line: p.Line - 1},
 					End:   lspPosition{Line: p.Line - 1},
 				},
-				Severity: severityError,
-				Code:     v.Rule,
-				Source:   "depdog",
-				Message:  msg,
+				Severity:           severityError,
+				Code:               v.Rule,
+				Source:             "depdog",
+				Message:            msg,
+				RelatedInformation: related,
 			})
 		}
 	}
