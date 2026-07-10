@@ -8,7 +8,6 @@ import (
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/matterpale/depdog/internal/core"
-	"github.com/matterpale/depdog/internal/report"
 )
 
 // listRows is how many rows a scrollable list may occupy given the window
@@ -403,25 +402,102 @@ func (m Model) renderImport(from string, iv core.ImportView) string {
 	return "    " + line
 }
 
-// configLines renders the Config tab's document: the active config path header
-// followed by the compiled rule set (report.RuleSet — the same content as
-// `depdog config`). It is a static block of lines the view then windows; there
-// is no selection here, only a scroll offset.
+// configLines renders the Config tab: a styled view of the compiled rule set —
+// the same data as `depdog config`, but colorized and structured for reading. A
+// bold path header, then aligned top-level options, then each component's
+// patterns, inferred stance and green/red allow/deny rule, then any boundaries.
+// It is a static block the view windows; there is no selection, only a scroll
+// offset.
 func (m Model) configLines() []string {
 	pathLabel := m.configRel
 	if pathLabel == "" {
 		pathLabel = "(config path unknown)"
 	}
-	lines := []string{styleDim.Render("config: ") + pathLabel, ""}
+	lines := []string{styleTitle.Render(pathLabel), ""}
 	if m.rules == nil {
 		return append(lines, styleDim.Render("no compiled rule set available — restart with `depdog tui`"))
 	}
-	var buf strings.Builder
-	if err := report.RuleSet(&buf, m.rules); err != nil {
-		return append(lines, styleBad.Render("failed to render the rule set: "+err.Error()))
+	rs := m.rules
+
+	kv := func(k, v string) string { return styleDim.Render(fmt.Sprintf("%-11s", k)) + v }
+	defVal, defHint := styleWarn.Render("deny"), "  (rule-less components import nothing)"
+	if rs.Policy == core.PolicyAllow {
+		defVal, defHint = styleGood.Render("allow"), "  (rule-less components import anything)"
 	}
-	dump := strings.Split(strings.TrimRight(buf.String(), "\n"), "\n")
-	return append(lines, dump...)
+	lines = append(lines,
+		kv("default", defVal+styleDim.Render(defHint)),
+		kv("test_files", testFilesLabel(rs.TestFiles)),
+	)
+	if len(rs.Skip) > 0 {
+		lines = append(lines, kv("skip", styleDim.Render(strings.Join(rs.Skip, ", "))))
+	}
+
+	lines = append(lines, "", styleDim.Render("components"))
+	nameW := 0
+	for _, c := range rs.Components {
+		if len(c.Name) > nameW {
+			nameW = len(c.Name)
+		}
+	}
+	for _, c := range rs.Components {
+		lines = append(lines,
+			styleTitle.Render(fmt.Sprintf("  %-*s", nameW, c.Name))+styleDim.Render("   "+stanceShort(rs.Stance(c.Name))),
+			styleDim.Render("      "+strings.Join(c.Patterns, ", ")))
+		if r, ok := rs.Rules[c.Name]; ok {
+			if len(r.Allow) > 0 {
+				lines = append(lines, "      "+styleGood.Render("allow")+"  "+refsText(r.Allow))
+			}
+			if len(r.Deny) > 0 {
+				lines = append(lines, "      "+styleBad.Render("deny")+"   "+refsText(r.Deny))
+			}
+		}
+	}
+
+	if len(rs.Boundaries) > 0 {
+		lines = append(lines, "", styleDim.Render("boundaries"))
+		for _, bd := range rs.Boundaries {
+			head := styleTitle.Render("  " + bd.Name)
+			if bd.Sealed {
+				head += "  " + styleWarn.Render("sealed")
+			}
+			labels := make([]string, len(bd.Members))
+			for i, mem := range bd.Members {
+				labels[i] = mem.Label
+			}
+			lines = append(lines, head, styleDim.Render("      "+strings.Join(labels, ", ")))
+		}
+	}
+	return lines
+}
+
+// stanceShort names a component's inferred stance: whitelist (only `allow` refs
+// pass) or blacklist (all pass except `deny` refs).
+func stanceShort(p core.Policy) string {
+	if p == core.PolicyAllow {
+		return "blacklist"
+	}
+	return "whitelist"
+}
+
+func testFilesLabel(m core.TestFileMode) string {
+	switch m {
+	case core.TestSameRules:
+		return "same-rules"
+	case core.TestRelaxed:
+		return "relaxed"
+	default:
+		return "hybrid"
+	}
+}
+
+// refsText renders a rule's refs as a comma-separated list (each ref's own
+// String form: a component name, std/external/unassigned/*, or a module prefix).
+func refsText(refs []core.Ref) string {
+	parts := make([]string, len(refs))
+	for i, r := range refs {
+		parts[i] = r.String()
+	}
+	return strings.Join(parts, ", ")
 }
 
 // configLineCount is how many lines the Config document occupies — the clamp

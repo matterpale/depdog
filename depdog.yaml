@@ -15,7 +15,7 @@ components:
   kotlin: { path: "internal/lang/kotlin/**", allow: [core, lang, std] } # pure scanner: stdlib only
   report: { path: "internal/report/**",      allow: [core, std, external] } # lipgloss styles the human output
   wizard: { path: "internal/wizard/**",      allow: [core, std] } # pure heuristics: engine matcher + std only
-  tui:    { path: "internal/tui/**",         allow: [core, report, std, external] } # bubbletea view over core; report.RuleSet renders the Config tab
+  tui:    { path: "internal/tui/**",         allow: [core, std, external] } # bubbletea view over core
   cli:    { path: "internal/cli/**",         allow: [core, config, lang, golang, typescript, python, ruby, rust, java, kotlin, report, wizard, tui, std, external] }
   e2e:    { path: "internal/e2e/**",         allow: [std] }
 

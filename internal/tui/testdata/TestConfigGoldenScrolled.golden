@@ -3,18 +3,18 @@ depdog · example.test/shop
 ────────────────────────────────────────────────────────────────────────
 
   ▲ 8 more
-          allow:  [std]
-  comp01  internal/comp01/**
-          stance: whitelist (only allowed pass)
-          allow:  [std]
-  comp02  internal/comp02/**
-          stance: whitelist (only allowed pass)
-          allow:  [std]
-  comp03  internal/comp03/**
-          stance: whitelist (only allowed pass)
-          allow:  [std]
-  comp04  internal/comp04/**
-          stance: whitelist (only allowed pass)
+      allow  std
+  comp01   whitelist
+      internal/comp01/**
+      allow  std
+  comp02   whitelist
+      internal/comp02/**
+      allow  std
+  comp03   whitelist
+      internal/comp03/**
+      allow  std
+  comp04   whitelist
+      internal/comp04/**
   ▼ 76 more
 
 tab/1-4 switch · ↑/↓ scroll · e edit depdog.yaml · r re-run · ? help · q quit
