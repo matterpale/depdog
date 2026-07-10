@@ -216,9 +216,9 @@ strict, `relaxed` exempts test files entirely.
 </details>
 
 **Editor setup:** wire `depdog lsp` into Neovim, Helix, VS Code (via the
-bundled [`editors/vscode`](editors/vscode) extension scaffold), Zed, or Emacs
-for inline architecture diagnostics — per-editor snippets in
-[docs/editors.md](docs/editors.md).
+bundled [`editors/vscode`](editors/vscode) extension scaffold), Zed,
+GoLand/JetBrains (via the LSP4IJ plugin), or Emacs for inline architecture
+diagnostics — per-editor snippets in [docs/editors.md](docs/editors.md).
 
 In the TUI, <kbd>1</kbd>–<kbd>4</kbd> (or <kbd>tab</kbd>) switch between the
 Dashboard, Violations, Packages and Config screens. The Violations and Packages
