@@ -1,0 +1,7 @@
+depdog check — elm-dirty
+
+✗ domain: allow [std]  (1 violation)
+    elm-dirty/src/Domain
+      → Service.Orders  src/Domain/Order.elm:7
+
+1 violation · 3 packages · 6 edges checked in X
