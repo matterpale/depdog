@@ -227,6 +227,15 @@ func (m Model) matrixRowCount() int {
 	return len(m.rules.Components)
 }
 
+// selectedComponent is the component under the row cursor, or nil when there is
+// no compiled rule set / no components.
+func (m Model) selectedComponent() *core.Component {
+	if m.rules == nil || len(m.rules.Components) == 0 {
+		return nil
+	}
+	return &m.rules.Components[clamp(m.matrixSel, len(m.rules.Components))]
+}
+
 // matrixGrid builds the fixed header lines and one line per component row. The
 // sel row's label is a selection bar, the col column's header is highlighted,
 // and the (sel,col) intersection is drawn as the edit cursor. The 1-based row

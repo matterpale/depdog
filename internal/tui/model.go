@@ -70,6 +70,7 @@ type Model struct {
 	edit      func(from, target, verdict string) error        // Matrix-tab cell toggle write-back
 	addComp   func(name, pattern string) error                // Matrix-tab add-component form write-back
 	repath    func(component string, patterns []string) error // Matrix-tab re-path form write-back
+	rename    func(oldName, newName string) error             // Matrix-tab rename form write-back
 	status    string                                          // transient message shown in the footer, cleared on any key
 	active    tab
 	selected  int // highlighted violation on the Violations screen
@@ -87,13 +88,14 @@ type Model struct {
 	// orthogonal mutual-exclusion axis); matrixBoundSel picks a boundary there.
 	matrixBoundaries bool
 	matrixBoundSel   int
-	// input-form state on the Matrix tab: add a component (`a`) or re-path the
-	// selected one (`p`). formName is editable in add mode and the fixed target
-	// in re-path mode; formPattern is the editable path field.
+	// input-form state on the Matrix tab: add a component (`a`), re-path (`p`), or
+	// rename (`R`) the selected one. formTarget is the component being acted on
+	// (empty for add); formName/formPattern are the editable name/path fields.
 	matrixForm  formKind
+	formTarget  string
 	formName    string
 	formPattern string
-	formField   int    // add: 0 = name, 1 = pattern; re-path: pinned to the pattern
+	formField   int    // add/rename: 0 = name; add/re-path: 1 = pattern
 	formErr     string // last submit/validation error, shown in the form
 	filter      string
 	filtering   bool // capturing keystrokes into filter on the Violations screen
@@ -143,6 +145,13 @@ func WithAddComponent(f func(name, pattern string) error) Option {
 // the `p` form is unavailable.
 func WithRepath(f func(component string, patterns []string) error) Option {
 	return func(m *Model) { m.repath = f }
+}
+
+// WithRename wires the Matrix tab's rename form: the hook renames the selected
+// component and every reference to it in depdog.yaml; the model then refreshes.
+// Without it, the `R` form is unavailable.
+func WithRename(f func(oldName, newName string) error) Option {
+	return func(m *Model) { m.rename = f }
 }
 
 // WithConfig wires the Config tab: the module-relative config path (stable
@@ -291,10 +300,18 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.formName, m.formPattern, m.formField, m.formErr = "", "", 0, ""
 			}
 		case "p":
-			if m.active == tabMatrix && !m.matrixBoundaries && m.repath != nil && m.rules != nil && len(m.rules.Components) > 0 {
-				c := m.rules.Components[clamp(m.matrixSel, len(m.rules.Components))]
+			if m.active == tabMatrix && !m.matrixBoundaries && m.repath != nil && m.selectedComponent() != nil {
+				c := m.selectedComponent()
 				m.matrixForm = formRepath
-				m.formName, m.formPattern, m.formField, m.formErr = c.Name, strings.Join(c.Patterns, " "), 1, ""
+				m.formTarget, m.formName, m.formPattern = c.Name, "", strings.Join(c.Patterns, " ")
+				m.formField, m.formErr = 1, ""
+			}
+		case "R":
+			if m.active == tabMatrix && !m.matrixBoundaries && m.rename != nil && m.selectedComponent() != nil {
+				c := m.selectedComponent()
+				m.matrixForm = formRename
+				m.formTarget, m.formName, m.formPattern = c.Name, c.Name, ""
+				m.formField, m.formErr = 0, ""
 			}
 		case "1":
 			m.active = tabDashboard
@@ -467,6 +484,7 @@ func helpView() string {
 		{"b", "Matrix: show the boundaries overlay (mutual-exclusion sets)"},
 		{"a", "Matrix: add a new component (name + path) to depdog.yaml"},
 		{"p", "Matrix: re-path the selected component (edit its path glob)"},
+		{"R", "Matrix: rename the selected component (refs follow automatically)"},
 		{"/", "filter the list (Violations, Packages)"},
 		{"e", "open $EDITOR: the selection (Violations, Packages) or depdog.yaml (Config)"},
 		{"r", "re-run the check and refresh every screen"},
@@ -527,6 +545,9 @@ func (m Model) footer() string {
 		return styleDim.Render("tab/1-5 switch · ↑/↓ scroll · e edit depdog.yaml · r re-run · ? help · q quit")
 	}
 	if m.active == tabMatrix {
+		if m.matrixForm == formRename {
+			return styleDim.Render("type the new name · enter save · esc cancel")
+		}
 		if m.matrixForm == formRepath {
 			return styleDim.Render("type the path glob(s) · enter save · esc cancel")
 		}
@@ -545,6 +566,9 @@ func (m Model) footer() string {
 		}
 		if m.repath != nil {
 			hint += " · p re-path"
+		}
+		if m.rename != nil {
+			hint += " · R rename"
 		}
 		return styleDim.Render(hint + " · r re-run · ? help · q quit")
 	}

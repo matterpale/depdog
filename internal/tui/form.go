@@ -7,10 +7,11 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 )
 
-// The Matrix tab has one text-input form with two modes: add a component
-// (`a` — name + path) and re-path the selected component (`p` — a new path
-// glob). Validation lives in the injected hooks (the same checks `init` uses),
-// so a bad name or glob is reported inline and the form stays open.
+// The Matrix tab has one text-input form with three modes: add a component
+// (`a` — name + path), re-path the selected component (`p` — a new path glob),
+// and rename it (`R` — a new name). Validation lives in the injected hooks (the
+// same checks `init` uses), so a bad name or glob is reported inline and the
+// form stays open.
 
 type formKind int
 
@@ -18,6 +19,7 @@ const (
 	formNone formKind = iota
 	formAdd
 	formRepath
+	formRename
 )
 
 // updateForm captures keystrokes while a form is open. Runes extend the focused
@@ -94,13 +96,36 @@ func (m Model) submitForm() (tea.Model, tea.Cmd) {
 			m.formErr = "re-pathing is not available in this session"
 			return m, nil
 		}
-		if err := m.repath(m.formName, patterns); err != nil {
+		if err := m.repath(m.formTarget, patterns); err != nil {
 			m.formErr = oneLine(err.Error())
 			return m, nil
 		}
-		name := m.formName
+		target := m.formTarget
 		m.closeForm()
-		m.status = fmt.Sprintf("re-pathed %q — re-running…", name)
+		m.status = fmt.Sprintf("re-pathed %q — re-running…", target)
+		return m, m.startRefresh()
+
+	case formRename:
+		newName := strings.TrimSpace(m.formName)
+		if newName == "" {
+			m.formErr = "type a new name"
+			return m, nil
+		}
+		if m.rename == nil {
+			m.formErr = "renaming is not available in this session"
+			return m, nil
+		}
+		if newName == m.formTarget {
+			m.closeForm() // no-op rename
+			return m, nil
+		}
+		if err := m.rename(m.formTarget, newName); err != nil {
+			m.formErr = oneLine(err.Error())
+			return m, nil
+		}
+		old := m.formTarget
+		m.closeForm()
+		m.status = fmt.Sprintf("renamed %q → %q — re-running…", old, newName)
 		return m, m.startRefresh()
 	}
 	return m, nil
@@ -108,7 +133,7 @@ func (m Model) submitForm() (tea.Model, tea.Cmd) {
 
 func (m *Model) closeForm() {
 	m.matrixForm = formNone
-	m.formName, m.formPattern, m.formField, m.formErr = "", "", 0, ""
+	m.formTarget, m.formName, m.formPattern, m.formField, m.formErr = "", "", "", 0, ""
 }
 
 // formView renders the active form as a small labelled panel with a caret on the
@@ -136,22 +161,32 @@ func (m Model) formView() string {
 		}
 	case formRepath:
 		lines = []string{
-			styleTitle.Render("Re-path ") + styleTitle.Render(m.formName),
+			styleTitle.Render("Re-path ") + styleTitle.Render(m.formTarget),
 			"",
 			styleDim.Render("  path  ") + field(1, m.formPattern),
 			"",
 		}
+	case formRename:
+		lines = []string{
+			styleTitle.Render("Rename ") + styleTitle.Render(m.formTarget),
+			"",
+			styleDim.Render("  name  ") + field(0, m.formName),
+			"",
+		}
 	}
-	if m.formErr != "" {
+	switch {
+	case m.formErr != "":
 		lines = append(lines, styleBad.Render("  "+m.formErr), "")
-	} else if m.matrixForm == formAdd {
+	case m.matrixForm == formAdd:
 		lines = append(lines, styleDim.Render("  e.g. name \"service\", path \"internal/service/**\""), "")
-	} else {
+	case m.matrixForm == formRepath:
 		lines = append(lines, styleDim.Render("  space-separate multiple globs, e.g. \"internal/api/** internal/rpc/**\""), "")
+	case m.matrixForm == formRename:
+		lines = append(lines, styleDim.Render("  every allow/deny ref, boundary member and group entry follows the rename"), "")
 	}
 
 	hint := "  tab: switch field · enter: next / add · esc: cancel"
-	if m.matrixForm == formRepath {
+	if m.matrixForm == formRepath || m.matrixForm == formRename {
 		hint = "  enter: save · esc: cancel"
 	}
 	return strings.Join(append(lines, styleDim.Render(hint)), "\n")

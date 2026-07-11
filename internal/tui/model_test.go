@@ -796,8 +796,8 @@ func TestRepathForm(t *testing.T) {
 	if !strings.Contains(v, "Re-path") || !strings.Contains(v, "domain") {
 		t.Errorf("re-path form should name the component:\n%s", v)
 	}
-	if m.formName != "domain" || m.formPattern != "internal/domain/**" {
-		t.Errorf("re-path form should prefill the current path, got name=%q path=%q", m.formName, m.formPattern)
+	if m.formTarget != "domain" || m.formPattern != "internal/domain/**" {
+		t.Errorf("re-path form should target domain and prefill its path, got target=%q path=%q", m.formTarget, m.formPattern)
 	}
 	// Replace the path with two globs.
 	for i := 0; i < len("internal/domain/**"); i++ {
@@ -830,6 +830,70 @@ func TestRepathFormErrorAndUnavailable(t *testing.T) {
 	m2 = update(m2, runes("p"))
 	if m2.matrixForm != formNone {
 		t.Error("without a re-path hook, `p` must be inert")
+	}
+}
+
+func TestRenameForm(t *testing.T) {
+	var got [2]string
+	calls := 0
+	m := update(New(fixtureResult(), fixturePkgs(),
+		WithConfig("depdog.yaml", fixtureRuleSet()),
+		WithRename(func(oldName, newName string) error { got, calls = [2]string{oldName, newName}, calls+1; return nil })), runes("5"))
+
+	m = update(m, runes("R"))
+	if m.matrixForm != formRename {
+		t.Fatal("R should open the rename form")
+	}
+	if m.formTarget != "domain" || m.formName != "domain" {
+		t.Errorf("rename form should target domain and prefill the name, got target=%q name=%q", m.formTarget, m.formName)
+	}
+	if v := m.View(); !strings.Contains(v, "Rename") || !strings.Contains(v, "domain") {
+		t.Errorf("rename form should name the component:\n%s", v)
+	}
+	for i := 0; i < len("domain"); i++ {
+		m = update(m, tea.KeyMsg{Type: tea.KeyBackspace})
+	}
+	m = typeString(m, "model")
+	m = update(m, tea.KeyMsg{Type: tea.KeyEnter}) // submit
+	if calls != 1 || got != [2]string{"domain", "model"} {
+		t.Errorf("submit should rename domain → model, got %d %v", calls, got)
+	}
+	if m.matrixForm != formNone {
+		t.Error("a successful rename should close the form")
+	}
+}
+
+func TestRenameFormNoOpErrorUnavailable(t *testing.T) {
+	// Renaming to the same name closes the form without calling the hook.
+	calls := 0
+	m := update(New(fixtureResult(), fixturePkgs(),
+		WithConfig("depdog.yaml", fixtureRuleSet()),
+		WithRename(func(_, _ string) error { calls++; return nil })), runes("5"))
+	m = update(m, runes("R"))
+	m = update(m, tea.KeyMsg{Type: tea.KeyEnter}) // submit unchanged "domain"
+	if calls != 0 || m.matrixForm != formNone {
+		t.Errorf("a no-op rename should close without calling the hook (calls=%d)", calls)
+	}
+
+	// Error keeps the form open.
+	m = update(New(fixtureResult(), fixturePkgs(),
+		WithConfig("depdog.yaml", fixtureRuleSet()),
+		WithRename(func(_, _ string) error { return fmt.Errorf("name collides") })), runes("5"))
+	m = update(m, runes("R"))
+	for i := 0; i < len("domain"); i++ {
+		m = update(m, tea.KeyMsg{Type: tea.KeyBackspace})
+	}
+	m = typeString(m, "handler")
+	m = update(m, tea.KeyMsg{Type: tea.KeyEnter})
+	if m.matrixForm != formRename || !strings.Contains(m.View(), "name collides") {
+		t.Errorf("a failed rename should keep the form open with the error:\n%s", m.View())
+	}
+
+	// No hook: R inert.
+	m2 := update(New(fixtureResult(), fixturePkgs(), WithConfig("depdog.yaml", fixtureRuleSet())), runes("5"))
+	m2 = update(m2, runes("R"))
+	if m2.matrixForm != formNone {
+		t.Error("without a rename hook, `R` must be inert")
 	}
 }
 

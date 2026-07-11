@@ -116,13 +116,30 @@ func launch(cmd *cobra.Command, configPath string, args []string, ev *evaluation
 		}
 		return os.WriteFile(ev.ConfigPath, out, 0o644)
 	}
+	// rename backs the Matrix tab's rename form: validate the new name (as `init`
+	// does) then rename the component and every reference to it in depdog.yaml.
+	rename := func(oldName, newName string) error {
+		if err := wizard.ValidateName(newName); err != nil {
+			return err
+		}
+		data, err := os.ReadFile(ev.ConfigPath)
+		if err != nil {
+			return err
+		}
+		out, err := config.RenameComponent(data, oldName, newName)
+		if err != nil {
+			return err
+		}
+		return os.WriteFile(ev.ConfigPath, out, 0o644)
+	}
 	return tui.Run(ev.Result, pkgs,
 		tui.WithRoot(root),
 		tui.WithConfig(configRel, ev.Rules),
 		tui.WithRefresh(refresh),
 		tui.WithEdit(edit),
 		tui.WithAddComponent(addComponent),
-		tui.WithRepath(repath))
+		tui.WithRepath(repath),
+		tui.WithRename(rename))
 }
 
 // configRelPath renders the config path relative to the module root for display,
