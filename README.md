@@ -19,12 +19,11 @@
 
 Architecture rules
 usually live in someone's head or a wiki, and they rot.
-**depdog** makes rules executable.
+**depdog** makes rules _executable_.
 
 You declare who may import whom in a `depdog.yaml`, and
 depdog checks it against every import edge in your codebase, exiting
 non-zero for CI.
-
 No more import spaghetti. One neutral rule format,
 one engine — depdog just swaps a thin
 [language adapter](#multi-language-support) per project.
