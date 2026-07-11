@@ -103,92 +103,16 @@ An editor JSON Schema ships at
 [`schema/depdog.schema.json`](schema/depdog.schema.json) for autocomplete and
 validation (a test keeps it in lockstep with the parser).
 
-### Components and matching
+Two more knobs, both optional: **groups** name a reusable set of components you
+can reference in any allow/deny list, and **boundaries** add an orthogonal
+mutual-exclusion axis — named member sets that may not import across each other,
+for isolating services in a monorepo without O(n²) deny lists.
 
-A component is a named set of packages: each `path` glob is matched, recursive
-doublestar style, against module-relative package directories. When patterns
-overlap, the most specific one wins; equal specificity is an ambiguity error,
-not a silent pick.
-
-### What goes in `allow` and `deny`
-
-| Entry                  | Matches                                                             |
-|------------------------|---------------------------------------------------------------------|
-| `domain`, `handler`, … | another component, by name                                          |
-| `std`                  | the Go standard library                                             |
-| `external`             | any module that isn't yours                                         |
-| `unassigned`           | in-module packages no component claims                              |
-| `"*"`                  | everything                                                          |
-| `golang.org/x/sync`    | one specific external module, by prefix — any entry with `/` or `.` |
-
-**Groups** name a reusable set of components: declare `groups: { inner:
-[domain, core] }`, then reference `inner` in any allow/deny list; it expands
-to its members when the config loads.
-
-Two rules of precedence to remember: an explicit `deny` always beats an
-`allow`, and a component with neither falls back to the top-level `default` —
-set `default: deny` to make unruled components fail closed (`init` asks which
-stance you want).
-
-### Boundaries
-
-Components answer "who may this layer import?" along one axis. **Boundaries** add
-a second, orthogonal axis: named sets of *members* that may not import across
-each other. A package keeps its most-specific component **and**, independently,
-belongs to every boundary whose region contains it — so
-`cmd/service-a/services/x` can be the `service-a-services` component (subject to
-layer rules) and a member of the `cmd-services` boundary (subject to isolation)
-at once. That dissolves two kinds of boilerplate: peer `deny` lists ("layers
-don't import each other") and cross-cutting isolation ("no service imports
-another"), which otherwise needs O(n²) deny lists.
-
-```yaml
-boundaries:
-  # shorthand — a symmetric peer set; these three may not import each other
-  service-a-layers: [ service-a-repositories, service-a-services, service-a-handlers ]
-
-  # expanded form — members can be path globs, and sealed adds a one-way wall
-  cmd-services:
-    members: [ "cmd/service-a/**", "cmd/service-b/**" ]
-    sealed: true
-```
-
-A **member** is a component name *or* a path glob (told apart by the same `/`-or-
-metacharacter heuristic as allow/deny refs); the two may mix in one boundary.
-
-| edge                                   | verdict                                                    |
-|----------------------------------------|------------------------------------------------------------|
-| member A → member B (A ≠ B)            | **denied** (a hard deny — wins over any component `allow`) |
-| within one member (incl. same package) | allowed                                                    |
-| member → ungrouped (e.g. a shared lib) | allowed                                                    |
-| ungrouped → member                     | allowed — **denied** when the boundary is `sealed`         |
-
-`sealed: true` adds one rule: nothing outside all members may import *into* a
-member. The wall is one-way, so a service may still import a shared lib, but a
-shared lib (or another service) must not reach in. Boundaries are **composable**
-(each edge is checked against every boundary plus the component rules) and
-**orthogonal to assignment** — membership never silences the `unassigned`
-warning for a package no component claims. `explain` reports a crossing as
-`denied by boundary "cmd-services"`, with `(sealed)` for the one-way rule.
-
-### Signals that never fail the build
-
-Three findings are always reported but never exit non-zero on their own —
-visibility without blocking adoption:
-
-- **Unmapped packages.** In-module packages no component claims are warnings;
-  unmapped packages are how rule sets rot, so they stay visible.
-- **Dead patterns.** A component whose patterns match no package is flagged —
-  a likely typo.
-- **Component cycles.** `a ↔ b` at the architecture level (which a
-  package-level compile check can't even have) is detected and reported as an
-  advisory.
-
-### Test files
-
-`test_files: hybrid` (the default) lets `_test.go` files import any external
-module while still enforcing component-to-component rules; `same-rules` is
-strict, `relaxed` exempts test files entirely.
+**Full reference — [docs/configuration.md](docs/configuration.md):** component
+matching and precedence, the complete `allow`/`deny` vocabulary, groups, the
+non-blocking signals (unmapped packages, dead patterns, component cycles), and
+test-file handling. Boundaries have their own page —
+[docs/boundaries.md](docs/boundaries.md).
 
 ## Commands
 
@@ -295,45 +219,20 @@ Node/`tsc`, no `python`, no `cargo`), depdog stays a single binary.
 point of the [adapter registry](internal/cli/languages.go) is that a new
 language is one `internal/lang/<x>` package plus one registry entry.
 
-**Auto-detection.** depdog picks the adapter from the project's marker files,
-walking up from the working directory; the marker nearest the working directory
-wins in a nested layout (e.g. a `web/` TS app inside a Go repo).
-
-**Explicit override.** The persistent `--lang` flag (available to every
-subcommand) bypasses detection:
-
-```bash
-depdog check --lang py        # force the Python adapter
-depdog graph --lang rs        # force the Rust adapter
-```
-
-A directory that carries markers for **two** languages with no `--lang` is
-genuinely ambiguous: depdog exits with a usage error naming `--lang` rather than
-silently guessing.
+depdog picks the adapter from the project's marker files automatically, and the
+persistent `--lang` flag forces a specific one — details, including nested
+layouts and two-language ambiguity, in [docs/languages.md](docs/languages.md).
 
 ## For AI agents
 
 depdog is built to be driven by tools and agents, not just humans:
-
-- **Machine-readable output.** `depdog check --format json` emits a stable
-  schema (violations, components, boundaries, stats); the [exit codes](#commands)
-  are a contract (`0` clean, `1` violations, `2` config/usage error). `depdog
-  config` prints the compiled rule set so an agent can inspect what a config
-  actually means before changing it.
-- **Polyglot-aware.** Auto-detect or `--lang` means an agent doesn't need to
-  know the language up front; a monorepo can be checked per subtree.
-- **A playbook for authoring `depdog.yaml`.**
-  [`skills/depdog-config/SKILL.md`](skills/depdog-config/SKILL.md) is a
-  self-contained, tool-agnostic guide any coding agent can follow: it maps a
-  codebase's layout to components and import rules, writes a `depdog.yaml`, and
-  iterates with `depdog check`/`explain`/`config` until it matches the intended
-  architecture (the full config-format reference is inline). Point your agent at
-  that file directly, or drop the folder into wherever your agent discovers
-  reusable skills or instructions — it's a standard skill directory (`SKILL.md`
-  with front-matter), so it works as a skill for editor agents, as an
-  `AGENTS.md` reference, or as plain context you paste in.
-- **Editor schema.** [`schema/depdog.schema.json`](schema/depdog.schema.json)
-  gives autocomplete and validation in any JSON-schema-aware editor or agent.
+`check --format json` emits a stable schema and the [exit codes](#commands) are
+a contract; auto-detect (or `--lang`) means an agent needn't know the language
+up front; and [`skills/depdog-config/SKILL.md`](skills/depdog-config/SKILL.md)
+is a self-contained, tool-agnostic playbook any coding agent can follow to map a
+codebase to components and author a `depdog.yaml`. Full detail — the JSON
+schema, the editor schema, and how to wire the skill into your agent — in
+[docs/ai-agents.md](docs/ai-agents.md).
 
 ## Limitations
 
