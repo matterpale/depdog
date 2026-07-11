@@ -1,0 +1,8 @@
+component domain
+  patterns: src/main/scala/com/example/domain/**
+  stance:   whitelist (only allowed pass)
+  allow:    [std]
+  packages (1):
+    scaladirty/src/main/scala/com/example/domain
+  violations (1):
+    scaladirty/src/main/scala/com/example/domain → com.example.service.notify.Notifier  (domain: allow [std])

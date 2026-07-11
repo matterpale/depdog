@@ -14,6 +14,7 @@ import (
 	"github.com/matterpale/depdog/internal/lang/python"
 	"github.com/matterpale/depdog/internal/lang/ruby"
 	"github.com/matterpale/depdog/internal/lang/rust"
+	"github.com/matterpale/depdog/internal/lang/scala"
 	"github.com/matterpale/depdog/internal/lang/typescript"
 )
 
@@ -64,6 +65,14 @@ var languages = []lang.Adapter{
 		Name:    "kt",
 		Markers: []string{"build.gradle.kts", "settings.gradle.kts"},
 		New:     func(root string) lang.Loader { return &kotlin.Loader{Dir: root} },
+	},
+	{
+		// Scala projects build with sbt (build.sbt) or Mill (build.sc). Both
+		// markers are Scala-specific and not shared with any other adapter, so no
+		// ambiguity carve-out is needed.
+		Name:    "scala",
+		Markers: []string{"build.sbt", "build.sc"},
+		New:     func(root string) lang.Loader { return &scala.Loader{Dir: root} },
 	},
 }
 

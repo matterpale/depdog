@@ -1,0 +1,9 @@
+version: 2
+
+components:
+  domain:  { path: "src/main/scala/com/example/domain/**",  allow: [std] }
+  service: { path: "src/main/scala/com/example/service/**", allow: [domain, std] }
+  handler: { path: "src/main/scala/com/example/handler/**", allow: [service, std, external] }
+  tests:   { path: "src/test/scala/**",                     allow: [domain, service, std] } # test sources
+
+default: deny
