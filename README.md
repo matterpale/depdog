@@ -19,11 +19,13 @@
 
 **depdog** is a *dependency watchdog*: architecture rules — *"the domain imports
 nothing but the standard library," "handlers never import repositories"* —
-usually live in someone's head or a wiki, and they rot. depdog makes them
-executable: you declare which **components** exist and who may import whom in one
-small `depdog.yaml`, and `depdog check` enforces it against every import edge in
-your codebase, exiting non-zero for CI. One neutral rule format, one engine —
-depdog just swaps a thin language adapter per project ([see below](#multi-language-support)).
+usually live in someone's head or a wiki, and they rot. Package by package the
+import graph turns to spaghetti — components reaching into each other until
+nothing moves in isolation. depdog makes the rules executable: you declare which
+**components** exist and who may import whom in one small `depdog.yaml`, and
+`depdog check` enforces it against every import edge in your codebase, exiting
+non-zero for CI. One neutral rule format, one engine — depdog just swaps a thin
+language adapter per project ([see below](#multi-language-support)).
 
 ```
 depdog check — github.com/matterpale/depdog
@@ -35,6 +37,24 @@ depdog check — github.com/matterpale/depdog
 
 2 violations · 10 packages · 107 edges checked in 112ms
 ```
+
+<sub>*That's depdog checking its own repo: its architecture is declared in
+[`depdog.yaml`](depdog.yaml) and enforced in CI — a failing architecture is a
+failing build.*</sub>
+
+## Use cases
+
+- **CI — the main event.** `depdog check` exits non-zero on any violation and
+  speaks `github` and `sarif`, so a tangled import fails the build like a broken
+  test would. See [CI](#ci).
+- **Coding agents.** A stable `--format json` schema, contract
+  [exit codes](#commands), language auto-detect, and a drop-in authoring skill
+  let an agent map a codebase and keep it honest. See [For AI agents](#for-ai-agents).
+- **Local exploration.** The [TUI](#commands) (bare `depdog`) and `depdog explain`
+  are for reading an existing graph and debugging a config by hand.
+- **In your editor (LSP).** `depdog lsp` surfaces violations as inline
+  diagnostics — nice if you live in your editor, though architecture drifts
+  slowly enough that commit/CI time usually catches it just fine.
 
 ## Install
 
@@ -138,10 +158,18 @@ test-file handling. Boundaries have their own page —
 
 </details>
 
-**Editor setup:** wire `depdog lsp` into Neovim, Helix, VS Code (via the
-bundled [`editors/vscode`](editors/vscode) extension scaffold), Zed,
-GoLand/JetBrains (via the LSP4IJ plugin), or Emacs for inline architecture
-diagnostics — per-editor snippets in [docs/editors.md](docs/editors.md).
+<details>
+<summary><b>Editor / LSP setup</b></summary>
+
+Wire `depdog lsp` into Neovim, Helix, VS Code (via the bundled
+[`editors/vscode`](editors/vscode) extension scaffold), Zed, GoLand/JetBrains
+(via the LSP4IJ plugin), or Emacs for inline architecture diagnostics —
+per-editor snippets in [docs/editors.md](docs/editors.md).
+
+</details>
+
+<details>
+<summary><b>TUI keys</b></summary>
 
 In the TUI, <kbd>1</kbd>–<kbd>4</kbd> (or <kbd>tab</kbd>) switch between the
 Dashboard, Violations, Packages and Config screens. The Violations and Packages
@@ -151,6 +179,8 @@ lists scroll and filter with <kbd>/</kbd>; <kbd>e</kbd> opens the selection in
 config path and the compiled rule set (the same data as `depdog config`);
 <kbd>e</kbd> there opens `depdog.yaml` in `$EDITOR`, and the editor exiting
 auto-re-runs the check so the edited rules take effect on every screen.
+
+</details>
 
 Exit codes are a contract:
 
@@ -183,14 +213,6 @@ the baseline over time:
 depdog baseline                 # writes depdog.baseline.yaml
 depdog check --fail-on new      # exits 1 only on violations not in the baseline
 ```
-
-## depdog checks itself
-
-depdog's own architecture is declared in its [`depdog.yaml`](depdog.yaml) and
-enforced in CI: the language-agnostic engine (`internal/core`) depends on the
-standard library only, language knowledge lives behind an adapter interface,
-and the layers above may only import inward. A failing architecture is a
-failing build.
 
 ## Multi-language support
 
@@ -230,9 +252,10 @@ depdog is built to be driven by tools and agents, not just humans:
 a contract; auto-detect (or `--lang`) means an agent needn't know the language
 up front; and [`skills/depdog-config/SKILL.md`](skills/depdog-config/SKILL.md)
 is a self-contained, tool-agnostic playbook any coding agent can follow to map a
-codebase to components and author a `depdog.yaml`. Full detail — the JSON
-schema, the editor schema, and how to wire the skill into your agent — in
-[docs/ai-agents.md](docs/ai-agents.md).
+codebase to components and author a `depdog.yaml` — drop the folder wherever your
+agent discovers skills, or point it at the file directly. The editor
+[JSON Schema](schema/depdog.schema.json) hands the same autocomplete and
+validation to any schema-aware agent.
 
 ## Limitations
 
