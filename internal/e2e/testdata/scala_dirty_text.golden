@@ -1,0 +1,14 @@
+depdog check — scaladirty
+
+✗ domain: allow [std]  (1 violation)
+    scaladirty/src/main/scala/com/example/domain
+      → com.example.service.notify.Notifier  src/main/scala/com/example/domain/Order.scala:7
+
+✗ handler: allow [service, std, external]  (1 violation)
+    scaladirty/src/main/scala/com/example/handler
+      → com.example.domain.Order  src/main/scala/com/example/handler/OrderHandler.scala:9
+
+! 1 component cycle:
+    domain ↔ service
+
+2 violations · 5 packages · 9 edges checked in X

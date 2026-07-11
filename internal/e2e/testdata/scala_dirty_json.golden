@@ -1,0 +1,94 @@
+{
+  "module": "scaladirty",
+  "default": "deny",
+  "violations": [
+    {
+      "from_package": "scaladirty/src/main/scala/com/example/domain",
+      "from_component": "domain",
+      "import": "com.example.service.notify.Notifier",
+      "target": "service",
+      "rule": "domain: allow [std]",
+      "test_only": false,
+      "positions": [
+        {
+          "file": "src/main/scala/com/example/domain/Order.scala",
+          "line": 7
+        }
+      ]
+    },
+    {
+      "from_package": "scaladirty/src/main/scala/com/example/handler",
+      "from_component": "handler",
+      "import": "com.example.domain.Order",
+      "target": "domain",
+      "rule": "handler: allow [service, std, external]",
+      "test_only": false,
+      "positions": [
+        {
+          "file": "src/main/scala/com/example/handler/OrderHandler.scala",
+          "line": 9
+        }
+      ]
+    }
+  ],
+  "warnings": [],
+  "components": [
+    {
+      "name": "domain",
+      "stance": "whitelist",
+      "allow": [
+        "std"
+      ],
+      "packages": 1,
+      "edges": 2,
+      "violations": 1
+    },
+    {
+      "name": "handler",
+      "stance": "whitelist",
+      "allow": [
+        "service",
+        "std",
+        "external"
+      ],
+      "packages": 1,
+      "edges": 4,
+      "violations": 1
+    },
+    {
+      "name": "service",
+      "stance": "whitelist",
+      "allow": [
+        "domain",
+        "std"
+      ],
+      "packages": 2,
+      "edges": 2,
+      "violations": 0
+    },
+    {
+      "name": "tests",
+      "stance": "whitelist",
+      "allow": [
+        "domain",
+        "service",
+        "std"
+      ],
+      "packages": 1,
+      "edges": 1,
+      "violations": 0
+    }
+  ],
+  "boundaries": [],
+  "cycles": [
+    [
+      "domain",
+      "service"
+    ]
+  ],
+  "stats": {
+    "packages": 5,
+    "edges": 9,
+    "duration_ms": 0
+  }
+}
