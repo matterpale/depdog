@@ -17,15 +17,13 @@
   <img src="assets/demo.gif" alt="depdog demo: check, explain, and the TUI on a module with violations" width="820">
 </p>
 
-**depdog** is a *dependency watchdog*: architecture rules
+Architecture rules
 usually live in someone's head or a wiki, and they rot.
-Import graph slowly turns to spaghetti — components reaching into each other until
-nothing moves in isolation.
-
-This tool makes rules executable: you declare which
+**depdog** makes rules executable: you declare which
 **components** exist and who may import whom in a `depdog.yaml`, and
 depdog checks it against every import edge in your codebase, exiting
-non-zero for CI. One neutral rule format, one engine — depdog just swaps a thin
+non-zero for CI. No more import spaghetti. One neutral rule format,
+one engine — depdog just swaps a thin
 [language adapter](#multi-language-support) per project.
 
 ```
@@ -79,7 +77,7 @@ source (`go build -o depdog ./cmd/depdog`) needs Go 1.26+.
 
 ```bash
 depdog init      # scan the module and write a starter depdog.yaml
-depdog check     # enforce the rules; exit 1 on violations
+depdog check     # check against the rules; exit 1 on violations
 ```
 
 `init` inspects your layout, matches it against an architecture preset, and
