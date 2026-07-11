@@ -46,17 +46,16 @@ failing build.*</sub>
 
 ## Use cases
 
-- **CI — the main event.** `depdog check` exits non-zero on any violation and
+- **CI.** `depdog check` exits non-zero on any violation and
   speaks `github` and `sarif`, so a tangled import fails the build like a broken
-  test would. See [CI](#ci).
+  test would. See [more](#ci).
 - **Coding agents.** A stable `--format json` schema, contract
-  [exit codes](#commands), language auto-detect, and a drop-in authoring skill
-  let an agent map a codebase and keep it honest. See [For AI agents](#for-ai-agents).
-- **Local exploration.** The [TUI](#commands) (bare `depdog`) and `depdog explain`
+  [exit codes](#commands), language auto-detect, and a drop-in setup skill
+  let an agent map a codebase and get you started. See [For AI agents](#for-ai-agents).
+- **Local exploration.** The [TUI](#commands) and `depdog explain`
   are for reading an existing graph and debugging a config by hand.
-- **In your editor (LSP).** `depdog lsp` surfaces violations as inline
-  diagnostics — nice if you live in your editor, though architecture drifts
-  slowly enough that commit/CI time usually catches it just fine.
+- **LSP for your IDE.** `depdog lsp` surfaces violations as inline
+  diagnostics in the editor of your choice.
 
 ## Install
 
