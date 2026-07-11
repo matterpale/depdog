@@ -105,6 +105,58 @@ func TestSetComponentRuleNoOp(t *testing.T) {
 	}
 }
 
+func TestSetComponentPath(t *testing.T) {
+	// Single pattern -> scalar, preserving the trailing comment and other lines.
+	out := string(mustPath(t, []byte(editFixture), "domain", []string{"internal/model/**"}))
+	dl := lineFor(t, []byte(out), "domain:")
+	if !strings.Contains(dl, `internal/model/**`) || strings.Contains(dl, "internal/domain/**") {
+		t.Errorf("domain path not rewritten:\n%s", dl)
+	}
+	if !strings.Contains(dl, "# only std") {
+		t.Errorf("domain kept its rule and comment? line:\n%s", dl)
+	}
+	rs, err := Parse([]byte(out))
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	if ok, _ := rs.Decide("domain", "std"); !ok {
+		t.Errorf("domain should still allow std after a re-path")
+	}
+
+	// Several patterns -> a flow sequence.
+	out = string(mustPath(t, []byte(editFixture), "main", []string{"cmd/**", "tools/**"}))
+	ml := lineFor(t, []byte(out), "  main:")
+	if !strings.Contains(ml, "cmd/**") || !strings.Contains(ml, "tools/**") {
+		t.Errorf("main should carry both patterns:\n%s", ml)
+	}
+	if _, err := Parse([]byte(out)); err != nil {
+		t.Fatalf("multi-pattern re-path did not parse: %v", err)
+	}
+
+	// No-op: setting the same path returns the input unchanged.
+	same, err := SetComponentPath([]byte(editFixture), "main", []string{"cmd/**"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(same) != editFixture {
+		t.Error("re-pathing to the current path should be a no-op")
+	}
+
+	// Empty patterns are rejected.
+	if _, err := SetComponentPath([]byte(editFixture), "main", nil); err == nil {
+		t.Error("expected an error for zero patterns")
+	}
+}
+
+func mustPath(t *testing.T, data []byte, comp string, patterns []string) []byte {
+	t.Helper()
+	out, err := SetComponentPath(data, comp, patterns)
+	if err != nil {
+		t.Fatalf("SetComponentPath(%s, %v): %v", comp, patterns, err)
+	}
+	return out
+}
+
 func TestSetComponentRuleRefusals(t *testing.T) {
 	if _, err := SetComponentRule([]byte(editFixture), "nope", "std", "allow"); err == nil {
 		t.Error("expected an error for an unknown component")

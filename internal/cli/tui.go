@@ -98,12 +98,31 @@ func launch(cmd *cobra.Command, configPath string, args []string, ev *evaluation
 		}
 		return os.WriteFile(ev.ConfigPath, out, 0o644)
 	}
+	// repath backs the Matrix tab's re-path form: validate each glob (as `init`
+	// does) then rewrite the component's path in depdog.yaml, comment-preserving.
+	repath := func(component string, patterns []string) error {
+		for _, p := range patterns {
+			if err := core.ValidatePattern(p); err != nil {
+				return err
+			}
+		}
+		data, err := os.ReadFile(ev.ConfigPath)
+		if err != nil {
+			return err
+		}
+		out, err := config.SetComponentPath(data, component, patterns)
+		if err != nil {
+			return err
+		}
+		return os.WriteFile(ev.ConfigPath, out, 0o644)
+	}
 	return tui.Run(ev.Result, pkgs,
 		tui.WithRoot(root),
 		tui.WithConfig(configRel, ev.Rules),
 		tui.WithRefresh(refresh),
 		tui.WithEdit(edit),
-		tui.WithAddComponent(addComponent))
+		tui.WithAddComponent(addComponent),
+		tui.WithRepath(repath))
 }
 
 // configRelPath renders the config path relative to the module root for display,

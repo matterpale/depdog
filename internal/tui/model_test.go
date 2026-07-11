@@ -709,7 +709,7 @@ func TestAddComponentForm(t *testing.T) {
 		WithAddComponent(func(name, pattern string) error { got = [2]string{name, pattern}; calls++; return nil })), runes("5"))
 
 	m = update(m, runes("a"))
-	if !m.matrixAdding {
+	if m.matrixForm != formAdd {
 		t.Fatal("a should open the add-component form")
 	}
 	if !strings.Contains(m.View(), "Add component") {
@@ -718,14 +718,14 @@ func TestAddComponentForm(t *testing.T) {
 	m = typeString(m, "service")
 	m = update(m, tea.KeyMsg{Type: tea.KeyEnter}) // name -> path
 	m = typeString(m, "internal/service/**")
-	if m.addName != "service" || m.addPattern != "internal/service/**" {
-		t.Fatalf("fields = %q, %q", m.addName, m.addPattern)
+	if m.formName != "service" || m.formPattern != "internal/service/**" {
+		t.Fatalf("fields = %q, %q", m.formName, m.formPattern)
 	}
 	m = update(m, tea.KeyMsg{Type: tea.KeyEnter}) // submit
 	if calls != 1 || got != [2]string{"service", "internal/service/**"} {
 		t.Errorf("submit should call addComp once with the fields, got %d %v", calls, got)
 	}
-	if m.matrixAdding {
+	if m.matrixForm != formNone {
 		t.Error("a successful add should close the form")
 	}
 }
@@ -739,7 +739,7 @@ func TestAddComponentFormError(t *testing.T) {
 	m = update(m, tea.KeyMsg{Type: tea.KeyEnter})
 	m = typeString(m, "x/**")
 	m = update(m, tea.KeyMsg{Type: tea.KeyEnter}) // submit -> error
-	if !m.matrixAdding {
+	if m.matrixForm != formAdd {
 		t.Error("a failed add should keep the form open")
 	}
 	if !strings.Contains(m.View(), "that name is reserved") {
@@ -755,7 +755,7 @@ func TestAddComponentFormCancel(t *testing.T) {
 	m = update(m, runes("a"))
 	m = typeString(m, "svc")
 	m = update(m, tea.KeyMsg{Type: tea.KeyEsc})
-	if m.matrixAdding {
+	if m.matrixForm != formNone {
 		t.Error("esc should cancel the form")
 	}
 	if calls != 0 {
@@ -769,8 +769,67 @@ func TestAddComponentFormCancel(t *testing.T) {
 func TestAddComponentUnavailable(t *testing.T) {
 	m := update(New(fixtureResult(), fixturePkgs(), WithConfig("depdog.yaml", fixtureRuleSet())), runes("5"))
 	m = update(m, runes("a"))
-	if m.matrixAdding {
+	if m.matrixForm != formNone {
 		t.Error("without an add hook, `a` must be inert")
+	}
+}
+
+func TestRepathForm(t *testing.T) {
+	var got struct {
+		comp     string
+		patterns []string
+	}
+	calls := 0
+	m := update(New(fixtureResult(), fixturePkgs(),
+		WithConfig("depdog.yaml", fixtureRuleSet()),
+		WithRepath(func(component string, patterns []string) error {
+			got.comp, got.patterns, calls = component, patterns, calls+1
+			return nil
+		})), runes("5"))
+
+	// Selection starts on the first component (domain); p opens the form prefilled.
+	m = update(m, runes("p"))
+	if m.matrixForm != formRepath {
+		t.Fatal("p should open the re-path form")
+	}
+	v := m.View()
+	if !strings.Contains(v, "Re-path") || !strings.Contains(v, "domain") {
+		t.Errorf("re-path form should name the component:\n%s", v)
+	}
+	if m.formName != "domain" || m.formPattern != "internal/domain/**" {
+		t.Errorf("re-path form should prefill the current path, got name=%q path=%q", m.formName, m.formPattern)
+	}
+	// Replace the path with two globs.
+	for i := 0; i < len("internal/domain/**"); i++ {
+		m = update(m, tea.KeyMsg{Type: tea.KeyBackspace})
+	}
+	m = typeString(m, "internal/model/** internal/entity/**")
+	m = update(m, tea.KeyMsg{Type: tea.KeyEnter}) // submit
+	if calls != 1 || got.comp != "domain" || len(got.patterns) != 2 ||
+		got.patterns[0] != "internal/model/**" || got.patterns[1] != "internal/entity/**" {
+		t.Errorf("submit should re-path domain to the two globs, got %+v", got)
+	}
+	if m.matrixForm != formNone {
+		t.Error("a successful re-path should close the form")
+	}
+}
+
+func TestRepathFormErrorAndUnavailable(t *testing.T) {
+	// Error keeps the form open with the message.
+	m := update(New(fixtureResult(), fixturePkgs(),
+		WithConfig("depdog.yaml", fixtureRuleSet()),
+		WithRepath(func(_ string, _ []string) error { return fmt.Errorf("bad glob") })), runes("5"))
+	m = update(m, runes("p"))
+	m = update(m, tea.KeyMsg{Type: tea.KeyEnter}) // submit prefilled -> error
+	if m.matrixForm != formRepath || !strings.Contains(m.View(), "bad glob") {
+		t.Errorf("a failed re-path should keep the form open with the error:\n%s", m.View())
+	}
+
+	// No hook: p is inert.
+	m2 := update(New(fixtureResult(), fixturePkgs(), WithConfig("depdog.yaml", fixtureRuleSet())), runes("5"))
+	m2 = update(m2, runes("p"))
+	if m2.matrixForm != formNone {
+		t.Error("without a re-path hook, `p` must be inert")
 	}
 }
 

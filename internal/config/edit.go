@@ -25,6 +25,30 @@ import (
 // anchors/aliases, a flow-style components mapping, an unknown component, or a
 // component whose value spans more than one line.
 func SetComponentRule(data []byte, component, target, verdict string) ([]byte, error) {
+	return editComponentLine(data, component, func(val *yaml.Node) bool {
+		return applyVerdict(val, target, verdict)
+	})
+}
+
+// SetComponentPath rewrites a component's `path` to the given pattern(s) — a
+// scalar for one, a flow sequence for several — with the same single-line,
+// comment-preserving, Parse-validated splice SetComponentRule uses.
+func SetComponentPath(data []byte, component string, patterns []string) ([]byte, error) {
+	if len(patterns) == 0 {
+		return nil, errors.New("a component needs at least one path pattern")
+	}
+	return editComponentLine(data, component, func(val *yaml.Node) bool {
+		return setPath(val, patterns)
+	})
+}
+
+// editComponentLine locates the single-line flow mapping for component, applies
+// mutate to it, and splices the re-encoded line back — preserving every other
+// line and the component's trailing comment — validating the result with Parse.
+// mutate reports whether it changed anything (a no-op returns the input as-is).
+// It refuses files a precise splice can't safely edit: anchors/aliases, a
+// flow-style components mapping, an unknown component, or a multi-line value.
+func editComponentLine(data []byte, component string, mutate func(val *yaml.Node) bool) ([]byte, error) {
 	var doc yaml.Node
 	if err := yaml.Unmarshal(data, &doc); err != nil {
 		return nil, err
@@ -52,7 +76,7 @@ func SetComponentRule(data []byte, component, target, verdict string) ([]byte, e
 		return nil, fmt.Errorf("component %q spans multiple lines — edit it by hand", component)
 	}
 
-	if !applyVerdict(val, target, verdict) {
+	if !mutate(val) {
 		return data, nil // nothing to change
 	}
 
@@ -143,6 +167,56 @@ func seqRemove(val *yaml.Node, key, target string) bool {
 		val.Content = append(val.Content[:ki], val.Content[ki+2:]...)
 	} else {
 		seq.Content = kept
+	}
+	return true
+}
+
+// setPath replaces the component's `path` value with patterns (a scalar for one,
+// a flow sequence for several), creating the key if it is somehow absent.
+// Returns whether the path actually changed.
+func setPath(val *yaml.Node, patterns []string) bool {
+	ki := mappingKeyIndex(val, "path")
+	if ki < 0 {
+		val.Content = append([]*yaml.Node{{Kind: yaml.ScalarNode, Value: "path"}, pathNode(patterns)}, val.Content...)
+		return true
+	}
+	if samePath(val.Content[ki+1], patterns) {
+		return false
+	}
+	val.Content[ki+1] = pathNode(patterns)
+	return true
+}
+
+// pathNode renders path patterns as a quoted scalar (one) or a quoted flow
+// sequence (several), matching the style `depdog init` generates.
+func pathNode(patterns []string) *yaml.Node {
+	if len(patterns) == 1 {
+		return &yaml.Node{Kind: yaml.ScalarNode, Value: patterns[0], Style: yaml.DoubleQuotedStyle}
+	}
+	seq := &yaml.Node{Kind: yaml.SequenceNode, Style: yaml.FlowStyle}
+	for _, p := range patterns {
+		seq.Content = append(seq.Content, &yaml.Node{Kind: yaml.ScalarNode, Value: p, Style: yaml.DoubleQuotedStyle})
+	}
+	return seq
+}
+
+// samePath reports whether a path value node already holds exactly patterns.
+func samePath(node *yaml.Node, patterns []string) bool {
+	var cur []string
+	if node.Kind == yaml.SequenceNode {
+		for _, n := range node.Content {
+			cur = append(cur, n.Value)
+		}
+	} else {
+		cur = []string{node.Value}
+	}
+	if len(cur) != len(patterns) {
+		return false
+	}
+	for i := range cur {
+		if cur[i] != patterns[i] {
+			return false
+		}
 	}
 	return true
 }

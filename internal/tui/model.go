@@ -67,9 +67,10 @@ type Model struct {
 	root      string             // module root; positions are relative to it
 	configRel string             // module-relative config path (stable across refreshes)
 	refresh   func() (*core.Result, []core.PackageView, *core.RuleSet, error)
-	edit      func(from, target, verdict string) error // Matrix-tab cell toggle write-back
-	addComp   func(name, pattern string) error         // Matrix-tab add-component form write-back
-	status    string                                   // transient message shown in the footer, cleared on any key
+	edit      func(from, target, verdict string) error        // Matrix-tab cell toggle write-back
+	addComp   func(name, pattern string) error                // Matrix-tab add-component form write-back
+	repath    func(component string, patterns []string) error // Matrix-tab re-path form write-back
+	status    string                                          // transient message shown in the footer, cleared on any key
 	active    tab
 	selected  int // highlighted violation on the Violations screen
 	selPkg    int // highlighted package on the Packages screen
@@ -86,14 +87,16 @@ type Model struct {
 	// orthogonal mutual-exclusion axis); matrixBoundSel picks a boundary there.
 	matrixBoundaries bool
 	matrixBoundSel   int
-	// add-component form state on the Matrix tab (opened with `a`).
-	matrixAdding bool
-	addName      string
-	addPattern   string
-	addField     int    // 0 = name, 1 = path pattern
-	addErr       string // last submit/validation error, shown in the form
-	filter       string
-	filtering    bool // capturing keystrokes into filter on the Violations screen
+	// input-form state on the Matrix tab: add a component (`a`) or re-path the
+	// selected one (`p`). formName is editable in add mode and the fixed target
+	// in re-path mode; formPattern is the editable path field.
+	matrixForm  formKind
+	formName    string
+	formPattern string
+	formField   int    // add: 0 = name, 1 = pattern; re-path: pinned to the pattern
+	formErr     string // last submit/validation error, shown in the form
+	filter      string
+	filtering   bool // capturing keystrokes into filter on the Violations screen
 	// editedConfig records that the last $EDITOR launch came from the Config tab,
 	// so its exit auto-fires the refresh pipeline.
 	editedConfig bool
@@ -133,6 +136,13 @@ func WithEdit(f func(from, target, verdict string) error) Option {
 // appears in the grid. Without it, the `a` form is unavailable.
 func WithAddComponent(f func(name, pattern string) error) Option {
 	return func(m *Model) { m.addComp = f }
+}
+
+// WithRepath wires the Matrix tab's re-path form: the hook rewrites the selected
+// component's path glob(s) in depdog.yaml; the model then refreshes. Without it,
+// the `p` form is unavailable.
+func WithRepath(f func(component string, patterns []string) error) Option {
+	return func(m *Model) { m.repath = f }
 }
 
 // WithConfig wires the Config tab: the module-relative config path (stable
@@ -223,8 +233,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.filtering {
 			return m.updateFilter(msg)
 		}
-		if m.matrixAdding {
-			return m.updateAddForm(msg) // the form swallows every key until esc/submit
+		if m.matrixForm != formNone {
+			return m.updateForm(msg) // the form swallows every key until esc/submit
 		}
 		switch msg.String() {
 		case "q", "ctrl+c":
@@ -277,8 +287,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		case "a":
 			if m.active == tabMatrix && !m.matrixBoundaries && m.addComp != nil {
-				m.matrixAdding = true
-				m.addName, m.addPattern, m.addField, m.addErr = "", "", 0, ""
+				m.matrixForm = formAdd
+				m.formName, m.formPattern, m.formField, m.formErr = "", "", 0, ""
+			}
+		case "p":
+			if m.active == tabMatrix && !m.matrixBoundaries && m.repath != nil && m.rules != nil && len(m.rules.Components) > 0 {
+				c := m.rules.Components[clamp(m.matrixSel, len(m.rules.Components))]
+				m.matrixForm = formRepath
+				m.formName, m.formPattern, m.formField, m.formErr = c.Name, strings.Join(c.Patterns, " "), 1, ""
 			}
 		case "1":
 			m.active = tabDashboard
@@ -424,8 +440,8 @@ func (m Model) View() string {
 			b.WriteString(m.configView())
 		case tabMatrix:
 			switch {
-			case m.matrixAdding:
-				b.WriteString(m.addFormView())
+			case m.matrixForm != formNone:
+				b.WriteString(m.formView())
 			case m.matrixBoundaries:
 				b.WriteString(m.boundariesView())
 			default:
@@ -450,6 +466,7 @@ func helpView() string {
 		{"space", "Matrix: toggle the cursored edge — allow → deny → default"},
 		{"b", "Matrix: show the boundaries overlay (mutual-exclusion sets)"},
 		{"a", "Matrix: add a new component (name + path) to depdog.yaml"},
+		{"p", "Matrix: re-path the selected component (edit its path glob)"},
 		{"/", "filter the list (Violations, Packages)"},
 		{"e", "open $EDITOR: the selection (Violations, Packages) or depdog.yaml (Config)"},
 		{"r", "re-run the check and refresh every screen"},
@@ -510,7 +527,10 @@ func (m Model) footer() string {
 		return styleDim.Render("tab/1-5 switch · ↑/↓ scroll · e edit depdog.yaml · r re-run · ? help · q quit")
 	}
 	if m.active == tabMatrix {
-		if m.matrixAdding {
+		if m.matrixForm == formRepath {
+			return styleDim.Render("type the path glob(s) · enter save · esc cancel")
+		}
+		if m.matrixForm == formAdd {
 			return styleDim.Render("type to fill fields · tab switch field · enter next/add · esc cancel")
 		}
 		if m.matrixBoundaries {
@@ -522,6 +542,9 @@ func (m Model) footer() string {
 		}
 		if m.addComp != nil {
 			hint += " · a add"
+		}
+		if m.repath != nil {
+			hint += " · p re-path"
 		}
 		return styleDim.Render(hint + " · r re-run · ? help · q quit")
 	}
