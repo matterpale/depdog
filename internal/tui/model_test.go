@@ -552,6 +552,83 @@ func TestMatrixViewWithoutRuleSet(t *testing.T) {
 	}
 }
 
+func TestNextVerdict(t *testing.T) {
+	cases := map[cellKind]string{
+		cellDefaultAllow: "allow",
+		cellDefaultDeny:  "allow",
+		cellAllow:        "deny",
+		cellDeny:         "default",
+	}
+	for k, want := range cases {
+		if got := nextVerdict(k); got != want {
+			t.Errorf("nextVerdict(%d) = %q, want %q", k, got, want)
+		}
+	}
+}
+
+func TestMatrixToggleWritesVerdict(t *testing.T) {
+	var got [3]string
+	mk := func() Model {
+		return update(New(fixtureResult(), fixturePkgs(),
+			WithConfig("depdog.yaml", fixtureRuleSet()),
+			WithEdit(func(from, target, verdict string) error { got = [3]string{from, target, verdict}; return nil })),
+			runes("5"))
+	}
+	// domain row, std column (idx 2): explicit allow -> toggling writes deny.
+	m := mk()
+	m = update(m, tea.KeyMsg{Type: tea.KeyRight})
+	m = update(m, tea.KeyMsg{Type: tea.KeyRight})
+	update(m, runes(" "))
+	if got != [3]string{"domain", "std", "deny"} {
+		t.Errorf("explicit-allow domain→std should toggle to deny, got %v", got)
+	}
+	// domain row, handler column (idx 1): default-deny -> toggling writes allow.
+	got = [3]string{}
+	m = mk()
+	m = update(m, tea.KeyMsg{Type: tea.KeyRight})
+	update(m, runes(" "))
+	if got != [3]string{"domain", "handler", "allow"} {
+		t.Errorf("default domain→handler should toggle to allow, got %v", got)
+	}
+}
+
+func TestMatrixToggleReadOnlyAndSelf(t *testing.T) {
+	// No WithEdit: space is inert and says so, never panics.
+	m := update(New(fixtureResult(), fixturePkgs(), WithConfig("depdog.yaml", fixtureRuleSet())), runes("5"))
+	m = update(m, runes(" "))
+	if !strings.Contains(m.View(), "read-only") {
+		t.Errorf("space without an edit hook should report read-only:\n%s", m.View())
+	}
+
+	// With an edit hook but the cursor on the diagonal (domain→domain): no write.
+	edited := false
+	m = update(New(fixtureResult(), fixturePkgs(),
+		WithConfig("depdog.yaml", fixtureRuleSet()),
+		WithEdit(func(_, _, _ string) error { edited = true; return nil })), runes("5"))
+	m = update(m, runes(" ")) // cursor starts at col 0 == domain (self)
+	if edited {
+		t.Error("toggling a component against itself must not write")
+	}
+}
+
+func TestMatrixColumnCursorClamps(t *testing.T) {
+	m := update(New(fixtureResult(), fixturePkgs(), WithConfig("depdog.yaml", fixtureRuleSet())), runes("5"))
+	if m.matrixCol != 0 {
+		t.Fatalf("initial matrixCol = %d, want 0", m.matrixCol)
+	}
+	m = update(m, tea.KeyMsg{Type: tea.KeyLeft}) // clamp at 0
+	if m.matrixCol != 0 {
+		t.Errorf("left at col 0 should clamp, got %d", m.matrixCol)
+	}
+	// 2 components + 3 special targets = 5 columns; index maxes at 4.
+	for i := 0; i < 20; i++ {
+		m = update(m, tea.KeyMsg{Type: tea.KeyRight})
+	}
+	if m.matrixCol != 4 {
+		t.Errorf("right past the end should clamp at 4, got %d", m.matrixCol)
+	}
+}
+
 func TestMatrixSelectionClamps(t *testing.T) {
 	m := update(New(fixtureResult(), fixturePkgs(), WithConfig("depdog.yaml", manyComponentRuleSet(40))), runes("5"))
 	m = update(m, tea.WindowSizeMsg{Width: 200, Height: 20})

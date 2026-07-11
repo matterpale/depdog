@@ -9,6 +9,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/matterpale/depdog/internal/config"
 	"github.com/matterpale/depdog/internal/core"
 	"github.com/matterpale/depdog/internal/tui"
 )
@@ -61,10 +62,25 @@ func launch(cmd *cobra.Command, configPath string, args []string, ev *evaluation
 		}
 		return ev.Result, pkgs, ev.Rules, nil
 	}
+	// edit backs the Matrix tab's cell toggles: rewrite one component's
+	// allow/deny in depdog.yaml (comment-preserving), leaving the caller to
+	// re-run the check via the refresh hook so every screen reflects the change.
+	edit := func(from, target, verdict string) error {
+		data, err := os.ReadFile(ev.ConfigPath)
+		if err != nil {
+			return err
+		}
+		out, err := config.SetComponentRule(data, from, target, verdict)
+		if err != nil {
+			return err
+		}
+		return os.WriteFile(ev.ConfigPath, out, 0o644)
+	}
 	return tui.Run(ev.Result, pkgs,
 		tui.WithRoot(root),
 		tui.WithConfig(configRel, ev.Rules),
-		tui.WithRefresh(refresh))
+		tui.WithRefresh(refresh),
+		tui.WithEdit(edit))
 }
 
 // configRelPath renders the config path relative to the module root for display,

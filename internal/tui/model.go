@@ -52,6 +52,9 @@ var (
 	// styleSelectedBad highlights the selected row when it is an offending package:
 	// the selection bar, tinted red so its violation status survives the highlight.
 	styleSelectedBad = lipgloss.NewStyle().Reverse(true).Foreground(lipgloss.Color("1")).Bold(true)
+	// styleCursor marks the Matrix tab's edit cursor — the one cell a toggle acts
+	// on — in cyan reverse, distinct from the row bar and the red violation cell.
+	styleCursor = lipgloss.NewStyle().Reverse(true).Foreground(lipgloss.Color("6")).Bold(true)
 )
 
 // Model is depdog's root Bubble Tea model.
@@ -64,7 +67,8 @@ type Model struct {
 	root      string             // module root; positions are relative to it
 	configRel string             // module-relative config path (stable across refreshes)
 	refresh   func() (*core.Result, []core.PackageView, *core.RuleSet, error)
-	status    string // transient message shown in the footer, cleared on any key
+	edit      func(from, target, verdict string) error // Matrix-tab cell toggle write-back
+	status    string                                   // transient message shown in the footer, cleared on any key
 	active    tab
 	selected  int // highlighted violation on the Violations screen
 	selPkg    int // highlighted package on the Packages screen
@@ -72,9 +76,11 @@ type Model struct {
 	// document (a scroll offset), not a list (a selection): up/down move the window
 	// over static text, so it has no highlighted row.
 	configScroll int
-	// matrixSel is the selected component row on the Matrix tab; up/down move it
-	// and the grid windows to keep it in view (a list selection, like Violations).
+	// matrixSel/matrixCol are the selected row (from-component) and column
+	// (import target) on the Matrix tab; up/down and left/right move the edit
+	// cursor over the grid.
 	matrixSel int
+	matrixCol int
 	filter    string
 	filtering bool // capturing keystrokes into filter on the Violations screen
 	// editedConfig records that the last $EDITOR launch came from the Config tab,
@@ -101,6 +107,14 @@ func WithRoot(dir string) Option {
 // hands it back alongside).
 func WithRefresh(f func() (*core.Result, []core.PackageView, *core.RuleSet, error)) Option {
 	return func(m *Model) { m.refresh = f }
+}
+
+// WithEdit wires the Matrix tab's cell toggles: the hook writes a single
+// allow/deny change back to depdog.yaml; the model then fires the refresh hook
+// so the recompiled rules flow to every screen. Without it, the Matrix tab stays
+// read-only.
+func WithEdit(f func(from, target, verdict string) error) Option {
+	return func(m *Model) { m.edit = f }
 }
 
 // WithConfig wires the Config tab: the module-relative config path (stable
@@ -183,6 +197,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.selPkg = clamp(m.selPkg, len(m.filteredPackages()))
 		m.configScroll = 0 // the fresh document may be shorter; start at the top
 		m.matrixSel = clamp(m.matrixSel, m.matrixRowCount())
+		m.matrixCol = clamp(m.matrixCol, m.matrixColCount())
 		m.status = "re-ran: " + plural(len(msg.res.Violations), "violation")
 	case tea.KeyMsg:
 		m.status = "" // any key dismisses a transient status message
@@ -208,10 +223,28 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil // the overlay swallows navigation until closed
 		}
 		switch msg.String() {
-		case "tab", "right", "l":
+		case "tab":
 			m.active = (m.active + 1) % numTabs
-		case "shift+tab", "left", "h":
+		case "shift+tab":
 			m.active = (m.active + numTabs - 1) % numTabs
+		case "right", "l":
+			// On the Matrix tab left/right move the edit cursor across columns;
+			// elsewhere they page between tabs.
+			if m.active == tabMatrix {
+				m.matrixCol = clamp(m.matrixCol+1, m.matrixColCount())
+			} else {
+				m.active = (m.active + 1) % numTabs
+			}
+		case "left", "h":
+			if m.active == tabMatrix {
+				m.matrixCol = clamp(m.matrixCol-1, m.matrixColCount())
+			} else {
+				m.active = (m.active + numTabs - 1) % numTabs
+			}
+		case " ", "enter":
+			if m.active == tabMatrix {
+				return m.toggleCell()
+			}
 		case "1":
 			m.active = tabDashboard
 		case "2":
@@ -367,6 +400,8 @@ func helpView() string {
 		{"tab / shift+tab", "next / previous screen"},
 		{"1 / 2 / 3 / 4 / 5", "Dashboard / Violations / Packages / Config / Matrix"},
 		{"up/down or k/j", "move the selection (or scroll the Config document)"},
+		{"left/right or h/l", "Matrix: move the cursor across columns (else page tabs)"},
+		{"space", "Matrix: toggle the cursored edge — allow → deny → default"},
 		{"/", "filter the list (Violations, Packages)"},
 		{"e", "open $EDITOR: the selection (Violations, Packages) or depdog.yaml (Config)"},
 		{"r", "re-run the check and refresh every screen"},
@@ -427,7 +462,10 @@ func (m Model) footer() string {
 		return styleDim.Render("tab/1-5 switch · ↑/↓ scroll · e edit depdog.yaml · r re-run · ? help · q quit")
 	}
 	if m.active == tabMatrix {
-		return styleDim.Render("tab/1-5 switch · ↑/↓ pick component · r re-run · ? help · q quit")
+		if m.edit != nil {
+			return styleDim.Render("tab switch · ↑↓←→ move cursor · space toggle allow/deny · r re-run · ? help · q quit")
+		}
+		return styleDim.Render("tab switch · ↑↓←→ move cursor · r re-run · ? help · q quit")
 	}
 	return styleDim.Render("tab/1-5 switch · ↑/↓ move · r re-run · ? help · q quit")
 }

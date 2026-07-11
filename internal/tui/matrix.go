@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
 
@@ -103,6 +104,88 @@ func glyphFor(k cellKind) (glyph string, style lipgloss.Style) {
 	}
 }
 
+// matrixColCount is the number of columns (every component, then the special
+// targets) — the clamp bound for the column cursor.
+func (m Model) matrixColCount() int {
+	if m.rules == nil {
+		return 0
+	}
+	return len(m.rules.Components) + len(specialTargets)
+}
+
+// matrixTargetAt maps a column index to its import target: the first
+// len(Components) columns are components, the rest the special buckets.
+func (m Model) matrixTargetAt(col int) string {
+	comps := m.rules.Components
+	switch {
+	case col < 0:
+		return ""
+	case col < len(comps):
+		return comps[col].Name
+	case col-len(comps) < len(specialTargets):
+		return specialTargets[col-len(comps)].target
+	default:
+		return ""
+	}
+}
+
+// nextVerdict is the toggle cycle for a cell: default → allow → deny → default.
+func nextVerdict(k cellKind) string {
+	switch k {
+	case cellAllow:
+		return "deny"
+	case cellDeny:
+		return "default"
+	default: // cellDefaultAllow / cellDefaultDeny
+		return "allow"
+	}
+}
+
+// verdictLabel describes a cell's current verdict for the focus pane.
+func verdictLabel(k cellKind) string {
+	switch k {
+	case cellAllow:
+		return "allow (explicit)"
+	case cellDeny:
+		return "deny (explicit)"
+	case cellDefaultAllow:
+		return "allow (default)"
+	case cellDefaultDeny:
+		return "deny (default)"
+	default:
+		return "self"
+	}
+}
+
+// toggleCell cycles the verdict of the cursored (from → target) edge, writes it
+// to depdog.yaml via the edit hook, and re-runs the check so every screen
+// reflects the change. Self edges — and, without an edit hook, all edges — are
+// inert.
+func (m Model) toggleCell() (tea.Model, tea.Cmd) {
+	if m.edit == nil {
+		m.status = "editing not available (read-only session)"
+		return m, nil
+	}
+	comps := m.rules.Components
+	if len(comps) == 0 {
+		return m, nil
+	}
+	from := comps[clamp(m.matrixSel, len(comps))].Name
+	target := m.matrixTargetAt(clamp(m.matrixCol, m.matrixColCount()))
+	if target == "" || target == from {
+		m.status = "a component always imports itself — nothing to toggle"
+		return m, nil
+	}
+	verdict := nextVerdict(cellVerdict(m.rules, from, target))
+	if err := m.edit(from, target, verdict); err != nil {
+		m.status = "edit failed: " + oneLine(err.Error())
+		return m, nil
+	}
+	cmd := m.startRefresh()
+	m.status = fmt.Sprintf("%s → %s: %s — re-running…", from, target, verdict)
+	return m, cmd
+}
+
 const (
 	matrixCompW = 3 // width of a component column (holds a 1-glyph cell / a 1–2 digit index)
 	matrixSpecW = 4 // width of a special-target column (holds "std"/"ext"/"una")
@@ -114,13 +197,18 @@ func centerGlyph(glyph string, w int, style lipgloss.Style) string {
 	return strings.Repeat(" ", left) + style.Render(glyph) + strings.Repeat(" ", w-1-left)
 }
 
-// centerText centers a short ASCII header in a w-wide column, dimmed.
-func centerText(s string, w int) string {
+// centerText centers a short ASCII header in a w-wide column, dimmed — bold and
+// bright when active marks it as the cursor's column.
+func centerText(s string, w int, active bool) string {
 	if len(s) > w {
 		s = s[:w]
 	}
+	style := styleDim
+	if active {
+		style = styleActive
+	}
 	left := (w - len(s)) / 2
-	return strings.Repeat(" ", left) + styleDim.Render(s) + strings.Repeat(" ", w-len(s)-left)
+	return strings.Repeat(" ", left) + style.Render(s) + strings.Repeat(" ", w-len(s)-left)
 }
 
 func padRight(s string, w int) string {
@@ -139,10 +227,12 @@ func (m Model) matrixRowCount() int {
 	return len(m.rules.Components)
 }
 
-// matrixGrid builds the fixed header lines and one line per component row, with
-// the sel row's label drawn as a selection bar. The 1-based row index also heads
-// that component's column, so the row labels double as the column key.
-func (m Model) matrixGrid(sel int) (header, rows []string) {
+// matrixGrid builds the fixed header lines and one line per component row. The
+// sel row's label is a selection bar, the col column's header is highlighted,
+// and the (sel,col) intersection is drawn as the edit cursor. The 1-based row
+// index also heads that component's column, so the row labels double as the
+// column key.
+func (m Model) matrixGrid(sel, col int) (header, rows []string) {
 	comps := m.rules.Components
 
 	// Live violations, keyed by the (from component, target) cell they cross.
@@ -159,10 +249,13 @@ func (m Model) matrixGrid(sel int) (header, rows []string) {
 	}
 
 	sep := styleDim.Render(" │")
-	cell := func(from, target string, w int) string {
+	cell := func(from, target string, w, colIdx, rowIdx int) string {
 		g, style := glyphFor(cellVerdict(m.rules, from, target))
 		if viol[[2]string{from, target}] {
 			style = styleSelectedBad // a live crossing pops out of the grid
+		}
+		if rowIdx == sel && colIdx == col {
+			style = styleCursor // the edit cursor wins over everything
 		}
 		return centerGlyph(g, w, style)
 	}
@@ -171,18 +264,18 @@ func (m Model) matrixGrid(sel int) (header, rows []string) {
 	h.WriteString(styleDim.Render(padRight(`from \ to`, labelW)))
 	h.WriteString(sep)
 	for i := range comps {
-		h.WriteString(centerText(fmt.Sprintf("%d", i+1), matrixCompW))
+		h.WriteString(centerText(fmt.Sprintf("%d", i+1), matrixCompW, i == col))
 	}
 	h.WriteString(sep)
-	for _, st := range specialTargets {
-		h.WriteString(centerText(st.header, matrixSpecW))
+	for k, st := range specialTargets {
+		h.WriteString(centerText(st.header, matrixSpecW, len(comps)+k == col))
 	}
 	divider := styleDim.Render(
 		strings.Repeat("─", labelW) + "─┼" +
 			strings.Repeat("─", matrixCompW*len(comps)) + "─┼" +
 			strings.Repeat("─", matrixSpecW*len(specialTargets)))
 	header = []string{
-		styleTitle.Render("Rule matrix") + styleDim.Render("   rows import columns · ↑/↓ pick a component"),
+		styleTitle.Render("Rule matrix") + styleDim.Render("   rows import columns · ↑↓←→ move the cursor"),
 		"", h.String(), divider,
 	}
 
@@ -194,12 +287,12 @@ func (m Model) matrixGrid(sel int) (header, rows []string) {
 		var r strings.Builder
 		r.WriteString(label)
 		r.WriteString(sep)
-		for _, to := range comps {
-			r.WriteString(cell(from.Name, to.Name, matrixCompW))
+		for j, to := range comps {
+			r.WriteString(cell(from.Name, to.Name, matrixCompW, j, i))
 		}
 		r.WriteString(sep)
-		for _, st := range specialTargets {
-			r.WriteString(cell(from.Name, st.target, matrixSpecW))
+		for k, st := range specialTargets {
+			r.WriteString(cell(from.Name, st.target, matrixSpecW, len(comps)+k, i))
 		}
 		rows = append(rows, r.String())
 	}
@@ -210,7 +303,7 @@ func (m Model) matrixGrid(sel int) (header, rows []string) {
 // inferred stance, its explicit allow/deny refs as → / ⊗ arrows, and the
 // targets it currently violates. This is the concept's focus view — the same
 // data as `depdog explain <component>`, read off the compiled rule set.
-func (m Model) matrixFocus(sel int) []string {
+func (m Model) matrixFocus(sel, col int) []string {
 	from := m.rules.Components[sel].Name
 	stance := stanceShort(m.rules.Stance(from))
 
@@ -253,6 +346,17 @@ func (m Model) matrixFocus(sel int) []string {
 	if len(crossings) > 0 {
 		lines = append(lines, "  "+styleBad.Render("crossing ✗")+"  "+strings.Join(crossings, ", "))
 	}
+
+	// The cursor line: the exact edge a toggle acts on, and what it would become.
+	if target := m.matrixTargetAt(col); target != "" && target != from {
+		k := cellVerdict(m.rules, from, target)
+		cursor := "  " + styleDim.Render("cursor") + " " + from + " → " + styleTitle.Render(target) +
+			styleDim.Render("  = "+verdictLabel(k))
+		if m.edit != nil {
+			cursor += styleDim.Render("   (space → " + nextVerdict(k) + ")")
+		}
+		lines = append(lines, cursor)
+	}
 	return lines
 }
 
@@ -271,11 +375,12 @@ func (m Model) matrixView() string {
 	}
 
 	sel := clamp(m.matrixSel, len(m.rules.Components))
-	header, rows := m.matrixGrid(sel)
-	focus := m.matrixFocus(sel)
+	col := clamp(m.matrixCol, m.matrixColCount())
+	header, rows := m.matrixGrid(sel, col)
+	focus := m.matrixFocus(sel, col)
 	legend := []string{"",
 		styleGood.Render("  ✓") + styleDim.Render(" allow  ") + styleBad.Render("✗") +
-			styleDim.Render(" deny   faint = via stance/default   — self   inverse = selection / live violation")}
+			styleDim.Render(" deny   faint = stance/default   ") + styleCursor.Render("▮") + styleDim.Render(" cursor   — self")}
 
 	var out []string
 	if budget := m.bodyRows(); budget > 0 {
