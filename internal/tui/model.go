@@ -59,22 +59,24 @@ var (
 
 // Model is depdog's root Bubble Tea model.
 type Model struct {
-	res       *core.Result
-	pkgs      []core.PackageView // violators first, then by component and import path
-	rules     *core.RuleSet      // compiled config rendered on the Config tab
-	violEdges map[[2]string]bool // (from package, import) of every violation
-	violPkgs  map[string]bool    // import paths that are the source of a violation
-	root      string             // module root; positions are relative to it
-	configRel string             // module-relative config path (stable across refreshes)
-	refresh   func() (*core.Result, []core.PackageView, *core.RuleSet, error)
-	edit      func(from, target, verdict string) error        // Matrix-tab cell toggle write-back
-	addComp   func(name, pattern string) error                // Matrix-tab add-component form write-back
-	repath    func(component string, patterns []string) error // Matrix-tab re-path form write-back
-	rename    func(oldName, newName string) error             // Matrix-tab rename form write-back
-	status    string                                          // transient message shown in the footer, cleared on any key
-	active    tab
-	selected  int // highlighted violation on the Violations screen
-	selPkg    int // highlighted package on the Packages screen
+	res          *core.Result
+	pkgs         []core.PackageView // violators first, then by component and import path
+	rules        *core.RuleSet      // compiled config rendered on the Config tab
+	violEdges    map[[2]string]bool // (from package, import) of every violation
+	violPkgs     map[string]bool    // import paths that are the source of a violation
+	root         string             // module root; positions are relative to it
+	configRel    string             // module-relative config path (stable across refreshes)
+	refresh      func() (*core.Result, []core.PackageView, *core.RuleSet, error)
+	edit         func(from, target, verdict string) error        // Matrix-tab cell toggle write-back
+	addComp      func(name, pattern string) error                // Matrix-tab add-component form write-back
+	repath       func(component string, patterns []string) error // Matrix-tab re-path form write-back
+	rename       func(oldName, newName string) error             // Matrix-tab rename form write-back
+	addMember    func(boundary, member string) error             // boundaries overlay: add a member
+	removeMember func(boundary, member string) error             // boundaries overlay: remove a member
+	status       string                                          // transient message shown in the footer, cleared on any key
+	active       tab
+	selected     int // highlighted violation on the Violations screen
+	selPkg       int // highlighted package on the Packages screen
 	// configScroll is the document scroll offset on the Config tab. That tab is a
 	// document (a scroll offset), not a list (a selection): up/down move the window
 	// over static text, so it has no highlighted row.
@@ -85,9 +87,11 @@ type Model struct {
 	matrixSel int
 	matrixCol int
 	// matrixBoundaries toggles the Matrix tab to its boundaries overlay (the
-	// orthogonal mutual-exclusion axis); matrixBoundSel picks a boundary there.
+	// orthogonal mutual-exclusion axis); matrixBoundSel picks a boundary and
+	// matrixMemberSel a member within it (for add/remove).
 	matrixBoundaries bool
 	matrixBoundSel   int
+	matrixMemberSel  int
 	// input-form state on the Matrix tab: add a component (`a`), re-path (`p`), or
 	// rename (`R`) the selected one. formTarget is the component being acted on
 	// (empty for add); formName/formPattern are the editable name/path fields.
@@ -152,6 +156,13 @@ func WithRepath(f func(component string, patterns []string) error) Option {
 // Without it, the `R` form is unavailable.
 func WithRename(f func(oldName, newName string) error) Option {
 	return func(m *Model) { m.rename = f }
+}
+
+// WithBoundaryMembers wires the boundaries overlay's `a` (add) and `d` (remove)
+// member edits; the hooks write depdog.yaml and the model refreshes. Without
+// them the overlay stays read-only.
+func WithBoundaryMembers(add, remove func(boundary, member string) error) Option {
+	return func(m *Model) { m.addMember, m.removeMember = add, remove }
 }
 
 // WithConfig wires the Config tab: the module-relative config path (stable
@@ -236,6 +247,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.matrixSel = clamp(m.matrixSel, m.matrixRowCount())
 		m.matrixCol = clamp(m.matrixCol, m.matrixColCount())
 		m.matrixBoundSel = clamp(m.matrixBoundSel, m.boundaryCount())
+		m.matrixMemberSel = clamp(m.matrixMemberSel, m.currentMemberCount())
 		m.status = "re-ran: " + plural(len(msg.res.Violations), "violation")
 	case tea.KeyMsg:
 		m.status = "" // any key dismisses a transient status message
@@ -269,12 +281,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "shift+tab":
 			m.active = (m.active + numTabs - 1) % numTabs
 		case "right", "l":
-			// On the Matrix grid left/right move the edit cursor across columns;
-			// in its boundaries overlay they are inert; elsewhere they page tabs.
+			// On the Matrix grid left/right move the edit cursor across columns; in
+			// the boundaries overlay they move the member cursor; elsewhere page tabs.
 			switch {
 			case m.active == tabMatrix && !m.matrixBoundaries:
 				m.matrixCol = clamp(m.matrixCol+1, m.matrixColCount())
 			case m.active == tabMatrix:
+				m.matrixMemberSel = clamp(m.matrixMemberSel+1, m.currentMemberCount())
 			default:
 				m.active = (m.active + 1) % numTabs
 			}
@@ -283,6 +296,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case m.active == tabMatrix && !m.matrixBoundaries:
 				m.matrixCol = clamp(m.matrixCol-1, m.matrixColCount())
 			case m.active == tabMatrix:
+				m.matrixMemberSel = clamp(m.matrixMemberSel-1, m.currentMemberCount())
 			default:
 				m.active = (m.active + numTabs - 1) % numTabs
 			}
@@ -295,9 +309,18 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.matrixBoundaries = !m.matrixBoundaries
 			}
 		case "a":
-			if m.active == tabMatrix && !m.matrixBoundaries && m.addComp != nil {
+			switch {
+			case m.active == tabMatrix && m.matrixBoundaries && m.addMember != nil && m.currentBoundary() != nil:
+				m.matrixForm = formAddMember
+				m.formTarget, m.formName, m.formPattern = m.currentBoundary().Name, "", ""
+				m.formField, m.formErr = 0, ""
+			case m.active == tabMatrix && !m.matrixBoundaries && m.addComp != nil:
 				m.matrixForm = formAdd
 				m.formName, m.formPattern, m.formField, m.formErr = "", "", 0, ""
+			}
+		case "d":
+			if m.active == tabMatrix && m.matrixBoundaries && m.removeMember != nil {
+				return m.removeSelectedMember()
 			}
 		case "p":
 			if m.active == tabMatrix && !m.matrixBoundaries && m.repath != nil && m.selectedComponent() != nil {
@@ -386,6 +409,7 @@ func (m *Model) moveSelection(d int) {
 	case tabMatrix:
 		if m.matrixBoundaries {
 			m.matrixBoundSel = clamp(m.matrixBoundSel+d, m.boundaryCount())
+			m.matrixMemberSel = 0 // a new boundary resets the member cursor
 		} else {
 			m.matrixSel = clamp(m.matrixSel+d, m.matrixRowCount())
 		}
@@ -481,7 +505,7 @@ func helpView() string {
 		{"up/down or k/j", "move the selection (or scroll the Config document)"},
 		{"left/right or h/l", "Matrix: move the cursor across columns (else page tabs)"},
 		{"space", "Matrix: toggle the cursored edge — allow → deny → default"},
-		{"b", "Matrix: show the boundaries overlay (mutual-exclusion sets)"},
+		{"b", "Matrix: boundaries overlay — ←/→ pick a member, a add, d remove"},
 		{"a", "Matrix: add a new component (name + path) to depdog.yaml"},
 		{"p", "Matrix: re-path the selected component (edit its path glob)"},
 		{"R", "Matrix: rename the selected component (refs follow automatically)"},
@@ -545,6 +569,9 @@ func (m Model) footer() string {
 		return styleDim.Render("tab/1-5 switch · ↑/↓ scroll · e edit depdog.yaml · r re-run · ? help · q quit")
 	}
 	if m.active == tabMatrix {
+		if m.matrixForm == formAddMember {
+			return styleDim.Render("type a member (name or glob) · enter add · esc cancel")
+		}
 		if m.matrixForm == formRename {
 			return styleDim.Render("type the new name · enter save · esc cancel")
 		}
@@ -555,7 +582,14 @@ func (m Model) footer() string {
 			return styleDim.Render("type to fill fields · tab switch field · enter next/add · esc cancel")
 		}
 		if m.matrixBoundaries {
-			return styleDim.Render("tab switch · ↑/↓ pick boundary · b back to rules · r re-run · ? help · q quit")
+			h := "tab switch · ↑/↓ boundary · ←/→ member · b rules"
+			if m.addMember != nil {
+				h += " · a add"
+			}
+			if m.removeMember != nil {
+				h += " · d remove"
+			}
+			return styleDim.Render(h + " · r re-run · ? help · q quit")
 		}
 		hint := "tab switch · ↑↓←→ move cursor · b boundaries"
 		if m.edit != nil {

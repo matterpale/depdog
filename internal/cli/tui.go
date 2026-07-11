@@ -132,6 +132,20 @@ func launch(cmd *cobra.Command, configPath string, args []string, ev *evaluation
 		}
 		return os.WriteFile(ev.ConfigPath, out, 0o644)
 	}
+	// boundary membership: add/remove a member from a boundary in depdog.yaml.
+	writeBoundary := func(fn func([]byte, string, string) ([]byte, error)) func(string, string) error {
+		return func(boundary, member string) error {
+			data, err := os.ReadFile(ev.ConfigPath)
+			if err != nil {
+				return err
+			}
+			out, err := fn(data, boundary, member)
+			if err != nil {
+				return err
+			}
+			return os.WriteFile(ev.ConfigPath, out, 0o644)
+		}
+	}
 	return tui.Run(ev.Result, pkgs,
 		tui.WithRoot(root),
 		tui.WithConfig(configRel, ev.Rules),
@@ -139,7 +153,10 @@ func launch(cmd *cobra.Command, configPath string, args []string, ev *evaluation
 		tui.WithEdit(edit),
 		tui.WithAddComponent(addComponent),
 		tui.WithRepath(repath),
-		tui.WithRename(rename))
+		tui.WithRename(rename),
+		tui.WithBoundaryMembers(
+			writeBoundary(config.AddBoundaryMember),
+			writeBoundary(config.RemoveBoundaryMember)))
 }
 
 // configRelPath renders the config path relative to the module root for display,

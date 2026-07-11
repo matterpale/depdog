@@ -20,6 +20,7 @@ const (
 	formAdd
 	formRepath
 	formRename
+	formAddMember
 )
 
 // updateForm captures keystrokes while a form is open. Runes extend the focused
@@ -127,6 +128,25 @@ func (m Model) submitForm() (tea.Model, tea.Cmd) {
 		m.closeForm()
 		m.status = fmt.Sprintf("renamed %q → %q — re-running…", old, newName)
 		return m, m.startRefresh()
+
+	case formAddMember:
+		member := strings.TrimSpace(m.formName)
+		if member == "" {
+			m.formErr = "type a member — a component name or a path glob"
+			return m, nil
+		}
+		if m.addMember == nil {
+			m.formErr = "adding members is not available in this session"
+			return m, nil
+		}
+		if err := m.addMember(m.formTarget, member); err != nil {
+			m.formErr = oneLine(err.Error())
+			return m, nil
+		}
+		boundary := m.formTarget
+		m.closeForm()
+		m.status = fmt.Sprintf("added %q to %q — re-running…", member, boundary)
+		return m, m.startRefresh()
 	}
 	return m, nil
 }
@@ -173,6 +193,13 @@ func (m Model) formView() string {
 			styleDim.Render("  name  ") + field(0, m.formName),
 			"",
 		}
+	case formAddMember:
+		lines = []string{
+			styleTitle.Render("Add member to ") + styleTitle.Render(m.formTarget),
+			"",
+			styleDim.Render("  member  ") + field(0, m.formName),
+			"",
+		}
 	}
 	switch {
 	case m.formErr != "":
@@ -183,10 +210,12 @@ func (m Model) formView() string {
 		lines = append(lines, styleDim.Render("  space-separate multiple globs, e.g. \"internal/api/** internal/rpc/**\""), "")
 	case m.matrixForm == formRename:
 		lines = append(lines, styleDim.Render("  every allow/deny ref, boundary member and group entry follows the rename"), "")
+	case m.matrixForm == formAddMember:
+		lines = append(lines, styleDim.Render("  a component name or a path glob, e.g. \"cmd/service-c/**\""), "")
 	}
 
 	hint := "  tab: switch field · enter: next / add · esc: cancel"
-	if m.matrixForm == formRepath || m.matrixForm == formRename {
+	if m.matrixForm != formAdd {
 		hint = "  enter: save · esc: cancel"
 	}
 	return strings.Join(append(lines, styleDim.Render(hint)), "\n")

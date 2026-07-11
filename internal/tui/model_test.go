@@ -897,6 +897,68 @@ func TestRenameFormNoOpErrorUnavailable(t *testing.T) {
 	}
 }
 
+func TestBoundaryMemberCursorAndRemove(t *testing.T) {
+	var removed [2]string
+	m := update(New(fixtureResult(), fixturePkgs(),
+		WithConfig("depdog.yaml", fixtureBoundaryRuleSet()),
+		WithBoundaryMembers(
+			func(_, _ string) error { return nil },
+			func(b, mem string) error { removed = [2]string{b, mem}; return nil })), runes("5"))
+	m = update(m, runes("b")) // overlay; adapters selected, members [domain, handler]
+
+	m = update(m, tea.KeyMsg{Type: tea.KeyRight})
+	if m.matrixMemberSel != 1 {
+		t.Fatalf("→ should move the member cursor to 1, got %d", m.matrixMemberSel)
+	}
+	m = update(m, tea.KeyMsg{Type: tea.KeyRight}) // clamp (2 members)
+	if m.matrixMemberSel != 1 {
+		t.Errorf("member cursor should clamp at 1, got %d", m.matrixMemberSel)
+	}
+	update(m, runes("d")) // remove the cursored member (handler)
+	if removed != [2]string{"adapters", "handler"} {
+		t.Errorf("d should remove adapters/handler, got %v", removed)
+	}
+
+	m = update(m, runes("j")) // changing boundary resets the member cursor
+	if m.matrixMemberSel != 0 {
+		t.Errorf("changing boundary should reset the member cursor, got %d", m.matrixMemberSel)
+	}
+}
+
+func TestBoundaryAddMemberForm(t *testing.T) {
+	var added [2]string
+	m := update(New(fixtureResult(), fixturePkgs(),
+		WithConfig("depdog.yaml", fixtureBoundaryRuleSet()),
+		WithBoundaryMembers(
+			func(b, mem string) error { added = [2]string{b, mem}; return nil },
+			func(_, _ string) error { return nil })), runes("5"))
+	m = update(m, runes("b"))
+	m = update(m, runes("a"))
+	if m.matrixForm != formAddMember {
+		t.Fatal("a should open the add-member form in the overlay")
+	}
+	if m.formTarget != "adapters" {
+		t.Errorf("the form should target the selected boundary, got %q", m.formTarget)
+	}
+	m = typeString(m, "service")
+	m = update(m, tea.KeyMsg{Type: tea.KeyEnter})
+	if added != [2]string{"adapters", "service"} {
+		t.Errorf("submit should add adapters/service, got %v", added)
+	}
+	if m.matrixForm != formNone {
+		t.Error("a successful add should close the form")
+	}
+}
+
+func TestBoundaryMembersReadOnly(t *testing.T) {
+	m := update(New(fixtureResult(), fixturePkgs(), WithConfig("depdog.yaml", fixtureBoundaryRuleSet())), runes("5"))
+	m = update(m, runes("b"))
+	if m = update(m, runes("a")); m.matrixForm != formNone {
+		t.Error("without an add hook, a must be inert in the overlay")
+	}
+	update(m, runes("d")) // no hook: no panic, no change
+}
+
 func TestMatrixSelectionClamps(t *testing.T) {
 	m := update(New(fixtureResult(), fixturePkgs(), WithConfig("depdog.yaml", manyComponentRuleSet(40))), runes("5"))
 	m = update(m, tea.WindowSizeMsg{Width: 200, Height: 20})

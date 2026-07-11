@@ -4,8 +4,11 @@ import (
 	"fmt"
 	"strings"
 
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
+
+	"github.com/matterpale/depdog/internal/core"
 )
 
 // The boundaries overlay is the Matrix tab's second, read-only view (key `b`):
@@ -20,6 +23,47 @@ func (m Model) boundaryCount() int {
 		return 0
 	}
 	return len(m.rules.Boundaries)
+}
+
+// currentBoundary is the boundary under the ↑/↓ cursor, or nil.
+func (m Model) currentBoundary() *core.Boundary {
+	if m.rules == nil || len(m.rules.Boundaries) == 0 {
+		return nil
+	}
+	return &m.rules.Boundaries[clamp(m.matrixBoundSel, len(m.rules.Boundaries))]
+}
+
+// currentMemberCount / currentMember report the ←/→ member cursor within the
+// selected boundary.
+func (m Model) currentMemberCount() int {
+	if b := m.currentBoundary(); b != nil {
+		return len(b.Members)
+	}
+	return 0
+}
+
+func (m Model) currentMember() (string, bool) {
+	b := m.currentBoundary()
+	if b == nil || len(b.Members) == 0 {
+		return "", false
+	}
+	return b.Members[clamp(m.matrixMemberSel, len(b.Members))].Label, true
+}
+
+// removeSelectedMember drops the cursored member from the selected boundary via
+// the remove hook, then re-runs the check.
+func (m Model) removeSelectedMember() (tea.Model, tea.Cmd) {
+	b := m.currentBoundary()
+	member, ok := m.currentMember()
+	if b == nil || !ok || m.removeMember == nil {
+		return m, nil
+	}
+	if err := m.removeMember(b.Name, member); err != nil {
+		m.status = "remove failed: " + oneLine(err.Error())
+		return m, nil
+	}
+	m.status = fmt.Sprintf("removed %q from %q — re-running…", member, b.Name)
+	return m, m.startRefresh()
 }
 
 // boundaryViolationCounts tallies live violations per boundary name.
@@ -62,22 +106,24 @@ func (m Model) boundariesView() string {
 		}
 	}
 
-	// The detail pane for the selected boundary.
+	// The detail pane for the selected boundary: its members as a ←/→-cursored
+	// list, then the isolation/sealed notes.
 	b := bs[sel]
-	members := make([]string, len(b.Members))
-	for i, mem := range b.Members {
-		members[i] = mem.Label
-	}
 	head := styleDim.Render("── ") + styleTitle.Render(b.Name) + styleDim.Render(" ──")
 	if b.Sealed {
 		head += "  " + styleWarn.Render("sealed")
 	}
-	detail := []string{
-		"",
-		head,
-		styleDim.Render("  members  ") + strings.Join(members, ", "),
-		"  " + styleBad.Render("⊗") + styleDim.Render(" no member may import another (all cross-member edges denied)"),
+	detail := []string{"", head, styleDim.Render("  members")}
+	msel := clamp(m.matrixMemberSel, len(b.Members))
+	for i, mem := range b.Members {
+		if i == msel {
+			detail = append(detail, "  "+styleSelected.Render("▸ "+mem.Label))
+		} else {
+			detail = append(detail, "    "+mem.Label)
+		}
 	}
+	detail = append(detail,
+		"  "+styleBad.Render("⊗")+styleDim.Render(" no member may import another (all cross-member edges denied)"))
 	if b.Sealed {
 		detail = append(detail, "  "+styleWarn.Render("▉")+styleDim.Render(" sealed: nothing outside all members may import in"))
 	}
