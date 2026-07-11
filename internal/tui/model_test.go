@@ -502,13 +502,21 @@ func TestMatrixView(t *testing.T) {
 		t.Fatalf("5 should select the Matrix tab")
 	}
 	v := m.View()
-	for _, want := range []string{"Rule matrix", "Matrix", "domain", "handler", "std", "allow", "self"} {
+	// Grid + legend + the focus pane for the default selection (domain, first row).
+	for _, want := range []string{"Rule matrix", "Matrix", "domain", "handler", "std", "self", "focus: domain", "allow →"} {
 		if !strings.Contains(v, want) {
 			t.Errorf("matrix view missing %q:\n%s", want, v)
 		}
 	}
 	if strings.Contains(v, "\x1b") {
 		t.Errorf("ANSI leaked into forced-plain view:\n%q", v)
+	}
+
+	// The focus pane follows the selection: down one row selects handler, whose
+	// allow list names domain.
+	v = update(m, runes("j")).View()
+	if !strings.Contains(v, "focus: handler") {
+		t.Errorf("after ↓ the focus pane should show handler:\n%s", v)
 	}
 }
 
@@ -544,27 +552,33 @@ func TestMatrixViewWithoutRuleSet(t *testing.T) {
 	}
 }
 
-func TestMatrixScrollClamps(t *testing.T) {
+func TestMatrixSelectionClamps(t *testing.T) {
 	m := update(New(fixtureResult(), fixturePkgs(), WithConfig("depdog.yaml", manyComponentRuleSet(40))), runes("5"))
 	m = update(m, tea.WindowSizeMsg{Width: 200, Height: 20})
 
-	if m.matrixScroll != 0 {
-		t.Fatalf("initial matrixScroll = %d, want 0", m.matrixScroll)
+	if m.matrixSel != 0 {
+		t.Fatalf("initial matrixSel = %d, want 0", m.matrixSel)
 	}
 	m = update(m, runes("k")) // up at the top stays clamped
-	if m.matrixScroll != 0 {
-		t.Errorf("up at top: matrixScroll = %d, want 0", m.matrixScroll)
+	if m.matrixSel != 0 {
+		t.Errorf("up at top: matrixSel = %d, want 0", m.matrixSel)
 	}
-	for i := 0; i < 100; i++ { // scroll far past the end
+	m = update(m, runes("j")) // down moves the selection
+	if m.matrixSel != 1 {
+		t.Errorf("down: matrixSel = %d, want 1", m.matrixSel)
+	}
+	for i := 0; i < 100; i++ { // move far past the end
 		m = update(m, runes("j"))
 	}
-	if !strings.Contains(m.View(), "▲") {
-		t.Errorf("a 40-row matrix on a 20-row screen should show an above-marker:\n%s", m.View())
+	if m.matrixSel != 39 {
+		t.Errorf("selection past the end should clamp at 39, got %d", m.matrixSel)
 	}
-	last := m.matrixScroll
-	m = update(m, runes("j"))
-	if m.matrixScroll != last {
-		t.Errorf("scroll past the end should clamp: %d then %d", last, m.matrixScroll)
+	if !strings.Contains(m.View(), "▲") {
+		t.Errorf("a 40-row matrix on a 20-row screen, selection at the end, should show an above-marker:\n%s", m.View())
+	}
+	// The focus pane tracks the selection (comp39 is the last component).
+	if !strings.Contains(m.View(), "focus: comp39") {
+		t.Errorf("focus pane should follow the selection to comp39:\n%s", m.View())
 	}
 }
 

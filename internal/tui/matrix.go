@@ -130,19 +130,20 @@ func padRight(s string, w int) string {
 	return s
 }
 
-// matrixLines renders the rule matrix as a slice of lines the view windows. The
-// left column names each component (prefixed by the 1-based index that also
-// heads its column), then the component columns, then the std/external/
-// unassigned buckets.
-func (m Model) matrixLines() []string {
-	head := []string{styleTitle.Render("Rule matrix") + styleDim.Render("   rows import columns")}
+// matrixRowCount is the number of selectable rows (one per component), the
+// clamp bound for the Matrix tab's selection.
+func (m Model) matrixRowCount() int {
 	if m.rules == nil {
-		return append(head, "", styleDim.Render("no compiled rule set available — restart with `depdog tui`"))
+		return 0
 	}
+	return len(m.rules.Components)
+}
+
+// matrixGrid builds the fixed header lines and one line per component row, with
+// the sel row's label drawn as a selection bar. The 1-based row index also heads
+// that component's column, so the row labels double as the column key.
+func (m Model) matrixGrid(sel int) (header, rows []string) {
 	comps := m.rules.Components
-	if len(comps) == 0 {
-		return append(head, "", styleDim.Render("no components defined"))
-	}
 
 	// Live violations, keyed by the (from component, target) cell they cross.
 	viol := make(map[[2]string]bool, len(m.res.Violations))
@@ -166,7 +167,6 @@ func (m Model) matrixLines() []string {
 		return centerGlyph(g, w, style)
 	}
 
-	// Header: blank label cell, then the component indices, then bucket headers.
 	var h strings.Builder
 	h.WriteString(styleDim.Render(padRight(`from \ to`, labelW)))
 	h.WriteString(sep)
@@ -177,17 +177,22 @@ func (m Model) matrixLines() []string {
 	for _, st := range specialTargets {
 		h.WriteString(centerText(st.header, matrixSpecW))
 	}
-
 	divider := styleDim.Render(
 		strings.Repeat("─", labelW) + "─┼" +
 			strings.Repeat("─", matrixCompW*len(comps)) + "─┼" +
 			strings.Repeat("─", matrixSpecW*len(specialTargets)))
-
-	lines := append(head, "", h.String(), divider)
+	header = []string{
+		styleTitle.Render("Rule matrix") + styleDim.Render("   rows import columns · ↑/↓ pick a component"),
+		"", h.String(), divider,
+	}
 
 	for i, from := range comps {
+		label := padRight(fmt.Sprintf("%d %s", i+1, from.Name), labelW)
+		if i == sel {
+			label = styleSelected.Render(label)
+		}
 		var r strings.Builder
-		r.WriteString(padRight(fmt.Sprintf("%d %s", i+1, from.Name), labelW))
+		r.WriteString(label)
 		r.WriteString(sep)
 		for _, to := range comps {
 			r.WriteString(cell(from.Name, to.Name, matrixCompW))
@@ -196,53 +201,118 @@ func (m Model) matrixLines() []string {
 		for _, st := range specialTargets {
 			r.WriteString(cell(from.Name, st.target, matrixSpecW))
 		}
-		lines = append(lines, r.String())
+		rows = append(rows, r.String())
 	}
-
-	lines = append(lines, "",
-		styleGood.Render("  ✓")+styleDim.Render(" allow   ")+styleBad.Render("✗")+
-			styleDim.Render(" deny   faint ✓/✗ = via stance/default   — self"),
-		styleDim.Render("  an inverse cell marks a live violation crossing that edge"))
-	return lines
+	return header, rows
 }
 
-func (m Model) matrixLineCount() int { return len(m.matrixLines()) }
+// matrixFocus renders the per-component "arrows" pane for the selected row: its
+// inferred stance, its explicit allow/deny refs as → / ⊗ arrows, and the
+// targets it currently violates. This is the concept's focus view — the same
+// data as `depdog explain <component>`, read off the compiled rule set.
+func (m Model) matrixFocus(sel int) []string {
+	from := m.rules.Components[sel].Name
+	stance := stanceShort(m.rules.Stance(from))
 
-// matrixView renders the matrix into the height-aware window, with the same
-// ▲/▼ markers the Config document uses. It is a document (a scroll offset), not
-// a selection. Lines wider than the terminal are truncated (ANSI-aware) so a
-// large matrix can never push the header off screen; horizontal scrolling is a
-// later refinement.
-func (m Model) matrixView() string {
-	lines := m.matrixLines()
-	if m.width > 0 {
-		for i, ln := range lines {
-			if lipgloss.Width(ln) > m.width {
-				lines[i] = ansi.Truncate(ln, m.width, "…")
-			}
+	var crossings []string
+	seen := map[string]bool{}
+	nViol := 0
+	for _, v := range m.res.Violations {
+		if v.FromComponent != from {
+			continue
+		}
+		nViol++
+		if v.Target != "" && !seen[v.Target] {
+			seen[v.Target] = true
+			crossings = append(crossings, v.Target)
 		}
 	}
 
-	budget := m.bodyRows()
-	if budget <= 0 || len(lines) <= budget {
-		return strings.Join(lines, "\n")
+	headline := styleDim.Render("── focus: ") + styleTitle.Render(from) + styleDim.Render(" ── "+stance)
+	if nViol > 0 {
+		headline += "   " + styleBad.Render(plural(nViol, "violation")+" from here")
 	}
-	visible := budget - 2 // leave room for the ▲/▼ markers
-	if visible < 1 {
-		visible = 1
+	lines := []string{"", headline}
+
+	rule, hasRule := m.rules.Rules[from]
+	switch {
+	case hasRule && (len(rule.Allow) > 0 || len(rule.Deny) > 0):
+		if len(rule.Allow) > 0 {
+			lines = append(lines, "  "+styleGood.Render("allow →")+"  "+refsText(rule.Allow))
+		}
+		if len(rule.Deny) > 0 {
+			lines = append(lines, "  "+styleBad.Render("deny  ⊗")+"  "+refsText(rule.Deny))
+		}
+	default:
+		def := "allow"
+		if m.rules.Stance(from) == core.PolicyDeny {
+			def = "deny"
+		}
+		lines = append(lines, "  "+styleDim.Render("no rule — falls to default: "+def))
 	}
-	off := clampScroll(m.matrixScroll, len(lines), budget)
-	end := off + visible
-	if end > len(lines) {
-		end = len(lines)
+	if len(crossings) > 0 {
+		lines = append(lines, "  "+styleBad.Render("crossing ✗")+"  "+strings.Join(crossings, ", "))
 	}
+	return lines
+}
+
+// matrixView renders the Matrix tab: the fixed header, a height-aware window of
+// component rows kept centered on the selection (with ▲/▼ markers), the focus
+// pane for the selected component, and the legend. Rows wider than the terminal
+// are truncated (ANSI-aware) so a large matrix can't push the header off screen;
+// horizontal scrolling is a later refinement.
+func (m Model) matrixView() string {
+	title := styleTitle.Render("Rule matrix")
+	if m.rules == nil {
+		return title + "\n\n" + styleDim.Render("no compiled rule set available — restart with `depdog tui`")
+	}
+	if len(m.rules.Components) == 0 {
+		return title + "\n\n" + styleDim.Render("no components defined")
+	}
+
+	sel := clamp(m.matrixSel, len(m.rules.Components))
+	header, rows := m.matrixGrid(sel)
+	focus := m.matrixFocus(sel)
+	legend := []string{"",
+		styleGood.Render("  ✓") + styleDim.Render(" allow  ") + styleBad.Render("✗") +
+			styleDim.Render(" deny   faint = via stance/default   — self   inverse = selection / live violation")}
+
 	var out []string
-	if off > 0 {
-		out = append(out, moreLine("▲", off))
+	if budget := m.bodyRows(); budget > 0 {
+		gridBudget := budget - len(header) - len(focus) - len(legend)
+		if gridBudget < 3 {
+			gridBudget = 3
+		}
+		max := gridBudget
+		if len(rows) > max {
+			if max -= 2; max < 1 { // room for the ▲/▼ markers
+				max = 1
+			}
+		}
+		start, end, above, below := window(len(rows), sel, max)
+		out = append(out, header...)
+		if above > 0 {
+			out = append(out, moreLine("▲", above))
+		}
+		out = append(out, rows[start:end]...)
+		if below > 0 {
+			out = append(out, moreLine("▼", below))
+		}
+		out = append(out, focus...)
+		out = append(out, legend...)
+	} else {
+		out = append(append(append(append([]string{}, header...), rows...), focus...), legend...)
 	}
-	out = append(out, lines[off:end]...)
-	if below := len(lines) - end; below > 0 {
-		out = append(out, moreLine("▼", below))
+
+	if m.width > 0 {
+		for i, ln := range out {
+			if lipgloss.Width(ln) > m.width {
+				out[i] = ansi.Truncate(ln, m.width, "…")
+			}
+		}
+	}
+	if budget := m.bodyRows(); budget > 0 && len(out) > budget {
+		out = out[:budget]
 	}
 	return strings.Join(out, "\n")
 }
