@@ -63,100 +63,60 @@ func launch(cmd *cobra.Command, configPath string, args []string, ev *evaluation
 		}
 		return ev.Result, pkgs, ev.Rules, nil
 	}
-	// edit backs the Matrix tab's cell toggles: rewrite one component's
-	// allow/deny in depdog.yaml (comment-preserving), leaving the caller to
-	// re-run the check via the refresh hook so every screen reflects the change.
-	edit := func(from, target, verdict string) error {
-		data, err := os.ReadFile(ev.ConfigPath)
-		if err != nil {
-			return err
-		}
-		out, err := config.SetComponentRule(data, from, target, verdict)
-		if err != nil {
-			return err
-		}
-		return os.WriteFile(ev.ConfigPath, out, 0o644)
-	}
-	// addComponent backs the Matrix tab's "add component" form: validate the name
-	// and pattern the same way `init` does, then splice a new component into
-	// depdog.yaml via MergeComponents (which preserves the rest of the file and
-	// rejects name collisions).
-	addComponent := func(name, pattern string) error {
-		if err := wizard.ValidateName(name); err != nil {
-			return err
-		}
-		if err := core.ValidatePattern(pattern); err != nil {
-			return err
-		}
-		data, err := os.ReadFile(ev.ConfigPath)
-		if err != nil {
-			return err
-		}
-		out, err := config.MergeComponents(data, []config.MergeComponent{{Name: name, Patterns: []string{pattern}}})
-		if err != nil {
-			return err
-		}
-		return os.WriteFile(ev.ConfigPath, out, 0o644)
-	}
-	// repath backs the Matrix tab's re-path form: validate each glob (as `init`
-	// does) then rewrite the component's path in depdog.yaml, comment-preserving.
-	repath := func(component string, patterns []string) error {
-		for _, p := range patterns {
-			if err := core.ValidatePattern(p); err != nil {
-				return err
-			}
-		}
-		data, err := os.ReadFile(ev.ConfigPath)
-		if err != nil {
-			return err
-		}
-		out, err := config.SetComponentPath(data, component, patterns)
-		if err != nil {
-			return err
-		}
-		return os.WriteFile(ev.ConfigPath, out, 0o644)
-	}
-	// rename backs the Matrix tab's rename form: validate the new name (as `init`
-	// does) then rename the component and every reference to it in depdog.yaml.
-	rename := func(oldName, newName string) error {
-		if err := wizard.ValidateName(newName); err != nil {
-			return err
-		}
-		data, err := os.ReadFile(ev.ConfigPath)
-		if err != nil {
-			return err
-		}
-		out, err := config.RenameComponent(data, oldName, newName)
-		if err != nil {
-			return err
-		}
-		return os.WriteFile(ev.ConfigPath, out, 0o644)
-	}
-	// boundary membership: add/remove a member from a boundary in depdog.yaml.
-	writeBoundary := func(fn func([]byte, string, string) ([]byte, error)) func(string, string) error {
-		return func(boundary, member string) error {
-			data, err := os.ReadFile(ev.ConfigPath)
+	// The visual editor stages edits in memory: the transformers are pure config
+	// rewriters, Eval recompiles a candidate config against the loaded graph (code
+	// doesn't change during a session, so the graph is reused), and only Save
+	// writes the file. Validation mirrors `init` (ValidateName / ValidatePattern).
+	editor := tui.Editor{
+		Load: func() ([]byte, error) { return os.ReadFile(ev.ConfigPath) },
+		Save: func(data []byte) error { return os.WriteFile(ev.ConfigPath, data, 0o644) },
+		Eval: func(data []byte) (*core.Result, []core.PackageView, *core.RuleSet, error) {
+			rs, err := config.Parse(data)
 			if err != nil {
-				return err
+				return nil, nil, nil, err
 			}
-			out, err := fn(data, boundary, member)
+			res, err := core.Evaluate(ev.Graph, rs)
 			if err != nil {
-				return err
+				return nil, nil, nil, err
 			}
-			return os.WriteFile(ev.ConfigPath, out, 0o644)
-		}
+			views, err := core.BuildPackageViews(ev.Graph, rs)
+			if err != nil {
+				return nil, nil, nil, err
+			}
+			return res, views, rs, nil
+		},
+		SetRule: config.SetComponentRule,
+		AddComponent: func(data []byte, name, pattern string) ([]byte, error) {
+			if err := wizard.ValidateName(name); err != nil {
+				return nil, err
+			}
+			if err := core.ValidatePattern(pattern); err != nil {
+				return nil, err
+			}
+			return config.MergeComponents(data, []config.MergeComponent{{Name: name, Patterns: []string{pattern}}})
+		},
+		Repath: func(data []byte, component string, patterns []string) ([]byte, error) {
+			for _, p := range patterns {
+				if err := core.ValidatePattern(p); err != nil {
+					return nil, err
+				}
+			}
+			return config.SetComponentPath(data, component, patterns)
+		},
+		Rename: func(data []byte, oldName, newName string) ([]byte, error) {
+			if err := wizard.ValidateName(newName); err != nil {
+				return nil, err
+			}
+			return config.RenameComponent(data, oldName, newName)
+		},
+		AddMember:    config.AddBoundaryMember,
+		RemoveMember: config.RemoveBoundaryMember,
 	}
 	return tui.Run(ev.Result, pkgs,
 		tui.WithRoot(root),
 		tui.WithConfig(configRel, ev.Rules),
 		tui.WithRefresh(refresh),
-		tui.WithEdit(edit),
-		tui.WithAddComponent(addComponent),
-		tui.WithRepath(repath),
-		tui.WithRename(rename),
-		tui.WithBoundaryMembers(
-			writeBoundary(config.AddBoundaryMember),
-			writeBoundary(config.RemoveBoundaryMember)))
+		tui.WithEditor(editor))
 }
 
 // configRelPath renders the config path relative to the module root for display,

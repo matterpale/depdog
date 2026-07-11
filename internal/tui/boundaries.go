@@ -50,20 +50,18 @@ func (m Model) currentMember() (string, bool) {
 	return b.Members[clamp(m.matrixMemberSel, len(b.Members))].Label, true
 }
 
-// removeSelectedMember drops the cursored member from the selected boundary via
-// the remove hook, then re-runs the check.
+// removeSelectedMember stages dropping the cursored member from the selected
+// boundary (in memory, via applyEdit).
 func (m Model) removeSelectedMember() (tea.Model, tea.Cmd) {
 	b := m.currentBoundary()
 	member, ok := m.currentMember()
-	if b == nil || !ok || m.removeMember == nil {
+	if b == nil || !ok || m.editor == nil {
 		return m, nil
 	}
-	if err := m.removeMember(b.Name, member); err != nil {
-		m.status = "remove failed: " + oneLine(err.Error())
-		return m, nil
-	}
-	m.status = fmt.Sprintf("removed %q from %q — re-running…", member, b.Name)
-	return m, m.startRefresh()
+	name := b.Name
+	return m.applyEdit(
+		func(d []byte) ([]byte, error) { return m.editor.RemoveMember(d, name, member) },
+		fmt.Sprintf("removed %q from %q", member, name))
 }
 
 // boundaryViolationCounts tallies live violations per boundary name.

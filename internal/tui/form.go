@@ -65,9 +65,17 @@ func (m Model) updateForm(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-// submitForm validates-and-writes via the mode's hook. On success it closes the
-// form and re-runs the check; on failure it keeps the form open with the error.
+// submitForm validates the fields, then stages the edit in memory (no disk
+// write). On success it closes the form; on failure it keeps the form open with
+// the error.
 func (m Model) submitForm() (tea.Model, tea.Cmd) {
+	if m.editor == nil {
+		m.formErr = "editing is not available in this session"
+		return m, nil
+	}
+	var transform func([]byte) ([]byte, error)
+	var desc string
+
 	switch m.matrixForm {
 	case formAdd:
 		name, pattern := strings.TrimSpace(m.formName), strings.TrimSpace(m.formPattern)
@@ -75,17 +83,8 @@ func (m Model) submitForm() (tea.Model, tea.Cmd) {
 			m.formErr = "both a name and a path pattern are required"
 			return m, nil
 		}
-		if m.addComp == nil {
-			m.formErr = "adding is not available in this session"
-			return m, nil
-		}
-		if err := m.addComp(name, pattern); err != nil {
-			m.formErr = oneLine(err.Error())
-			return m, nil
-		}
-		m.closeForm()
-		m.status = fmt.Sprintf("added component %q — re-running…", name)
-		return m, m.startRefresh()
+		transform = func(d []byte) ([]byte, error) { return m.editor.AddComponent(d, name, pattern) }
+		desc = fmt.Sprintf("added component %q", name)
 
 	case formRepath:
 		patterns := strings.Fields(m.formPattern)
@@ -93,18 +92,9 @@ func (m Model) submitForm() (tea.Model, tea.Cmd) {
 			m.formErr = "a component needs at least one path pattern"
 			return m, nil
 		}
-		if m.repath == nil {
-			m.formErr = "re-pathing is not available in this session"
-			return m, nil
-		}
-		if err := m.repath(m.formTarget, patterns); err != nil {
-			m.formErr = oneLine(err.Error())
-			return m, nil
-		}
 		target := m.formTarget
-		m.closeForm()
-		m.status = fmt.Sprintf("re-pathed %q — re-running…", target)
-		return m, m.startRefresh()
+		transform = func(d []byte) ([]byte, error) { return m.editor.Repath(d, target, patterns) }
+		desc = fmt.Sprintf("re-pathed %q", target)
 
 	case formRename:
 		newName := strings.TrimSpace(m.formName)
@@ -112,22 +102,13 @@ func (m Model) submitForm() (tea.Model, tea.Cmd) {
 			m.formErr = "type a new name"
 			return m, nil
 		}
-		if m.rename == nil {
-			m.formErr = "renaming is not available in this session"
-			return m, nil
-		}
 		if newName == m.formTarget {
 			m.closeForm() // no-op rename
 			return m, nil
 		}
-		if err := m.rename(m.formTarget, newName); err != nil {
-			m.formErr = oneLine(err.Error())
-			return m, nil
-		}
 		old := m.formTarget
-		m.closeForm()
-		m.status = fmt.Sprintf("renamed %q → %q — re-running…", old, newName)
-		return m, m.startRefresh()
+		transform = func(d []byte) ([]byte, error) { return m.editor.Rename(d, old, newName) }
+		desc = fmt.Sprintf("renamed %q → %q", old, newName)
 
 	case formAddMember:
 		member := strings.TrimSpace(m.formName)
@@ -135,20 +116,22 @@ func (m Model) submitForm() (tea.Model, tea.Cmd) {
 			m.formErr = "type a member — a component name or a path glob"
 			return m, nil
 		}
-		if m.addMember == nil {
-			m.formErr = "adding members is not available in this session"
-			return m, nil
-		}
-		if err := m.addMember(m.formTarget, member); err != nil {
-			m.formErr = oneLine(err.Error())
-			return m, nil
-		}
 		boundary := m.formTarget
-		m.closeForm()
-		m.status = fmt.Sprintf("added %q to %q — re-running…", member, boundary)
-		return m, m.startRefresh()
+		transform = func(d []byte) ([]byte, error) { return m.editor.AddMember(d, boundary, member) }
+		desc = fmt.Sprintf("added %q to %q", member, boundary)
+
+	default:
+		return m, nil
 	}
-	return m, nil
+
+	staged, err := m.stage(transform)
+	if err != nil {
+		m.formErr = oneLine(err.Error())
+		return m, nil
+	}
+	staged.closeForm()
+	staged.status = desc + " · unsaved (w save · esc to save/discard)"
+	return staged, nil
 }
 
 func (m *Model) closeForm() {

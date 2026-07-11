@@ -5,6 +5,7 @@
 package tui
 
 import (
+	"bytes"
 	"fmt"
 	"sort"
 	"strings"
@@ -56,24 +57,19 @@ var (
 
 // Model is depdog's root Bubble Tea model.
 type Model struct {
-	res          *core.Result
-	pkgs         []core.PackageView // violators first, then by component and import path
-	rules        *core.RuleSet      // compiled config rendered on the Config tab
-	violEdges    map[[2]string]bool // (from package, import) of every violation
-	violPkgs     map[string]bool    // import paths that are the source of a violation
-	root         string             // module root; positions are relative to it
-	configRel    string             // module-relative config path (stable across refreshes)
-	refresh      func() (*core.Result, []core.PackageView, *core.RuleSet, error)
-	edit         func(from, target, verdict string) error        // Matrix-tab cell toggle write-back
-	addComp      func(name, pattern string) error                // Matrix-tab add-component form write-back
-	repath       func(component string, patterns []string) error // Matrix-tab re-path form write-back
-	rename       func(oldName, newName string) error             // Matrix-tab rename form write-back
-	addMember    func(boundary, member string) error             // boundaries overlay: add a member
-	removeMember func(boundary, member string) error             // boundaries overlay: remove a member
-	status       string                                          // transient message shown in the footer, cleared on any key
-	active       tab
-	selected     int // highlighted violation on the Violations screen
-	selPkg       int // highlighted package on the Packages screen
+	res       *core.Result
+	pkgs      []core.PackageView // violators first, then by component and import path
+	rules     *core.RuleSet      // compiled config rendered on the Config tab
+	violEdges map[[2]string]bool // (from package, import) of every violation
+	violPkgs  map[string]bool    // import paths that are the source of a violation
+	root      string             // module root; positions are relative to it
+	configRel string             // module-relative config path (stable across refreshes)
+	refresh   func() (*core.Result, []core.PackageView, *core.RuleSet, error)
+	editor    *Editor // visual-editor hooks (staged edits); nil ⇒ read-only
+	status    string  // transient message shown in the footer, cleared on any key
+	active    tab
+	selected  int // highlighted violation on the Violations screen
+	selPkg    int // highlighted package on the Packages screen
 	// configScroll is the document scroll offset on the Config tab. That tab is a
 	// document (a scroll offset), not a list (a selection): up/down move the window
 	// over static text, so it has no highlighted row.
@@ -87,6 +83,13 @@ type Model struct {
 	// `m`, left with esc). It is a sub-mode of Config, not a peer tab, so tab and
 	// arrow navigation stay consistent across the four real tabs.
 	matrixMode bool
+	// Staged-editing state: matrixConfig is the in-memory working copy every edit
+	// mutates (the grid re-evaluates off it); matrixSaved is the last bytes written
+	// to disk (the entry snapshot, updated on Save); matrixExit shows the
+	// save/discard/cancel prompt when leaving with unsaved changes.
+	matrixConfig []byte
+	matrixSaved  []byte
+	matrixExit   bool
 	// matrixBoundaries toggles the editor to its boundaries overlay (the
 	// orthogonal mutual-exclusion axis); matrixBoundSel picks a boundary and
 	// matrixMemberSel a member within it (for add/remove).
@@ -130,40 +133,28 @@ func WithRefresh(f func() (*core.Result, []core.PackageView, *core.RuleSet, erro
 	return func(m *Model) { m.refresh = f }
 }
 
-// WithEdit wires the Matrix tab's cell toggles: the hook writes a single
-// allow/deny change back to depdog.yaml; the model then fires the refresh hook
-// so the recompiled rules flow to every screen. Without it, the Matrix tab stays
-// read-only.
-func WithEdit(f func(from, target, verdict string) error) Option {
-	return func(m *Model) { m.edit = f }
+// Editor wires the visual rule editor's staged edits. The transformers are pure
+// (config bytes → new bytes); the model holds the working copy and re-evaluates
+// it with Eval so the grid reflects staged edits, and only Save touches disk.
+// Load reads the current on-disk config when the editor opens (the rollback
+// snapshot). A nil Editor leaves the editor read-only.
+type Editor struct {
+	Load func() ([]byte, error)
+	Eval func([]byte) (*core.Result, []core.PackageView, *core.RuleSet, error)
+	Save func([]byte) error
+
+	SetRule      func(data []byte, from, target, verdict string) ([]byte, error)
+	AddComponent func(data []byte, name, pattern string) ([]byte, error)
+	Repath       func(data []byte, component string, patterns []string) ([]byte, error)
+	Rename       func(data []byte, oldName, newName string) ([]byte, error)
+	AddMember    func(data []byte, boundary, member string) ([]byte, error)
+	RemoveMember func(data []byte, boundary, member string) ([]byte, error)
 }
 
-// WithAddComponent wires the Matrix tab's add-component form: the hook validates
-// and splices a new component into depdog.yaml; the model then refreshes so it
-// appears in the grid. Without it, the `a` form is unavailable.
-func WithAddComponent(f func(name, pattern string) error) Option {
-	return func(m *Model) { m.addComp = f }
-}
-
-// WithRepath wires the Matrix tab's re-path form: the hook rewrites the selected
-// component's path glob(s) in depdog.yaml; the model then refreshes. Without it,
-// the `p` form is unavailable.
-func WithRepath(f func(component string, patterns []string) error) Option {
-	return func(m *Model) { m.repath = f }
-}
-
-// WithRename wires the Matrix tab's rename form: the hook renames the selected
-// component and every reference to it in depdog.yaml; the model then refreshes.
-// Without it, the `R` form is unavailable.
-func WithRename(f func(oldName, newName string) error) Option {
-	return func(m *Model) { m.rename = f }
-}
-
-// WithBoundaryMembers wires the boundaries overlay's `a` (add) and `d` (remove)
-// member edits; the hooks write depdog.yaml and the model refreshes. Without
-// them the overlay stays read-only.
-func WithBoundaryMembers(add, remove func(boundary, member string) error) Option {
-	return func(m *Model) { m.addMember, m.removeMember = add, remove }
+// WithEditor wires the visual rule editor. Without it the editor is read-only
+// (visualize only).
+func WithEditor(e Editor) Option {
+	return func(m *Model) { m.editor = &e }
 }
 
 // WithConfig wires the Config tab: the module-relative config path (stable
@@ -258,6 +249,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.matrixForm != formNone {
 			return m.updateForm(msg) // the form swallows every key until esc/submit
 		}
+		if m.matrixExit {
+			return m.updateExitPrompt(msg) // the save/discard prompt swallows keys
+		}
 		switch msg.String() {
 		case "q", "ctrl+c":
 			m.quitting = true
@@ -271,7 +265,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 			if m.matrixMode {
-				m.exitMatrix() // esc leaves the visual editor back to the Config doc
+				m.leaveEditorOK() // esc leaves, or raises the save/discard prompt if dirty
 				return m, nil
 			}
 			m.quitting = true
@@ -282,11 +276,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		switch msg.String() {
 		case "tab":
-			m.exitMatrix()
-			m.active = (m.active + 1) % numTabs
+			if m.leaveEditorOK() {
+				m.active = (m.active + 1) % numTabs
+			}
 		case "shift+tab":
-			m.exitMatrix()
-			m.active = (m.active + numTabs - 1) % numTabs
+			if m.leaveEditorOK() {
+				m.active = (m.active + numTabs - 1) % numTabs
+			}
 		case "right", "l":
 			// In the editor left/right move the edit cursor (grid column, or the
 			// boundary member); everywhere else they page between tabs.
@@ -310,8 +306,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "m":
 			// Open the visual rule editor (a Config sub-mode); esc leaves it.
 			if !m.matrixMode {
-				m.active = tabConfig
-				m.matrixMode, m.matrixBoundaries = true, false
+				m.openMatrix()
+			}
+		case "w":
+			if m.matrixMode {
+				return m.saveEditor()
 			}
 		case " ", "enter":
 			if m.matrixMode && !m.matrixBoundaries {
@@ -323,44 +322,48 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		case "a":
 			switch {
-			case m.matrixMode && m.matrixBoundaries && m.addMember != nil && m.currentBoundary() != nil:
+			case m.matrixMode && m.matrixBoundaries && m.editor != nil && m.currentBoundary() != nil:
 				m.matrixForm = formAddMember
 				m.formTarget, m.formName, m.formPattern = m.currentBoundary().Name, "", ""
 				m.formField, m.formErr = 0, ""
-			case m.matrixMode && !m.matrixBoundaries && m.addComp != nil:
+			case m.matrixMode && !m.matrixBoundaries && m.editor != nil:
 				m.matrixForm = formAdd
 				m.formName, m.formPattern, m.formField, m.formErr = "", "", 0, ""
 			}
 		case "d":
-			if m.matrixMode && m.matrixBoundaries && m.removeMember != nil {
+			if m.matrixMode && m.matrixBoundaries && m.editor != nil {
 				return m.removeSelectedMember()
 			}
 		case "p":
-			if m.matrixMode && !m.matrixBoundaries && m.repath != nil && m.selectedComponent() != nil {
+			if m.matrixMode && !m.matrixBoundaries && m.editor != nil && m.selectedComponent() != nil {
 				c := m.selectedComponent()
 				m.matrixForm = formRepath
 				m.formTarget, m.formName, m.formPattern = c.Name, "", strings.Join(c.Patterns, " ")
 				m.formField, m.formErr = 1, ""
 			}
 		case "R":
-			if m.matrixMode && !m.matrixBoundaries && m.rename != nil && m.selectedComponent() != nil {
+			if m.matrixMode && !m.matrixBoundaries && m.editor != nil && m.selectedComponent() != nil {
 				c := m.selectedComponent()
 				m.matrixForm = formRename
 				m.formTarget, m.formName, m.formPattern = c.Name, c.Name, ""
 				m.formField, m.formErr = 0, ""
 			}
 		case "1":
-			m.exitMatrix()
-			m.active = tabDashboard
+			if m.leaveEditorOK() {
+				m.active = tabDashboard
+			}
 		case "2":
-			m.exitMatrix()
-			m.active = tabViolations
+			if m.leaveEditorOK() {
+				m.active = tabViolations
+			}
 		case "3":
-			m.exitMatrix()
-			m.active = tabPackages
+			if m.leaveEditorOK() {
+				m.active = tabPackages
+			}
 		case "4":
-			m.exitMatrix()
-			m.active = tabConfig
+			if m.leaveEditorOK() {
+				m.active = tabConfig
+			}
 		case "/":
 			if m.active == tabViolations || m.active == tabPackages {
 				m.filtering = true
@@ -415,6 +418,143 @@ func (m *Model) resetSelection() {
 func (m *Model) exitMatrix() {
 	m.matrixMode = false
 	m.matrixBoundaries = false
+	m.matrixExit = false
+}
+
+// openMatrix enters the editor and snapshots the on-disk config as the rollback
+// point ("before we started").
+func (m *Model) openMatrix() {
+	m.active = tabConfig
+	m.matrixMode, m.matrixBoundaries, m.matrixExit = true, false, false
+	if m.editor == nil {
+		return
+	}
+	data, err := m.editor.Load()
+	if err != nil {
+		m.status = "couldn't read the config: " + oneLine(err.Error())
+		return
+	}
+	m.matrixConfig = data
+	m.matrixSaved = append([]byte(nil), data...)
+}
+
+// matrixDirty reports whether the staged config differs from what's on disk.
+func (m Model) matrixDirty() bool {
+	return m.editor != nil && !bytes.Equal(m.matrixConfig, m.matrixSaved)
+}
+
+// stage applies a transformer to the working config and re-evaluates it in
+// memory, returning the updated model — nothing touches disk. On a transformer
+// (validation/refusal) or eval error the model is returned unchanged with the
+// error, so callers can surface it (inline in a form, or on the status line).
+func (m Model) stage(transform func([]byte) ([]byte, error)) (Model, error) {
+	if m.editor == nil {
+		return m, fmt.Errorf("editing not available (read-only session)")
+	}
+	next, err := transform(m.matrixConfig)
+	if err != nil {
+		return m, err
+	}
+	res, pkgs, rules, err := m.editor.Eval(next)
+	if err != nil {
+		return m, err
+	}
+	m.matrixConfig = next
+	m.setData(res, pkgs)
+	m.rules = rules
+	m.matrixSel = clamp(m.matrixSel, m.matrixRowCount())
+	m.matrixCol = clamp(m.matrixCol, m.matrixColCount())
+	m.matrixBoundSel = clamp(m.matrixBoundSel, m.boundaryCount())
+	m.matrixMemberSel = clamp(m.matrixMemberSel, m.currentMemberCount())
+	return m, nil
+}
+
+// applyEdit stages a transformer and reports the result on the status line (used
+// by direct actions — the cell toggle and member remove). Forms use stage
+// directly so validation errors land in the form.
+func (m Model) applyEdit(transform func([]byte) ([]byte, error), desc string) (tea.Model, tea.Cmd) {
+	staged, err := m.stage(transform)
+	if err != nil {
+		m.status = oneLine(err.Error())
+		return m, nil
+	}
+	staged.status = desc + " · unsaved (w save · esc to save/discard)"
+	return staged, nil
+}
+
+// saveEditor writes the staged config to disk. A no-op with a note when there is
+// nothing unsaved.
+func (m Model) saveEditor() (tea.Model, tea.Cmd) {
+	if !m.matrixDirty() {
+		m.status = "no unsaved changes"
+		return m, nil
+	}
+	if err := m.editor.Save(m.matrixConfig); err != nil {
+		m.status = "save failed: " + oneLine(err.Error())
+		return m, nil
+	}
+	m.matrixSaved = append([]byte(nil), m.matrixConfig...)
+	m.status = "saved depdog.yaml"
+	return m, nil
+}
+
+// leaveEditorOK prepares to leave the editor. With no unsaved changes it exits
+// and returns true; with unsaved changes it raises the save/discard prompt and
+// returns false so the caller aborts its navigation.
+func (m *Model) leaveEditorOK() bool {
+	if !m.matrixMode {
+		return true
+	}
+	if m.matrixDirty() {
+		m.matrixExit = true
+		return false
+	}
+	m.exitMatrix()
+	return true
+}
+
+// exitPromptView renders the save/discard/cancel prompt shown when leaving the
+// editor with unsaved changes.
+func (m Model) exitPromptView() string {
+	return strings.Join([]string{
+		styleTitle.Render("Unsaved changes"),
+		"",
+		styleDim.Render("  You've edited the rules but haven't saved them to depdog.yaml."),
+		"",
+		"  " + styleGood.Render("s") + styleDim.Render("  save changes and leave"),
+		"  " + styleBad.Render("d") + styleDim.Render("  discard — roll back to the config from when you opened the editor"),
+		"  " + styleDim.Render("c  cancel — keep editing"),
+	}, "\n")
+}
+
+// updateExitPrompt handles the save/discard/cancel prompt shown when leaving the
+// editor with unsaved changes.
+func (m Model) updateExitPrompt(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "s": // save and leave
+		if err := m.editor.Save(m.matrixConfig); err != nil {
+			m.status = "save failed: " + oneLine(err.Error())
+			m.matrixExit = false
+			return m, nil
+		}
+		m.matrixSaved = append([]byte(nil), m.matrixConfig...)
+		m.exitMatrix()
+		m.status = "saved depdog.yaml"
+	case "d": // discard and leave (roll back to the last saved / entry state)
+		m.matrixConfig = append([]byte(nil), m.matrixSaved...)
+		if res, pkgs, rules, err := m.editor.Eval(m.matrixConfig); err == nil {
+			m.setData(res, pkgs)
+			m.rules = rules
+		}
+		m.exitMatrix()
+		m.status = "discarded changes"
+	case "c", "esc": // cancel — keep editing
+		m.matrixExit = false
+	case "ctrl+c":
+		m.quitting = true
+		return m, tea.Quit
+	}
+	return m, nil
 }
 
 // moveSelection moves the highlighted row on whichever list-bearing screen is
@@ -503,6 +643,8 @@ func (m Model) View() string {
 			b.WriteString(m.packagesView())
 		case m.active == tabConfig && m.matrixMode:
 			switch {
+			case m.matrixExit:
+				b.WriteString(m.exitPromptView())
 			case m.matrixForm != formNone:
 				b.WriteString(m.formView())
 			case m.matrixBoundaries:
@@ -535,6 +677,8 @@ func helpView() string {
 		{"a", "add a new component (name + path) to depdog.yaml"},
 		{"p", "re-path the selected component (edit its path glob)"},
 		{"R", "rename the selected component (refs follow automatically)"},
+		{"w", "save staged edits to depdog.yaml (edits stage in memory until then)"},
+		{"esc", "leave the editor — prompts save/discard if there are unsaved edits"},
 		{"─────────────────", ""},
 		{"/", "filter the list (Violations, Packages)"},
 		{"e", "open $EDITOR: the selection (Violations, Packages) or depdog.yaml (Config)"},
@@ -591,6 +735,9 @@ func (m Model) footer() string {
 	}
 	// The visual rule editor (a Config sub-mode) has its own key hints; esc leaves.
 	if m.matrixMode {
+		if m.matrixExit {
+			return styleWarn.Render("unsaved changes — s save · d discard · c cancel")
+		}
 		switch m.matrixForm {
 		case formAddMember:
 			return styleDim.Render("type a member (name or glob) · enter add · esc cancel")
@@ -601,30 +748,22 @@ func (m Model) footer() string {
 		case formAdd:
 			return styleDim.Render("type to fill fields · tab switch field · enter next/add · esc cancel")
 		}
+		save := ""
+		if m.matrixDirty() {
+			save = " · w save"
+		}
 		if m.matrixBoundaries {
 			h := "↑/↓ boundary · ←/→ member · b rules"
-			if m.addMember != nil {
-				h += " · a add"
+			if m.editor != nil {
+				h += " · a add · d remove"
 			}
-			if m.removeMember != nil {
-				h += " · d remove"
-			}
-			return styleDim.Render(h + " · esc exit · r re-run · ? help")
+			return styleDim.Render(h + save + " · esc exit · ? help")
 		}
 		hint := "↑↓←→ move cursor · b boundaries"
-		if m.edit != nil {
-			hint = "↑↓←→ cursor · space toggle · b boundaries"
+		if m.editor != nil {
+			hint = "↑↓←→ cursor · space toggle · b boundaries · a add · p re-path · R rename"
 		}
-		if m.addComp != nil {
-			hint += " · a add"
-		}
-		if m.repath != nil {
-			hint += " · p re-path"
-		}
-		if m.rename != nil {
-			hint += " · R rename"
-		}
-		return styleDim.Render(hint + " · esc exit · r re-run · ? help")
+		return styleDim.Render(hint + save + " · esc exit · ? help")
 	}
 
 	if m.active == tabViolations || m.active == tabPackages {

@@ -157,12 +157,11 @@ func verdictLabel(k cellKind) string {
 	}
 }
 
-// toggleCell cycles the verdict of the cursored (from → target) edge, writes it
-// to depdog.yaml via the edit hook, and re-runs the check so every screen
-// reflects the change. Self edges — and, without an edit hook, all edges — are
-// inert.
+// toggleCell cycles the verdict of the cursored (from → target) edge and stages
+// the change (in memory, via applyEdit). Self edges — and, without an editor —
+// are inert.
 func (m Model) toggleCell() (tea.Model, tea.Cmd) {
-	if m.edit == nil {
+	if m.editor == nil || m.rules == nil {
 		m.status = "editing not available (read-only session)"
 		return m, nil
 	}
@@ -177,13 +176,9 @@ func (m Model) toggleCell() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	verdict := nextVerdict(cellVerdict(m.rules, from, target))
-	if err := m.edit(from, target, verdict); err != nil {
-		m.status = "edit failed: " + oneLine(err.Error())
-		return m, nil
-	}
-	cmd := m.startRefresh()
-	m.status = fmt.Sprintf("%s → %s: %s — re-running…", from, target, verdict)
-	return m, cmd
+	return m.applyEdit(
+		func(d []byte) ([]byte, error) { return m.editor.SetRule(d, from, target, verdict) },
+		fmt.Sprintf("%s → %s: %s", from, target, verdict))
 }
 
 const (
@@ -361,7 +356,7 @@ func (m Model) matrixFocus(sel, col int) []string {
 		k := cellVerdict(m.rules, from, target)
 		cursor := "  " + styleDim.Render("cursor") + " " + from + " → " + styleTitle.Render(target) +
 			styleDim.Render("  = "+verdictLabel(k))
-		if m.edit != nil {
+		if m.editor != nil {
 			cursor += styleDim.Render("   (space → " + nextVerdict(k) + ")")
 		}
 		lines = append(lines, cursor)
