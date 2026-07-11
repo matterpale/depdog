@@ -17,15 +17,16 @@
   <img src="assets/demo.gif" alt="depdog demo: check, explain, and the TUI on a module with violations" width="820">
 </p>
 
-**depdog** is a *dependency watchdog*: architecture rules — *"the domain imports
-nothing but the standard library," "handlers never import repositories"* —
-usually live in someone's head or a wiki, and they rot. Package by package the
-import graph turns to spaghetti — components reaching into each other until
-nothing moves in isolation. depdog makes the rules executable: you declare which
-**components** exist and who may import whom in one small `depdog.yaml`, and
-`depdog check` enforces it against every import edge in your codebase, exiting
+**depdog** is a *dependency watchdog*: architecture rules
+usually live in someone's head or a wiki, and they rot.
+Import graph slowly turns to spaghetti — components reaching into each other until
+nothing moves in isolation.
+
+This tool makes rules executable: you declare which
+**components** exist and who may import whom in a `depdog.yaml`, and
+depdog checks it against every import edge in your codebase, exiting
 non-zero for CI. One neutral rule format, one engine — depdog just swaps a thin
-language adapter per project ([see below](#multi-language-support)).
+[language adapter](#multi-language-support) per project.
 
 ```
 depdog check — github.com/matterpale/depdog
