@@ -1,0 +1,63 @@
+{
+  "module": "elm-dirty",
+  "default": "deny",
+  "violations": [
+    {
+      "from_package": "elm-dirty/src/Domain",
+      "from_component": "domain",
+      "import": "Service.Orders",
+      "target": "service",
+      "rule": "domain: allow [std]",
+      "test_only": false,
+      "positions": [
+        {
+          "file": "src/Domain/Order.elm",
+          "line": 7
+        }
+      ]
+    }
+  ],
+  "warnings": [],
+  "components": [
+    {
+      "name": "domain",
+      "stance": "whitelist",
+      "allow": [
+        "std"
+      ],
+      "packages": 1,
+      "edges": 2,
+      "violations": 1
+    },
+    {
+      "name": "handler",
+      "stance": "whitelist",
+      "allow": [
+        "service",
+        "std",
+        "external"
+      ],
+      "packages": 1,
+      "edges": 3,
+      "violations": 0
+    },
+    {
+      "name": "service",
+      "stance": "whitelist",
+      "allow": [
+        "domain",
+        "std"
+      ],
+      "packages": 1,
+      "edges": 1,
+      "violations": 0
+    }
+  ],
+  "boundaries": [],
+  "cycles": [],
+  "stats": {
+    "packages": 3,
+    "edges": 6,
+    "duration_ms": 0
+  }
+}

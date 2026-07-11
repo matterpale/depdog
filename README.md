@@ -270,7 +270,7 @@ failing build.
 
 ## Multi-language support
 
-depdog checks **eight** languages with the *same* `depdog.yaml`, the *same*
+depdog checks **nine** languages with the *same* `depdog.yaml`, the *same*
 commands (`check`, `graph`, `explain`, `config`, TUI), and the *same* engine.
 Only a thin language adapter differs; the rule format is neutral — component
 `path` globs match project-relative directories, and `std` / `external` are
@@ -287,6 +287,7 @@ Node/`tsc`, no `python`, no `cargo`), depdog stays a single binary.
 | `kt`   | Kotlin   | `build.gradle.kts`, `settings.gradle.kts` | `package` + `import`                                |
 | `java` | Java     | `pom.xml`, `build.gradle`                 | `package` + `import`                                |
 | `scala`| Scala    | `build.sbt`, `build.sc`                   | `package` + `import` (incl. `{A,B}`, `._`, `.*`, `given`) |
+| `elm`  | Elm      | `elm.json`                                | `module` + `import` (module-name resolution)        |
 | `rb`   | Ruby     | `Gemfile`, `.ruby-version`, `Rakefile`    | `require` / `require_relative` / `autoload`         |
 | `ts`   | TS / JS  | `tsconfig.json`, `package.json`           | `import`/`export from`/`require`/dynamic `import()` |
 
@@ -354,8 +355,8 @@ depdog is built to be driven by tools and agents, not just humans:
 
 ## Status
 
-v0.6.0 — the current release. depdog now checks **eight** languages (Go,
-TypeScript/JS, Python, Rust, Java, Ruby, Kotlin, Scala) through a pluggable adapter
+v0.6.0 — the current release. depdog now checks **nine** languages (Go,
+TypeScript/JS, Python, Rust, Java, Ruby, Kotlin, Scala, Elm) through a pluggable adapter
 registry, on top of the config v2 format (per-component `allow`/`deny`,
 `default` stance) and `boundaries` (orthogonal mutual-exclusion groups). In a Go
 workspace, `depdog check` now fans out over the member modules, each checked

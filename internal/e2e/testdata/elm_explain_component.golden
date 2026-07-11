@@ -1,0 +1,8 @@
+component domain
+  patterns: src/Domain/**
+  stance:   whitelist (only allowed pass)
+  allow:    [std]
+  packages (1):
+    elm-dirty/src/Domain
+  violations (1):
+    elm-dirty/src/Domain → Service.Orders  (domain: allow [std])

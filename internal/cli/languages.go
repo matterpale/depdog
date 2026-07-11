@@ -8,6 +8,7 @@ import (
 
 	"github.com/matterpale/depdog/internal/config"
 	"github.com/matterpale/depdog/internal/lang"
+	"github.com/matterpale/depdog/internal/lang/elm"
 	"github.com/matterpale/depdog/internal/lang/golang"
 	"github.com/matterpale/depdog/internal/lang/java"
 	"github.com/matterpale/depdog/internal/lang/kotlin"
@@ -73,6 +74,13 @@ var languages = []lang.Adapter{
 		Name:    "scala",
 		Markers: []string{"build.sbt", "build.sc"},
 		New:     func(root string) lang.Loader { return &scala.Loader{Dir: root} },
+	},
+	{
+		// Elm projects are rooted by elm.json. The marker is Elm-specific and not
+		// shared with any other adapter, so no ambiguity carve-out is needed.
+		Name:    "elm",
+		Markers: []string{"elm.json"},
+		New:     func(root string) lang.Loader { return &elm.Loader{Dir: root} },
 	},
 }
 

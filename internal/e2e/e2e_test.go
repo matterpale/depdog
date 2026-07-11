@@ -491,6 +491,62 @@ func TestCheckScalaLangFlag(t *testing.T) {
 	}
 }
 
+func TestCheckElmClean(t *testing.T) {
+	// A layered Elm app auto-detected via elm.json: the same engine and depdog.yaml
+	// format the Go/TS/Py/Rust/Java/Kotlin/Scala paths use, exit 0. Elm resolves by
+	// module name (import Foo.Bar -> src/Foo/Bar.elm), not by import path.
+	out, stderr, exit := run(t, fixture("elm-clean"), "check")
+	if exit != 0 {
+		t.Fatalf("exit %d\nstdout:\n%s\nstderr:\n%s", exit, out, stderr)
+	}
+	golden(t, "elm_clean_text.golden", reTextDur.ReplaceAllString(out, "checked in X"))
+}
+
+func TestCheckElmDirtyText(t *testing.T) {
+	out, _, exit := run(t, fixture("elm-dirty"), "check")
+	if exit != 1 {
+		t.Fatalf("exit %d, want 1\n%s", exit, out)
+	}
+	golden(t, "elm_dirty_text.golden", reTextDur.ReplaceAllString(out, "checked in X"))
+}
+
+func TestCheckElmDirtyJSON(t *testing.T) {
+	// Proves the stable JSON schema is language-neutral: Elm violations render
+	// through the same renderer and field names as every other adapter's.
+	out, _, exit := run(t, fixture("elm-dirty"), "check", "--format", "json")
+	if exit != 1 {
+		t.Fatalf("exit %d, want 1\n%s", exit, out)
+	}
+	golden(t, "elm_dirty_json.golden", reJSONDur.ReplaceAllString(out, `"duration_ms": 0`))
+}
+
+func TestExplainElmComponent(t *testing.T) {
+	out, stderr, exit := run(t, fixture("elm-dirty"), "explain", "domain")
+	if exit != 0 {
+		t.Fatalf("exit %d\nstderr:\n%s", exit, stderr)
+	}
+	golden(t, "elm_explain_component.golden", out)
+}
+
+func TestGraphElmComponentDOT(t *testing.T) {
+	out, stderr, exit := run(t, fixture("elm-dirty"), "graph")
+	if exit != 0 {
+		t.Fatalf("exit %d\nstderr:\n%s", exit, stderr)
+	}
+	golden(t, "elm_graph_component_dot.golden", out)
+}
+
+func TestCheckElmLangFlag(t *testing.T) {
+	// Explicit --lang elm selects the adapter (bypassing auto-detect).
+	out, stderr, exit := run(t, fixture("elm-clean"), "check", "--lang", "elm")
+	if exit != 0 {
+		t.Fatalf("--lang elm: exit %d\nstdout:\n%s\nstderr:\n%s", exit, out, stderr)
+	}
+	if !strings.Contains(out, "✓ no violations") {
+		t.Errorf("--lang elm on clean fixture should pass:\n%s", out)
+	}
+}
+
 func TestCheckRubyClean(t *testing.T) {
 	// A layered Ruby app auto-detected via the Gemfile: the same engine and
 	// depdog.yaml format the Go/TS/Py/Rust/Java paths use, exit 0.
