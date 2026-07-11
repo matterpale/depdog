@@ -21,8 +21,7 @@ Architecture rules
 usually live in someone's head or a wiki, and they rot.
 **depdog** makes rules executable.
 
-You declare which
-**components** exist and who may import whom in a `depdog.yaml`, and
+You declare who may import whom in a `depdog.yaml`, and
 depdog checks it against every import edge in your codebase, exiting
 non-zero for CI.
 
