@@ -134,7 +134,7 @@ func TestViolationSelectionMoves(t *testing.T) {
 
 func TestTabWraps(t *testing.T) {
 	m := New(fixtureResult(), fixturePkgs())
-	for _, want := range []tab{tabViolations, tabPackages, tabConfig, tabMatrix, tabDashboard} {
+	for _, want := range []tab{tabViolations, tabPackages, tabConfig, tabDashboard} {
 		m = update(m, tea.KeyMsg{Type: tea.KeyTab})
 		if m.active != want {
 			t.Fatalf("tab sequence: active = %d, want %d", m.active, want)
@@ -144,7 +144,7 @@ func TestTabWraps(t *testing.T) {
 
 func TestTabWrapsBackward(t *testing.T) {
 	m := New(fixtureResult(), fixturePkgs())
-	for _, want := range []tab{tabMatrix, tabConfig, tabPackages, tabViolations, tabDashboard} {
+	for _, want := range []tab{tabConfig, tabPackages, tabViolations, tabDashboard} {
 		m = update(m, tea.KeyMsg{Type: tea.KeyShiftTab})
 		if m.active != want {
 			t.Fatalf("shift+tab sequence: active = %d, want %d", m.active, want)
@@ -497,13 +497,13 @@ func TestConfigViewWithoutRuleSet(t *testing.T) {
 }
 
 func TestMatrixView(t *testing.T) {
-	m := update(New(fixtureResult(), fixturePkgs(), WithConfig("depdog.yaml", fixtureRuleSet())), runes("5"))
-	if m.active != tabMatrix {
-		t.Fatalf("5 should select the Matrix tab")
+	m := update(New(fixtureResult(), fixturePkgs(), WithConfig("depdog.yaml", fixtureRuleSet())), runes("m"))
+	if !m.matrixMode {
+		t.Fatalf("m should open the visual editor")
 	}
 	v := m.View()
 	// Grid + legend + the focus pane for the default selection (domain, first row).
-	for _, want := range []string{"Rule matrix", "Matrix", "domain", "handler", "std", "self", "focus: domain", "allow →"} {
+	for _, want := range []string{"Rule matrix", "domain", "handler", "std", "self", "focus: domain", "allow →"} {
 		if !strings.Contains(v, want) {
 			t.Errorf("matrix view missing %q:\n%s", want, v)
 		}
@@ -543,12 +543,54 @@ func TestMatrixVerdicts(t *testing.T) {
 
 func TestMatrixViewWithoutRuleSet(t *testing.T) {
 	// No WithConfig: the Matrix tab must still render a hint, never panic.
-	m := update(New(fixtureResult(), fixturePkgs()), runes("5"))
-	if m.active != tabMatrix {
-		t.Fatalf("5 should select the Matrix tab even without a rule set")
+	m := update(New(fixtureResult(), fixturePkgs()), runes("m"))
+	if !m.matrixMode {
+		t.Fatalf("m should open the visual editor even without a rule set")
 	}
 	if !strings.Contains(m.View(), "no compiled rule set") {
-		t.Errorf("matrix without a rule set should show a hint:\n%s", m.View())
+		t.Errorf("the editor without a rule set should show a hint:\n%s", m.View())
+	}
+}
+
+func TestEditorEntryExit(t *testing.T) {
+	m := New(fixtureResult(), fixturePkgs(), WithConfig("depdog.yaml", fixtureRuleSet()))
+
+	// Outside the editor, left/right page between tabs (the reported fix).
+	m = update(m, tea.KeyMsg{Type: tea.KeyRight})
+	if m.active != tabViolations {
+		t.Fatalf("→ should switch tabs outside the editor, got %d", m.active)
+	}
+
+	// m opens the editor, which renders under the Config tab.
+	m = update(m, runes("m"))
+	if !m.matrixMode || m.active != tabConfig {
+		t.Fatalf("m should open the editor on Config (mode=%v active=%d)", m.matrixMode, m.active)
+	}
+	// Inside the editor, left/right move the grid cursor, not the tabs.
+	m = update(m, tea.KeyMsg{Type: tea.KeyRight})
+	if m.active != tabConfig {
+		t.Errorf("→ inside the editor must not switch tabs, got %d", m.active)
+	}
+	if m.matrixCol != 1 {
+		t.Errorf("→ inside the editor should move the grid cursor, got col %d", m.matrixCol)
+	}
+
+	// esc leaves the editor back to the Config document (does not quit).
+	m = update(m, tea.KeyMsg{Type: tea.KeyEsc})
+	if m.matrixMode || m.active != tabConfig || m.quitting {
+		t.Errorf("esc should leave the editor to Config (mode=%v active=%d quit=%v)", m.matrixMode, m.active, m.quitting)
+	}
+	// esc again quits.
+	next, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	if !next.(Model).quitting || cmd == nil {
+		t.Errorf("esc outside the editor should quit")
+	}
+}
+
+func TestEditorTabExits(t *testing.T) {
+	m := update(New(fixtureResult(), fixturePkgs(), WithConfig("depdog.yaml", fixtureRuleSet())), runes("m"))
+	if m = update(m, tea.KeyMsg{Type: tea.KeyTab}); m.matrixMode {
+		t.Error("tab should exit the editor")
 	}
 }
 
@@ -572,7 +614,7 @@ func TestMatrixToggleWritesVerdict(t *testing.T) {
 		return update(New(fixtureResult(), fixturePkgs(),
 			WithConfig("depdog.yaml", fixtureRuleSet()),
 			WithEdit(func(from, target, verdict string) error { got = [3]string{from, target, verdict}; return nil })),
-			runes("5"))
+			runes("m"))
 	}
 	// domain row, std column (idx 2): explicit allow -> toggling writes deny.
 	m := mk()
@@ -594,7 +636,7 @@ func TestMatrixToggleWritesVerdict(t *testing.T) {
 
 func TestMatrixToggleReadOnlyAndSelf(t *testing.T) {
 	// No WithEdit: space is inert and says so, never panics.
-	m := update(New(fixtureResult(), fixturePkgs(), WithConfig("depdog.yaml", fixtureRuleSet())), runes("5"))
+	m := update(New(fixtureResult(), fixturePkgs(), WithConfig("depdog.yaml", fixtureRuleSet())), runes("m"))
 	m = update(m, runes(" "))
 	if !strings.Contains(m.View(), "read-only") {
 		t.Errorf("space without an edit hook should report read-only:\n%s", m.View())
@@ -604,7 +646,7 @@ func TestMatrixToggleReadOnlyAndSelf(t *testing.T) {
 	edited := false
 	m = update(New(fixtureResult(), fixturePkgs(),
 		WithConfig("depdog.yaml", fixtureRuleSet()),
-		WithEdit(func(_, _, _ string) error { edited = true; return nil })), runes("5"))
+		WithEdit(func(_, _, _ string) error { edited = true; return nil })), runes("m"))
 	m = update(m, runes(" ")) // cursor starts at col 0 == domain (self)
 	if edited {
 		t.Error("toggling a component against itself must not write")
@@ -612,7 +654,7 @@ func TestMatrixToggleReadOnlyAndSelf(t *testing.T) {
 }
 
 func TestMatrixColumnCursorClamps(t *testing.T) {
-	m := update(New(fixtureResult(), fixturePkgs(), WithConfig("depdog.yaml", fixtureRuleSet())), runes("5"))
+	m := update(New(fixtureResult(), fixturePkgs(), WithConfig("depdog.yaml", fixtureRuleSet())), runes("m"))
 	if m.matrixCol != 0 {
 		t.Fatalf("initial matrixCol = %d, want 0", m.matrixCol)
 	}
@@ -639,7 +681,7 @@ func fixtureBoundaryRuleSet() *core.RuleSet {
 }
 
 func TestBoundariesOverlayToggle(t *testing.T) {
-	m := update(New(fixtureResult(), fixturePkgs(), WithConfig("depdog.yaml", fixtureBoundaryRuleSet())), runes("5"))
+	m := update(New(fixtureResult(), fixturePkgs(), WithConfig("depdog.yaml", fixtureBoundaryRuleSet())), runes("m"))
 	if m.matrixBoundaries {
 		t.Fatal("the Matrix tab should start on the rules grid")
 	}
@@ -673,7 +715,7 @@ func TestBoundariesOverlayToggle(t *testing.T) {
 }
 
 func TestBoundariesOverlayEmpty(t *testing.T) {
-	m := update(New(fixtureResult(), fixturePkgs(), WithConfig("depdog.yaml", fixtureRuleSet())), runes("5"))
+	m := update(New(fixtureResult(), fixturePkgs(), WithConfig("depdog.yaml", fixtureRuleSet())), runes("m"))
 	m = update(m, runes("b"))
 	if !strings.Contains(m.View(), "no boundaries defined") {
 		t.Errorf("expected a hint when no boundaries exist:\n%s", m.View())
@@ -687,7 +729,7 @@ func TestBoundariesOverlayLiveViolation(t *testing.T) {
 			{FromComponent: "domain", ImportPath: "m/h", Target: "handler", Boundary: "adapters", Reason: core.ReasonBoundary},
 		},
 	}
-	m := update(New(res, nil, WithConfig("depdog.yaml", fixtureBoundaryRuleSet())), runes("5"))
+	m := update(New(res, nil, WithConfig("depdog.yaml", fixtureBoundaryRuleSet())), runes("m"))
 	m = update(m, runes("b"))
 	if !strings.Contains(m.View(), "1 live boundary violation") {
 		t.Errorf("expected a live boundary-violation count for adapters:\n%s", m.View())
@@ -706,7 +748,7 @@ func TestAddComponentForm(t *testing.T) {
 	calls := 0
 	m := update(New(fixtureResult(), fixturePkgs(),
 		WithConfig("depdog.yaml", fixtureRuleSet()),
-		WithAddComponent(func(name, pattern string) error { got = [2]string{name, pattern}; calls++; return nil })), runes("5"))
+		WithAddComponent(func(name, pattern string) error { got = [2]string{name, pattern}; calls++; return nil })), runes("m"))
 
 	m = update(m, runes("a"))
 	if m.matrixForm != formAdd {
@@ -733,7 +775,7 @@ func TestAddComponentForm(t *testing.T) {
 func TestAddComponentFormError(t *testing.T) {
 	m := update(New(fixtureResult(), fixturePkgs(),
 		WithConfig("depdog.yaml", fixtureRuleSet()),
-		WithAddComponent(func(_, _ string) error { return fmt.Errorf("that name is reserved") })), runes("5"))
+		WithAddComponent(func(_, _ string) error { return fmt.Errorf("that name is reserved") })), runes("m"))
 	m = update(m, runes("a"))
 	m = typeString(m, "std")
 	m = update(m, tea.KeyMsg{Type: tea.KeyEnter})
@@ -751,7 +793,7 @@ func TestAddComponentFormCancel(t *testing.T) {
 	calls := 0
 	m := update(New(fixtureResult(), fixturePkgs(),
 		WithConfig("depdog.yaml", fixtureRuleSet()),
-		WithAddComponent(func(_, _ string) error { calls++; return nil })), runes("5"))
+		WithAddComponent(func(_, _ string) error { calls++; return nil })), runes("m"))
 	m = update(m, runes("a"))
 	m = typeString(m, "svc")
 	m = update(m, tea.KeyMsg{Type: tea.KeyEsc})
@@ -767,7 +809,7 @@ func TestAddComponentFormCancel(t *testing.T) {
 }
 
 func TestAddComponentUnavailable(t *testing.T) {
-	m := update(New(fixtureResult(), fixturePkgs(), WithConfig("depdog.yaml", fixtureRuleSet())), runes("5"))
+	m := update(New(fixtureResult(), fixturePkgs(), WithConfig("depdog.yaml", fixtureRuleSet())), runes("m"))
 	m = update(m, runes("a"))
 	if m.matrixForm != formNone {
 		t.Error("without an add hook, `a` must be inert")
@@ -785,7 +827,7 @@ func TestRepathForm(t *testing.T) {
 		WithRepath(func(component string, patterns []string) error {
 			got.comp, got.patterns, calls = component, patterns, calls+1
 			return nil
-		})), runes("5"))
+		})), runes("m"))
 
 	// Selection starts on the first component (domain); p opens the form prefilled.
 	m = update(m, runes("p"))
@@ -818,7 +860,7 @@ func TestRepathFormErrorAndUnavailable(t *testing.T) {
 	// Error keeps the form open with the message.
 	m := update(New(fixtureResult(), fixturePkgs(),
 		WithConfig("depdog.yaml", fixtureRuleSet()),
-		WithRepath(func(_ string, _ []string) error { return fmt.Errorf("bad glob") })), runes("5"))
+		WithRepath(func(_ string, _ []string) error { return fmt.Errorf("bad glob") })), runes("m"))
 	m = update(m, runes("p"))
 	m = update(m, tea.KeyMsg{Type: tea.KeyEnter}) // submit prefilled -> error
 	if m.matrixForm != formRepath || !strings.Contains(m.View(), "bad glob") {
@@ -826,7 +868,7 @@ func TestRepathFormErrorAndUnavailable(t *testing.T) {
 	}
 
 	// No hook: p is inert.
-	m2 := update(New(fixtureResult(), fixturePkgs(), WithConfig("depdog.yaml", fixtureRuleSet())), runes("5"))
+	m2 := update(New(fixtureResult(), fixturePkgs(), WithConfig("depdog.yaml", fixtureRuleSet())), runes("m"))
 	m2 = update(m2, runes("p"))
 	if m2.matrixForm != formNone {
 		t.Error("without a re-path hook, `p` must be inert")
@@ -838,7 +880,7 @@ func TestRenameForm(t *testing.T) {
 	calls := 0
 	m := update(New(fixtureResult(), fixturePkgs(),
 		WithConfig("depdog.yaml", fixtureRuleSet()),
-		WithRename(func(oldName, newName string) error { got, calls = [2]string{oldName, newName}, calls+1; return nil })), runes("5"))
+		WithRename(func(oldName, newName string) error { got, calls = [2]string{oldName, newName}, calls+1; return nil })), runes("m"))
 
 	m = update(m, runes("R"))
 	if m.matrixForm != formRename {
@@ -868,7 +910,7 @@ func TestRenameFormNoOpErrorUnavailable(t *testing.T) {
 	calls := 0
 	m := update(New(fixtureResult(), fixturePkgs(),
 		WithConfig("depdog.yaml", fixtureRuleSet()),
-		WithRename(func(_, _ string) error { calls++; return nil })), runes("5"))
+		WithRename(func(_, _ string) error { calls++; return nil })), runes("m"))
 	m = update(m, runes("R"))
 	m = update(m, tea.KeyMsg{Type: tea.KeyEnter}) // submit unchanged "domain"
 	if calls != 0 || m.matrixForm != formNone {
@@ -878,7 +920,7 @@ func TestRenameFormNoOpErrorUnavailable(t *testing.T) {
 	// Error keeps the form open.
 	m = update(New(fixtureResult(), fixturePkgs(),
 		WithConfig("depdog.yaml", fixtureRuleSet()),
-		WithRename(func(_, _ string) error { return fmt.Errorf("name collides") })), runes("5"))
+		WithRename(func(_, _ string) error { return fmt.Errorf("name collides") })), runes("m"))
 	m = update(m, runes("R"))
 	for i := 0; i < len("domain"); i++ {
 		m = update(m, tea.KeyMsg{Type: tea.KeyBackspace})
@@ -890,7 +932,7 @@ func TestRenameFormNoOpErrorUnavailable(t *testing.T) {
 	}
 
 	// No hook: R inert.
-	m2 := update(New(fixtureResult(), fixturePkgs(), WithConfig("depdog.yaml", fixtureRuleSet())), runes("5"))
+	m2 := update(New(fixtureResult(), fixturePkgs(), WithConfig("depdog.yaml", fixtureRuleSet())), runes("m"))
 	m2 = update(m2, runes("R"))
 	if m2.matrixForm != formNone {
 		t.Error("without a rename hook, `R` must be inert")
@@ -903,7 +945,7 @@ func TestBoundaryMemberCursorAndRemove(t *testing.T) {
 		WithConfig("depdog.yaml", fixtureBoundaryRuleSet()),
 		WithBoundaryMembers(
 			func(_, _ string) error { return nil },
-			func(b, mem string) error { removed = [2]string{b, mem}; return nil })), runes("5"))
+			func(b, mem string) error { removed = [2]string{b, mem}; return nil })), runes("m"))
 	m = update(m, runes("b")) // overlay; adapters selected, members [domain, handler]
 
 	m = update(m, tea.KeyMsg{Type: tea.KeyRight})
@@ -931,7 +973,7 @@ func TestBoundaryAddMemberForm(t *testing.T) {
 		WithConfig("depdog.yaml", fixtureBoundaryRuleSet()),
 		WithBoundaryMembers(
 			func(b, mem string) error { added = [2]string{b, mem}; return nil },
-			func(_, _ string) error { return nil })), runes("5"))
+			func(_, _ string) error { return nil })), runes("m"))
 	m = update(m, runes("b"))
 	m = update(m, runes("a"))
 	if m.matrixForm != formAddMember {
@@ -951,7 +993,7 @@ func TestBoundaryAddMemberForm(t *testing.T) {
 }
 
 func TestBoundaryMembersReadOnly(t *testing.T) {
-	m := update(New(fixtureResult(), fixturePkgs(), WithConfig("depdog.yaml", fixtureBoundaryRuleSet())), runes("5"))
+	m := update(New(fixtureResult(), fixturePkgs(), WithConfig("depdog.yaml", fixtureBoundaryRuleSet())), runes("m"))
 	m = update(m, runes("b"))
 	if m = update(m, runes("a")); m.matrixForm != formNone {
 		t.Error("without an add hook, a must be inert in the overlay")
@@ -960,7 +1002,7 @@ func TestBoundaryMembersReadOnly(t *testing.T) {
 }
 
 func TestMatrixSelectionClamps(t *testing.T) {
-	m := update(New(fixtureResult(), fixturePkgs(), WithConfig("depdog.yaml", manyComponentRuleSet(40))), runes("5"))
+	m := update(New(fixtureResult(), fixturePkgs(), WithConfig("depdog.yaml", manyComponentRuleSet(40))), runes("m"))
 	m = update(m, tea.WindowSizeMsg{Width: 200, Height: 20})
 
 	if m.matrixSel != 0 {

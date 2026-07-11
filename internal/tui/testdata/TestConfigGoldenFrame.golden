@@ -1,5 +1,5 @@
 depdog · example.test/shop
- Dashboard | Violations | Packages | Config | Matrix 
+ Dashboard | Violations | Packages | Config 
 ────────────────────────────────────────────────────────────────────────
 
 depdog.yaml
@@ -16,4 +16,4 @@ components
       internal/handler/**
       allow  domain, std
 
-tab/1-5 switch · ↑/↓ scroll · e edit depdog.yaml · r re-run · ? help · q quit
+tab/1-4 switch · ↑/↓ scroll · m visual editor · e edit · r re-run · ? help · q quit

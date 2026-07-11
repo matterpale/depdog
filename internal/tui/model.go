@@ -22,7 +22,6 @@ const (
 	tabViolations
 	tabPackages
 	tabConfig
-	tabMatrix
 	numTabs
 )
 
@@ -34,8 +33,6 @@ func (t tab) title() string {
 		return "Packages"
 	case tabConfig:
 		return "Config"
-	case tabMatrix:
-		return "Matrix"
 	default:
 		return "Dashboard"
 	}
@@ -86,7 +83,11 @@ type Model struct {
 	// cursor over the grid.
 	matrixSel int
 	matrixCol int
-	// matrixBoundaries toggles the Matrix tab to its boundaries overlay (the
+	// matrixMode turns the Config tab into the visual rule editor (entered with
+	// `m`, left with esc). It is a sub-mode of Config, not a peer tab, so tab and
+	// arrow navigation stay consistent across the four real tabs.
+	matrixMode bool
+	// matrixBoundaries toggles the editor to its boundaries overlay (the
 	// orthogonal mutual-exclusion axis); matrixBoundSel picks a boundary and
 	// matrixMemberSel a member within it (for add/remove).
 	matrixBoundaries bool
@@ -269,6 +270,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.showHelp = false
 				return m, nil
 			}
+			if m.matrixMode {
+				m.exitMatrix() // esc leaves the visual editor back to the Config doc
+				return m, nil
+			}
 			m.quitting = true
 			return m, tea.Quit
 		}
@@ -277,75 +282,85 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		switch msg.String() {
 		case "tab":
+			m.exitMatrix()
 			m.active = (m.active + 1) % numTabs
 		case "shift+tab":
+			m.exitMatrix()
 			m.active = (m.active + numTabs - 1) % numTabs
 		case "right", "l":
-			// On the Matrix grid left/right move the edit cursor across columns; in
-			// the boundaries overlay they move the member cursor; elsewhere page tabs.
+			// In the editor left/right move the edit cursor (grid column, or the
+			// boundary member); everywhere else they page between tabs.
 			switch {
-			case m.active == tabMatrix && !m.matrixBoundaries:
+			case m.matrixMode && !m.matrixBoundaries:
 				m.matrixCol = clamp(m.matrixCol+1, m.matrixColCount())
-			case m.active == tabMatrix:
+			case m.matrixMode:
 				m.matrixMemberSel = clamp(m.matrixMemberSel+1, m.currentMemberCount())
 			default:
 				m.active = (m.active + 1) % numTabs
 			}
 		case "left", "h":
 			switch {
-			case m.active == tabMatrix && !m.matrixBoundaries:
+			case m.matrixMode && !m.matrixBoundaries:
 				m.matrixCol = clamp(m.matrixCol-1, m.matrixColCount())
-			case m.active == tabMatrix:
+			case m.matrixMode:
 				m.matrixMemberSel = clamp(m.matrixMemberSel-1, m.currentMemberCount())
 			default:
 				m.active = (m.active + numTabs - 1) % numTabs
 			}
+		case "m":
+			// Open the visual rule editor (a Config sub-mode); esc leaves it.
+			if !m.matrixMode {
+				m.active = tabConfig
+				m.matrixMode, m.matrixBoundaries = true, false
+			}
 		case " ", "enter":
-			if m.active == tabMatrix && !m.matrixBoundaries {
+			if m.matrixMode && !m.matrixBoundaries {
 				return m.toggleCell()
 			}
 		case "b":
-			if m.active == tabMatrix {
+			if m.matrixMode {
 				m.matrixBoundaries = !m.matrixBoundaries
 			}
 		case "a":
 			switch {
-			case m.active == tabMatrix && m.matrixBoundaries && m.addMember != nil && m.currentBoundary() != nil:
+			case m.matrixMode && m.matrixBoundaries && m.addMember != nil && m.currentBoundary() != nil:
 				m.matrixForm = formAddMember
 				m.formTarget, m.formName, m.formPattern = m.currentBoundary().Name, "", ""
 				m.formField, m.formErr = 0, ""
-			case m.active == tabMatrix && !m.matrixBoundaries && m.addComp != nil:
+			case m.matrixMode && !m.matrixBoundaries && m.addComp != nil:
 				m.matrixForm = formAdd
 				m.formName, m.formPattern, m.formField, m.formErr = "", "", 0, ""
 			}
 		case "d":
-			if m.active == tabMatrix && m.matrixBoundaries && m.removeMember != nil {
+			if m.matrixMode && m.matrixBoundaries && m.removeMember != nil {
 				return m.removeSelectedMember()
 			}
 		case "p":
-			if m.active == tabMatrix && !m.matrixBoundaries && m.repath != nil && m.selectedComponent() != nil {
+			if m.matrixMode && !m.matrixBoundaries && m.repath != nil && m.selectedComponent() != nil {
 				c := m.selectedComponent()
 				m.matrixForm = formRepath
 				m.formTarget, m.formName, m.formPattern = c.Name, "", strings.Join(c.Patterns, " ")
 				m.formField, m.formErr = 1, ""
 			}
 		case "R":
-			if m.active == tabMatrix && !m.matrixBoundaries && m.rename != nil && m.selectedComponent() != nil {
+			if m.matrixMode && !m.matrixBoundaries && m.rename != nil && m.selectedComponent() != nil {
 				c := m.selectedComponent()
 				m.matrixForm = formRename
 				m.formTarget, m.formName, m.formPattern = c.Name, c.Name, ""
 				m.formField, m.formErr = 0, ""
 			}
 		case "1":
+			m.exitMatrix()
 			m.active = tabDashboard
 		case "2":
+			m.exitMatrix()
 			m.active = tabViolations
 		case "3":
+			m.exitMatrix()
 			m.active = tabPackages
 		case "4":
+			m.exitMatrix()
 			m.active = tabConfig
-		case "5":
-			m.active = tabMatrix
 		case "/":
 			if m.active == tabViolations || m.active == tabPackages {
 				m.filtering = true
@@ -395,9 +410,17 @@ func (m *Model) resetSelection() {
 	m.selPkg = 0
 }
 
+// exitMatrix leaves the visual editor, returning the Config tab to its document
+// view. A no-op when the editor is not open.
+func (m *Model) exitMatrix() {
+	m.matrixMode = false
+	m.matrixBoundaries = false
+}
+
 // moveSelection moves the highlighted row on whichever list-bearing screen is
-// active, clamped to its bounds. The Config tab is a document, not a list: the
-// same keys scroll its window, clamped to the last renderable offset.
+// active, clamped to its bounds. On the Config tab up/down scroll the compiled-
+// rules document, unless the visual editor is open — then they move its row (a
+// component, or a boundary in the overlay).
 func (m *Model) moveSelection(d int) {
 	switch m.active {
 	case tabViolations:
@@ -405,13 +428,14 @@ func (m *Model) moveSelection(d int) {
 	case tabPackages:
 		m.selPkg = clamp(m.selPkg+d, len(m.filteredPackages()))
 	case tabConfig:
-		m.configScroll = clampScroll(m.configScroll+d, m.configLineCount(), m.bodyRows())
-	case tabMatrix:
-		if m.matrixBoundaries {
+		switch {
+		case m.matrixMode && m.matrixBoundaries:
 			m.matrixBoundSel = clamp(m.matrixBoundSel+d, m.boundaryCount())
 			m.matrixMemberSel = 0 // a new boundary resets the member cursor
-		} else {
+		case m.matrixMode:
 			m.matrixSel = clamp(m.matrixSel+d, m.matrixRowCount())
+		default:
+			m.configScroll = clampScroll(m.configScroll+d, m.configLineCount(), m.bodyRows())
 		}
 	}
 }
@@ -472,14 +496,12 @@ func (m Model) View() string {
 	if m.showHelp {
 		b.WriteString(helpView())
 	} else {
-		switch m.active {
-		case tabViolations:
+		switch {
+		case m.active == tabViolations:
 			b.WriteString(m.violationsView())
-		case tabPackages:
+		case m.active == tabPackages:
 			b.WriteString(m.packagesView())
-		case tabConfig:
-			b.WriteString(m.configView())
-		case tabMatrix:
+		case m.active == tabConfig && m.matrixMode:
 			switch {
 			case m.matrixForm != formNone:
 				b.WriteString(m.formView())
@@ -488,6 +510,8 @@ func (m Model) View() string {
 			default:
 				b.WriteString(m.matrixView())
 			}
+		case m.active == tabConfig:
+			b.WriteString(m.configView())
 		default:
 			b.WriteString(m.dashboardView())
 		}
@@ -501,18 +525,21 @@ func (m Model) View() string {
 func helpView() string {
 	rows := [][2]string{
 		{"tab / shift+tab", "next / previous screen"},
-		{"1 / 2 / 3 / 4 / 5", "Dashboard / Violations / Packages / Config / Matrix"},
+		{"1 / 2 / 3 / 4", "Dashboard / Violations / Packages / Config"},
 		{"up/down or k/j", "move the selection (or scroll the Config document)"},
-		{"left/right or h/l", "Matrix: move the cursor across columns (else page tabs)"},
-		{"space", "Matrix: toggle the cursored edge — allow → deny → default"},
-		{"b", "Matrix: boundaries overlay — ←/→ pick a member, a add, d remove"},
-		{"a", "Matrix: add a new component (name + path) to depdog.yaml"},
-		{"p", "Matrix: re-path the selected component (edit its path glob)"},
-		{"R", "Matrix: rename the selected component (refs follow automatically)"},
+		{"m", "Config tab: open the visual rule editor (esc to leave)"},
+		{"─ in the editor ─", ""},
+		{"↑↓←→", "move the edit cursor over the grid"},
+		{"space", "toggle the cursored edge — allow → deny → default"},
+		{"b", "boundaries overlay — ←/→ pick a member, a add, d remove"},
+		{"a", "add a new component (name + path) to depdog.yaml"},
+		{"p", "re-path the selected component (edit its path glob)"},
+		{"R", "rename the selected component (refs follow automatically)"},
+		{"─────────────────", ""},
 		{"/", "filter the list (Violations, Packages)"},
 		{"e", "open $EDITOR: the selection (Violations, Packages) or depdog.yaml (Config)"},
 		{"r", "re-run the check and refresh every screen"},
-		{"esc", "clear filter, or close this help"},
+		{"esc", "leave the editor, clear a filter, or close this help"},
 		{"?", "toggle this help"},
 		{"q or ctrl+c", "quit"},
 	}
@@ -562,38 +589,31 @@ func (m Model) footer() string {
 	if m.status != "" {
 		return styleWarn.Render(m.status)
 	}
-	if m.active == tabViolations || m.active == tabPackages {
-		return styleDim.Render("tab/1-5 switch · ↑/↓ move · / filter · e edit · r re-run · ? help · q quit")
-	}
-	if m.active == tabConfig {
-		return styleDim.Render("tab/1-5 switch · ↑/↓ scroll · e edit depdog.yaml · r re-run · ? help · q quit")
-	}
-	if m.active == tabMatrix {
-		if m.matrixForm == formAddMember {
+	// The visual rule editor (a Config sub-mode) has its own key hints; esc leaves.
+	if m.matrixMode {
+		switch m.matrixForm {
+		case formAddMember:
 			return styleDim.Render("type a member (name or glob) · enter add · esc cancel")
-		}
-		if m.matrixForm == formRename {
+		case formRename:
 			return styleDim.Render("type the new name · enter save · esc cancel")
-		}
-		if m.matrixForm == formRepath {
+		case formRepath:
 			return styleDim.Render("type the path glob(s) · enter save · esc cancel")
-		}
-		if m.matrixForm == formAdd {
+		case formAdd:
 			return styleDim.Render("type to fill fields · tab switch field · enter next/add · esc cancel")
 		}
 		if m.matrixBoundaries {
-			h := "tab switch · ↑/↓ boundary · ←/→ member · b rules"
+			h := "↑/↓ boundary · ←/→ member · b rules"
 			if m.addMember != nil {
 				h += " · a add"
 			}
 			if m.removeMember != nil {
 				h += " · d remove"
 			}
-			return styleDim.Render(h + " · r re-run · ? help · q quit")
+			return styleDim.Render(h + " · esc exit · r re-run · ? help")
 		}
-		hint := "tab switch · ↑↓←→ move cursor · b boundaries"
+		hint := "↑↓←→ move cursor · b boundaries"
 		if m.edit != nil {
-			hint = "tab switch · ↑↓←→ move cursor · space toggle · b boundaries"
+			hint = "↑↓←→ cursor · space toggle · b boundaries"
 		}
 		if m.addComp != nil {
 			hint += " · a add"
@@ -604,9 +624,16 @@ func (m Model) footer() string {
 		if m.rename != nil {
 			hint += " · R rename"
 		}
-		return styleDim.Render(hint + " · r re-run · ? help · q quit")
+		return styleDim.Render(hint + " · esc exit · r re-run · ? help")
 	}
-	return styleDim.Render("tab/1-5 switch · ↑/↓ move · r re-run · ? help · q quit")
+
+	if m.active == tabViolations || m.active == tabPackages {
+		return styleDim.Render("tab/1-4 switch · ↑/↓ move · / filter · e edit · r re-run · ? help · q quit")
+	}
+	if m.active == tabConfig {
+		return styleDim.Render("tab/1-4 switch · ↑/↓ scroll · m visual editor · e edit · r re-run · ? help · q quit")
+	}
+	return styleDim.Render("tab/1-4 switch · ↑/↓ move · r re-run · ? help · q quit")
 }
 
 func plural(n int, word string) string {
