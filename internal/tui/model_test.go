@@ -629,6 +629,71 @@ func TestMatrixColumnCursorClamps(t *testing.T) {
 	}
 }
 
+func fixtureBoundaryRuleSet() *core.RuleSet {
+	rs := fixtureRuleSet()
+	rs.Boundaries = []core.Boundary{
+		{Name: "adapters", Members: []core.BoundaryMember{{Label: "domain"}, {Label: "handler"}}},
+		{Name: "cmd-services", Sealed: true, Members: []core.BoundaryMember{{Label: "cmd/a/**"}, {Label: "cmd/b/**"}}},
+	}
+	return rs
+}
+
+func TestBoundariesOverlayToggle(t *testing.T) {
+	m := update(New(fixtureResult(), fixturePkgs(), WithConfig("depdog.yaml", fixtureBoundaryRuleSet())), runes("5"))
+	if m.matrixBoundaries {
+		t.Fatal("the Matrix tab should start on the rules grid")
+	}
+	if !strings.Contains(m.View(), "Rule matrix") {
+		t.Errorf("expected the grid before b:\n%s", m.View())
+	}
+
+	m = update(m, runes("b"))
+	if !m.matrixBoundaries {
+		t.Fatal("b should enter the boundaries overlay")
+	}
+	v := m.View()
+	for _, want := range []string{"Boundaries", "adapters", "cmd-services", "sealed", "members", "no member may import"} {
+		if !strings.Contains(v, want) {
+			t.Errorf("boundaries overlay missing %q:\n%s", want, v)
+		}
+	}
+
+	m2 := update(m, runes("j"))
+	if m2.matrixBoundSel != 1 {
+		t.Errorf("j should select the second boundary, got %d", m2.matrixBoundSel)
+	}
+	if !strings.Contains(m2.View(), "── cmd-services ──") {
+		t.Errorf("the detail pane should follow the selection:\n%s", m2.View())
+	}
+
+	m = update(m, runes("b"))
+	if m.matrixBoundaries || !strings.Contains(m.View(), "Rule matrix") {
+		t.Errorf("b should toggle back to the grid")
+	}
+}
+
+func TestBoundariesOverlayEmpty(t *testing.T) {
+	m := update(New(fixtureResult(), fixturePkgs(), WithConfig("depdog.yaml", fixtureRuleSet())), runes("5"))
+	m = update(m, runes("b"))
+	if !strings.Contains(m.View(), "no boundaries defined") {
+		t.Errorf("expected a hint when no boundaries exist:\n%s", m.View())
+	}
+}
+
+func TestBoundariesOverlayLiveViolation(t *testing.T) {
+	res := &core.Result{
+		ModulePath: "m",
+		Violations: []core.Violation{
+			{FromComponent: "domain", ImportPath: "m/h", Target: "handler", Boundary: "adapters", Reason: core.ReasonBoundary},
+		},
+	}
+	m := update(New(res, nil, WithConfig("depdog.yaml", fixtureBoundaryRuleSet())), runes("5"))
+	m = update(m, runes("b"))
+	if !strings.Contains(m.View(), "1 live boundary violation") {
+		t.Errorf("expected a live boundary-violation count for adapters:\n%s", m.View())
+	}
+}
+
 func TestMatrixSelectionClamps(t *testing.T) {
 	m := update(New(fixtureResult(), fixturePkgs(), WithConfig("depdog.yaml", manyComponentRuleSet(40))), runes("5"))
 	m = update(m, tea.WindowSizeMsg{Width: 200, Height: 20})

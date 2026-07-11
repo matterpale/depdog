@@ -81,8 +81,12 @@ type Model struct {
 	// cursor over the grid.
 	matrixSel int
 	matrixCol int
-	filter    string
-	filtering bool // capturing keystrokes into filter on the Violations screen
+	// matrixBoundaries toggles the Matrix tab to its boundaries overlay (the
+	// orthogonal mutual-exclusion axis); matrixBoundSel picks a boundary there.
+	matrixBoundaries bool
+	matrixBoundSel   int
+	filter           string
+	filtering        bool // capturing keystrokes into filter on the Violations screen
 	// editedConfig records that the last $EDITOR launch came from the Config tab,
 	// so its exit auto-fires the refresh pipeline.
 	editedConfig bool
@@ -198,6 +202,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.configScroll = 0 // the fresh document may be shorter; start at the top
 		m.matrixSel = clamp(m.matrixSel, m.matrixRowCount())
 		m.matrixCol = clamp(m.matrixCol, m.matrixColCount())
+		m.matrixBoundSel = clamp(m.matrixBoundSel, m.boundaryCount())
 		m.status = "re-ran: " + plural(len(msg.res.Violations), "violation")
 	case tea.KeyMsg:
 		m.status = "" // any key dismisses a transient status message
@@ -228,22 +233,30 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "shift+tab":
 			m.active = (m.active + numTabs - 1) % numTabs
 		case "right", "l":
-			// On the Matrix tab left/right move the edit cursor across columns;
-			// elsewhere they page between tabs.
-			if m.active == tabMatrix {
+			// On the Matrix grid left/right move the edit cursor across columns;
+			// in its boundaries overlay they are inert; elsewhere they page tabs.
+			switch {
+			case m.active == tabMatrix && !m.matrixBoundaries:
 				m.matrixCol = clamp(m.matrixCol+1, m.matrixColCount())
-			} else {
+			case m.active == tabMatrix:
+			default:
 				m.active = (m.active + 1) % numTabs
 			}
 		case "left", "h":
-			if m.active == tabMatrix {
+			switch {
+			case m.active == tabMatrix && !m.matrixBoundaries:
 				m.matrixCol = clamp(m.matrixCol-1, m.matrixColCount())
-			} else {
+			case m.active == tabMatrix:
+			default:
 				m.active = (m.active + numTabs - 1) % numTabs
 			}
 		case " ", "enter":
-			if m.active == tabMatrix {
+			if m.active == tabMatrix && !m.matrixBoundaries {
 				return m.toggleCell()
+			}
+		case "b":
+			if m.active == tabMatrix {
+				m.matrixBoundaries = !m.matrixBoundaries
 			}
 		case "1":
 			m.active = tabDashboard
@@ -316,7 +329,11 @@ func (m *Model) moveSelection(d int) {
 	case tabConfig:
 		m.configScroll = clampScroll(m.configScroll+d, m.configLineCount(), m.bodyRows())
 	case tabMatrix:
-		m.matrixSel = clamp(m.matrixSel+d, m.matrixRowCount())
+		if m.matrixBoundaries {
+			m.matrixBoundSel = clamp(m.matrixBoundSel+d, m.boundaryCount())
+		} else {
+			m.matrixSel = clamp(m.matrixSel+d, m.matrixRowCount())
+		}
 	}
 }
 
@@ -384,7 +401,11 @@ func (m Model) View() string {
 		case tabConfig:
 			b.WriteString(m.configView())
 		case tabMatrix:
-			b.WriteString(m.matrixView())
+			if m.matrixBoundaries {
+				b.WriteString(m.boundariesView())
+			} else {
+				b.WriteString(m.matrixView())
+			}
 		default:
 			b.WriteString(m.dashboardView())
 		}
@@ -402,6 +423,7 @@ func helpView() string {
 		{"up/down or k/j", "move the selection (or scroll the Config document)"},
 		{"left/right or h/l", "Matrix: move the cursor across columns (else page tabs)"},
 		{"space", "Matrix: toggle the cursored edge — allow → deny → default"},
+		{"b", "Matrix: show the boundaries overlay (mutual-exclusion sets)"},
 		{"/", "filter the list (Violations, Packages)"},
 		{"e", "open $EDITOR: the selection (Violations, Packages) or depdog.yaml (Config)"},
 		{"r", "re-run the check and refresh every screen"},
@@ -462,10 +484,13 @@ func (m Model) footer() string {
 		return styleDim.Render("tab/1-5 switch · ↑/↓ scroll · e edit depdog.yaml · r re-run · ? help · q quit")
 	}
 	if m.active == tabMatrix {
-		if m.edit != nil {
-			return styleDim.Render("tab switch · ↑↓←→ move cursor · space toggle allow/deny · r re-run · ? help · q quit")
+		if m.matrixBoundaries {
+			return styleDim.Render("tab switch · ↑/↓ pick boundary · b back to rules · r re-run · ? help · q quit")
 		}
-		return styleDim.Render("tab switch · ↑↓←→ move cursor · r re-run · ? help · q quit")
+		if m.edit != nil {
+			return styleDim.Render("tab switch · ↑↓←→ move cursor · space toggle · b boundaries · r re-run · ? help · q quit")
+		}
+		return styleDim.Render("tab switch · ↑↓←→ move cursor · b boundaries · r re-run · ? help · q quit")
 	}
 	return styleDim.Render("tab/1-5 switch · ↑/↓ move · r re-run · ? help · q quit")
 }
