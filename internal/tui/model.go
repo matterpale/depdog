@@ -84,11 +84,13 @@ type Model struct {
 	// arrow navigation stay consistent across the four real tabs.
 	matrixMode bool
 	// Staged-editing state: matrixConfig is the in-memory working copy every edit
-	// mutates (the grid re-evaluates off it); matrixSaved is the last bytes written
-	// to disk (the entry snapshot, updated on Save); matrixExit shows the
-	// save/discard/cancel prompt when leaving with unsaved changes.
+	// mutates (the grid re-evaluates off it); matrixSaved is the last bytes on disk
+	// (updated on Save); matrixEntry is the config from when the editor opened —
+	// fixed for the session, the "revert all the way" target. matrixExit shows the
+	// save/discard prompt when leaving with unsaved changes.
 	matrixConfig []byte
 	matrixSaved  []byte
+	matrixEntry  []byte
 	matrixExit   bool
 	// matrixBoundaries toggles the editor to its boundaries overlay (the
 	// orthogonal mutual-exclusion axis); matrixBoundSel picks a boundary and
@@ -436,11 +438,19 @@ func (m *Model) openMatrix() {
 	}
 	m.matrixConfig = data
 	m.matrixSaved = append([]byte(nil), data...)
+	m.matrixEntry = append([]byte(nil), data...)
 }
 
 // matrixDirty reports whether the staged config differs from what's on disk.
 func (m Model) matrixDirty() bool {
 	return m.editor != nil && !bytes.Equal(m.matrixConfig, m.matrixSaved)
+}
+
+// savedSinceOpen reports whether a Save this session changed the file from the
+// config the editor opened with — i.e. whether "revert all the way" would do
+// anything beyond a plain discard.
+func (m Model) savedSinceOpen() bool {
+	return m.editor != nil && !bytes.Equal(m.matrixEntry, m.matrixSaved)
 }
 
 // stage applies a transformer to the working config and re-evaluates it in
@@ -514,21 +524,30 @@ func (m *Model) leaveEditorOK() bool {
 }
 
 // exitPromptView renders the save/discard/cancel prompt shown when leaving the
-// editor with unsaved changes.
+// editor with unsaved changes. It offers the "revert all the way" option only
+// when a Save this session moved the file past the config you opened with.
 func (m Model) exitPromptView() string {
-	return strings.Join([]string{
+	discard := "  discard — roll back to the config from when you opened the editor"
+	if m.savedSinceOpen() {
+		discard = "  discard unsaved edits — roll back to your last save"
+	}
+	lines := []string{
 		styleTitle.Render("Unsaved changes"),
 		"",
 		styleDim.Render("  You've edited the rules but haven't saved them to depdog.yaml."),
 		"",
 		"  " + styleGood.Render("s") + styleDim.Render("  save changes and leave"),
-		"  " + styleBad.Render("d") + styleDim.Render("  discard — roll back to the config from when you opened the editor"),
-		"  " + styleDim.Render("c  cancel — keep editing"),
-	}, "\n")
+		"  " + styleBad.Render("d") + styleDim.Render(discard),
+	}
+	if m.savedSinceOpen() {
+		lines = append(lines, "  "+styleBad.Render("o")+styleDim.Render("  revert all the way — roll back to when you opened the editor (undoes saves too)"))
+	}
+	return strings.Join(append(lines, "  "+styleDim.Render("c  cancel — keep editing")), "\n")
 }
 
 // updateExitPrompt handles the save/discard/cancel prompt shown when leaving the
-// editor with unsaved changes.
+// editor with unsaved changes. `o` (revert all the way to the config the editor
+// opened with) is offered only when a Save this session moved the file past it.
 func (m Model) updateExitPrompt(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "s": // save and leave
@@ -540,20 +559,41 @@ func (m Model) updateExitPrompt(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.matrixSaved = append([]byte(nil), m.matrixConfig...)
 		m.exitMatrix()
 		m.status = "saved depdog.yaml"
-	case "d": // discard and leave (roll back to the last saved / entry state)
-		m.matrixConfig = append([]byte(nil), m.matrixSaved...)
-		if res, pkgs, rules, err := m.editor.Eval(m.matrixConfig); err == nil {
-			m.setData(res, pkgs)
-			m.rules = rules
+	case "d": // discard unsaved edits — roll back to the last on-disk state
+		return m.leaveRolledBackTo(m.matrixSaved, "discarded unsaved changes")
+	case "o": // revert all the way to the config the editor opened with
+		if m.savedSinceOpen() {
+			return m.leaveRolledBackTo(m.matrixEntry, "reverted to the config from when you opened the editor")
 		}
-		m.exitMatrix()
-		m.status = "discarded changes"
+		return m.leaveRolledBackTo(m.matrixSaved, "discarded unsaved changes")
 	case "c", "esc": // cancel — keep editing
 		m.matrixExit = false
 	case "ctrl+c":
 		m.quitting = true
 		return m, tea.Quit
 	}
+	return m, nil
+}
+
+// leaveRolledBackTo resets the working copy to target, writing it to disk when it
+// differs from the saved state (so reverting past a mid-session save actually
+// restores the file), re-evaluates, and leaves the editor.
+func (m Model) leaveRolledBackTo(target []byte, note string) (tea.Model, tea.Cmd) {
+	m.matrixConfig = append([]byte(nil), target...)
+	if !bytes.Equal(m.matrixSaved, m.matrixConfig) {
+		if err := m.editor.Save(m.matrixConfig); err != nil {
+			m.status = "revert failed: " + oneLine(err.Error())
+			m.matrixExit = false
+			return m, nil
+		}
+	}
+	m.matrixSaved = append([]byte(nil), m.matrixConfig...)
+	if res, pkgs, rules, err := m.editor.Eval(m.matrixConfig); err == nil {
+		m.setData(res, pkgs)
+		m.rules = rules
+	}
+	m.exitMatrix()
+	m.status = note
 	return m, nil
 }
 
@@ -736,7 +776,11 @@ func (m Model) footer() string {
 	// The visual rule editor (a Config sub-mode) has its own key hints; esc leaves.
 	if m.matrixMode {
 		if m.matrixExit {
-			return styleWarn.Render("unsaved changes — s save · d discard · c cancel")
+			h := "unsaved changes — s save · d discard"
+			if m.savedSinceOpen() {
+				h += " · o revert all"
+			}
+			return styleWarn.Render(h + " · c cancel")
 		}
 		switch m.matrixForm {
 		case formAddMember:

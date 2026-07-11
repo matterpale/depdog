@@ -1097,6 +1097,45 @@ func TestEditorDirtyBlocksTabSwitch(t *testing.T) {
 	}
 }
 
+func TestEditorRevertAllTheWay(t *testing.T) {
+	s := &stubEditor{}
+	m := stageOneEdit(editorModel(s, fixtureRuleSet()))
+
+	// Save mid-session, then edit again: revert-all now differs from discard.
+	m = update(m, runes("w"))
+	if !m.savedSinceOpen() {
+		t.Fatal("a mid-session save should make revert-all meaningful")
+	}
+	m = update(m, runes(" ")) // stage a further edit
+	m = update(m, tea.KeyMsg{Type: tea.KeyEsc})
+	if !strings.Contains(m.View(), "revert all the way") {
+		t.Errorf("after a save, the prompt should offer revert-all:\n%s", m.View())
+	}
+
+	// o restores the config the editor opened with (to disk) and leaves.
+	m = update(m, runes("o"))
+	if m.matrixMode {
+		t.Error("revert-all should leave the editor")
+	}
+	if string(s.saved) != "cfg0" {
+		t.Errorf("revert-all should write the entry config back to disk, got %q", s.saved)
+	}
+}
+
+func TestEditorNoRevertOptionWithoutSave(t *testing.T) {
+	s := &stubEditor{}
+	m := stageOneEdit(editorModel(s, fixtureRuleSet()))
+	m = update(m, tea.KeyMsg{Type: tea.KeyEsc}) // prompt; no save happened this session
+	if strings.Contains(m.View(), "revert all the way") {
+		t.Errorf("without a mid-session save the prompt should not offer revert-all:\n%s", m.View())
+	}
+	// d still discards to the (unchanged) entry state and leaves.
+	m = update(m, runes("d"))
+	if m.matrixMode {
+		t.Error("discard should leave the editor")
+	}
+}
+
 func TestMatrixSelectionClamps(t *testing.T) {
 	m := update(New(fixtureResult(), fixturePkgs(), WithConfig("depdog.yaml", manyComponentRuleSet(40))), runes("m"))
 	m = update(m, tea.WindowSizeMsg{Width: 200, Height: 20})
