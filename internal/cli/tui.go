@@ -12,6 +12,7 @@ import (
 	"github.com/matterpale/depdog/internal/config"
 	"github.com/matterpale/depdog/internal/core"
 	"github.com/matterpale/depdog/internal/tui"
+	"github.com/matterpale/depdog/internal/wizard"
 )
 
 func tuiCmd() *cobra.Command {
@@ -76,11 +77,33 @@ func launch(cmd *cobra.Command, configPath string, args []string, ev *evaluation
 		}
 		return os.WriteFile(ev.ConfigPath, out, 0o644)
 	}
+	// addComponent backs the Matrix tab's "add component" form: validate the name
+	// and pattern the same way `init` does, then splice a new component into
+	// depdog.yaml via MergeComponents (which preserves the rest of the file and
+	// rejects name collisions).
+	addComponent := func(name, pattern string) error {
+		if err := wizard.ValidateName(name); err != nil {
+			return err
+		}
+		if err := core.ValidatePattern(pattern); err != nil {
+			return err
+		}
+		data, err := os.ReadFile(ev.ConfigPath)
+		if err != nil {
+			return err
+		}
+		out, err := config.MergeComponents(data, []config.MergeComponent{{Name: name, Patterns: []string{pattern}}})
+		if err != nil {
+			return err
+		}
+		return os.WriteFile(ev.ConfigPath, out, 0o644)
+	}
 	return tui.Run(ev.Result, pkgs,
 		tui.WithRoot(root),
 		tui.WithConfig(configRel, ev.Rules),
 		tui.WithRefresh(refresh),
-		tui.WithEdit(edit))
+		tui.WithEdit(edit),
+		tui.WithAddComponent(addComponent))
 }
 
 // configRelPath renders the config path relative to the module root for display,

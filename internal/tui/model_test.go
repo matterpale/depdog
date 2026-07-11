@@ -694,6 +694,86 @@ func TestBoundariesOverlayLiveViolation(t *testing.T) {
 	}
 }
 
+func typeString(m Model, s string) Model {
+	for _, r := range s {
+		m = update(m, runes(string(r)))
+	}
+	return m
+}
+
+func TestAddComponentForm(t *testing.T) {
+	var got [2]string
+	calls := 0
+	m := update(New(fixtureResult(), fixturePkgs(),
+		WithConfig("depdog.yaml", fixtureRuleSet()),
+		WithAddComponent(func(name, pattern string) error { got = [2]string{name, pattern}; calls++; return nil })), runes("5"))
+
+	m = update(m, runes("a"))
+	if !m.matrixAdding {
+		t.Fatal("a should open the add-component form")
+	}
+	if !strings.Contains(m.View(), "Add component") {
+		t.Errorf("form should render:\n%s", m.View())
+	}
+	m = typeString(m, "service")
+	m = update(m, tea.KeyMsg{Type: tea.KeyEnter}) // name -> path
+	m = typeString(m, "internal/service/**")
+	if m.addName != "service" || m.addPattern != "internal/service/**" {
+		t.Fatalf("fields = %q, %q", m.addName, m.addPattern)
+	}
+	m = update(m, tea.KeyMsg{Type: tea.KeyEnter}) // submit
+	if calls != 1 || got != [2]string{"service", "internal/service/**"} {
+		t.Errorf("submit should call addComp once with the fields, got %d %v", calls, got)
+	}
+	if m.matrixAdding {
+		t.Error("a successful add should close the form")
+	}
+}
+
+func TestAddComponentFormError(t *testing.T) {
+	m := update(New(fixtureResult(), fixturePkgs(),
+		WithConfig("depdog.yaml", fixtureRuleSet()),
+		WithAddComponent(func(_, _ string) error { return fmt.Errorf("that name is reserved") })), runes("5"))
+	m = update(m, runes("a"))
+	m = typeString(m, "std")
+	m = update(m, tea.KeyMsg{Type: tea.KeyEnter})
+	m = typeString(m, "x/**")
+	m = update(m, tea.KeyMsg{Type: tea.KeyEnter}) // submit -> error
+	if !m.matrixAdding {
+		t.Error("a failed add should keep the form open")
+	}
+	if !strings.Contains(m.View(), "that name is reserved") {
+		t.Errorf("the error should show in the form:\n%s", m.View())
+	}
+}
+
+func TestAddComponentFormCancel(t *testing.T) {
+	calls := 0
+	m := update(New(fixtureResult(), fixturePkgs(),
+		WithConfig("depdog.yaml", fixtureRuleSet()),
+		WithAddComponent(func(_, _ string) error { calls++; return nil })), runes("5"))
+	m = update(m, runes("a"))
+	m = typeString(m, "svc")
+	m = update(m, tea.KeyMsg{Type: tea.KeyEsc})
+	if m.matrixAdding {
+		t.Error("esc should cancel the form")
+	}
+	if calls != 0 {
+		t.Error("cancel should not add anything")
+	}
+	if m = update(m, runes("2")); m.active != tabViolations {
+		t.Error("after cancel, keys navigate normally again")
+	}
+}
+
+func TestAddComponentUnavailable(t *testing.T) {
+	m := update(New(fixtureResult(), fixturePkgs(), WithConfig("depdog.yaml", fixtureRuleSet())), runes("5"))
+	m = update(m, runes("a"))
+	if m.matrixAdding {
+		t.Error("without an add hook, `a` must be inert")
+	}
+}
+
 func TestMatrixSelectionClamps(t *testing.T) {
 	m := update(New(fixtureResult(), fixturePkgs(), WithConfig("depdog.yaml", manyComponentRuleSet(40))), runes("5"))
 	m = update(m, tea.WindowSizeMsg{Width: 200, Height: 20})

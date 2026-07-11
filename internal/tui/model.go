@@ -68,6 +68,7 @@ type Model struct {
 	configRel string             // module-relative config path (stable across refreshes)
 	refresh   func() (*core.Result, []core.PackageView, *core.RuleSet, error)
 	edit      func(from, target, verdict string) error // Matrix-tab cell toggle write-back
+	addComp   func(name, pattern string) error         // Matrix-tab add-component form write-back
 	status    string                                   // transient message shown in the footer, cleared on any key
 	active    tab
 	selected  int // highlighted violation on the Violations screen
@@ -85,8 +86,14 @@ type Model struct {
 	// orthogonal mutual-exclusion axis); matrixBoundSel picks a boundary there.
 	matrixBoundaries bool
 	matrixBoundSel   int
-	filter           string
-	filtering        bool // capturing keystrokes into filter on the Violations screen
+	// add-component form state on the Matrix tab (opened with `a`).
+	matrixAdding bool
+	addName      string
+	addPattern   string
+	addField     int    // 0 = name, 1 = path pattern
+	addErr       string // last submit/validation error, shown in the form
+	filter       string
+	filtering    bool // capturing keystrokes into filter on the Violations screen
 	// editedConfig records that the last $EDITOR launch came from the Config tab,
 	// so its exit auto-fires the refresh pipeline.
 	editedConfig bool
@@ -119,6 +126,13 @@ func WithRefresh(f func() (*core.Result, []core.PackageView, *core.RuleSet, erro
 // read-only.
 func WithEdit(f func(from, target, verdict string) error) Option {
 	return func(m *Model) { m.edit = f }
+}
+
+// WithAddComponent wires the Matrix tab's add-component form: the hook validates
+// and splices a new component into depdog.yaml; the model then refreshes so it
+// appears in the grid. Without it, the `a` form is unavailable.
+func WithAddComponent(f func(name, pattern string) error) Option {
+	return func(m *Model) { m.addComp = f }
 }
 
 // WithConfig wires the Config tab: the module-relative config path (stable
@@ -209,6 +223,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.filtering {
 			return m.updateFilter(msg)
 		}
+		if m.matrixAdding {
+			return m.updateAddForm(msg) // the form swallows every key until esc/submit
+		}
 		switch msg.String() {
 		case "q", "ctrl+c":
 			m.quitting = true
@@ -257,6 +274,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "b":
 			if m.active == tabMatrix {
 				m.matrixBoundaries = !m.matrixBoundaries
+			}
+		case "a":
+			if m.active == tabMatrix && !m.matrixBoundaries && m.addComp != nil {
+				m.matrixAdding = true
+				m.addName, m.addPattern, m.addField, m.addErr = "", "", 0, ""
 			}
 		case "1":
 			m.active = tabDashboard
@@ -401,9 +423,12 @@ func (m Model) View() string {
 		case tabConfig:
 			b.WriteString(m.configView())
 		case tabMatrix:
-			if m.matrixBoundaries {
+			switch {
+			case m.matrixAdding:
+				b.WriteString(m.addFormView())
+			case m.matrixBoundaries:
 				b.WriteString(m.boundariesView())
-			} else {
+			default:
 				b.WriteString(m.matrixView())
 			}
 		default:
@@ -424,6 +449,7 @@ func helpView() string {
 		{"left/right or h/l", "Matrix: move the cursor across columns (else page tabs)"},
 		{"space", "Matrix: toggle the cursored edge — allow → deny → default"},
 		{"b", "Matrix: show the boundaries overlay (mutual-exclusion sets)"},
+		{"a", "Matrix: add a new component (name + path) to depdog.yaml"},
 		{"/", "filter the list (Violations, Packages)"},
 		{"e", "open $EDITOR: the selection (Violations, Packages) or depdog.yaml (Config)"},
 		{"r", "re-run the check and refresh every screen"},
@@ -484,13 +510,20 @@ func (m Model) footer() string {
 		return styleDim.Render("tab/1-5 switch · ↑/↓ scroll · e edit depdog.yaml · r re-run · ? help · q quit")
 	}
 	if m.active == tabMatrix {
+		if m.matrixAdding {
+			return styleDim.Render("type to fill fields · tab switch field · enter next/add · esc cancel")
+		}
 		if m.matrixBoundaries {
 			return styleDim.Render("tab switch · ↑/↓ pick boundary · b back to rules · r re-run · ? help · q quit")
 		}
+		hint := "tab switch · ↑↓←→ move cursor · b boundaries"
 		if m.edit != nil {
-			return styleDim.Render("tab switch · ↑↓←→ move cursor · space toggle · b boundaries · r re-run · ? help · q quit")
+			hint = "tab switch · ↑↓←→ move cursor · space toggle · b boundaries"
 		}
-		return styleDim.Render("tab switch · ↑↓←→ move cursor · b boundaries · r re-run · ? help · q quit")
+		if m.addComp != nil {
+			hint += " · a add"
+		}
+		return styleDim.Render(hint + " · r re-run · ? help · q quit")
 	}
 	return styleDim.Render("tab/1-5 switch · ↑/↓ move · r re-run · ? help · q quit")
 }
