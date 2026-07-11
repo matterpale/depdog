@@ -17,8 +17,8 @@ AGENTS.md
 BACKLOG.md
 PLAN.md
 
-# design/plan scratch — kept local; real assets (logo, demo) live in assets/
-docs/
+# design/plan/process scratch — kept local; published docs live in docs/, assets in assets/
+.notes/
 
 # editors/ build artifacts — the VS Code scaffold builds locally, never committed
 editors/**/node_modules/
