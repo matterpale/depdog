@@ -50,10 +50,10 @@ failing build.*</sub>
   speaks `github` and `sarif`, so a tangled import fails the build like a broken
   test would. See [more](#ci).
 - **Coding agents.** A stable `--format json` schema, contract
-  [exit codes](#commands), language auto-detect, and a drop-in setup skill
-  let an agent map a codebase and get you started. See [For AI agents](#for-ai-agents).
+  [exit codes](#commands), and a drop-in skill
+  help your agent get you started. See [more](#for-ai-agents).
 - **Local exploration.** The [TUI](#commands) and `depdog explain`
-  are for reading an existing graph and debugging a config by hand.
+  help with reading an existing graph and debugging by hand.
 - **LSP for your IDE.** `depdog lsp` surfaces violations as inline
   diagnostics in the editor of your choice.
 
