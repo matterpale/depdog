@@ -22,6 +22,7 @@ const (
 	tabViolations
 	tabPackages
 	tabConfig
+	tabMatrix
 	numTabs
 )
 
@@ -33,6 +34,8 @@ func (t tab) title() string {
 		return "Packages"
 	case tabConfig:
 		return "Config"
+	case tabMatrix:
+		return "Matrix"
 	default:
 		return "Dashboard"
 	}
@@ -69,6 +72,9 @@ type Model struct {
 	// document (a scroll offset), not a list (a selection): up/down move the window
 	// over static text, so it has no highlighted row.
 	configScroll int
+	// matrixScroll is the document scroll offset on the Matrix tab (a static grid
+	// windowed by height, like the Config document).
+	matrixScroll int
 	filter       string
 	filtering    bool // capturing keystrokes into filter on the Violations screen
 	// editedConfig records that the last $EDITOR launch came from the Config tab,
@@ -176,6 +182,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.selected = clamp(m.selected, len(m.filteredViolations()))
 		m.selPkg = clamp(m.selPkg, len(m.filteredPackages()))
 		m.configScroll = 0 // the fresh document may be shorter; start at the top
+		m.matrixScroll = 0
 		m.status = "re-ran: " + plural(len(msg.res.Violations), "violation")
 	case tea.KeyMsg:
 		m.status = "" // any key dismisses a transient status message
@@ -213,6 +220,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.active = tabPackages
 		case "4":
 			m.active = tabConfig
+		case "5":
+			m.active = tabMatrix
 		case "/":
 			if m.active == tabViolations || m.active == tabPackages {
 				m.filtering = true
@@ -273,6 +282,8 @@ func (m *Model) moveSelection(d int) {
 		m.selPkg = clamp(m.selPkg+d, len(m.filteredPackages()))
 	case tabConfig:
 		m.configScroll = clampScroll(m.configScroll+d, m.configLineCount(), m.bodyRows())
+	case tabMatrix:
+		m.matrixScroll = clampScroll(m.matrixScroll+d, m.matrixLineCount(), m.bodyRows())
 	}
 }
 
@@ -339,6 +350,8 @@ func (m Model) View() string {
 			b.WriteString(m.packagesView())
 		case tabConfig:
 			b.WriteString(m.configView())
+		case tabMatrix:
+			b.WriteString(m.matrixView())
 		default:
 			b.WriteString(m.dashboardView())
 		}
@@ -352,8 +365,8 @@ func (m Model) View() string {
 func helpView() string {
 	rows := [][2]string{
 		{"tab / shift+tab", "next / previous screen"},
-		{"1 / 2 / 3 / 4", "Dashboard / Violations / Packages / Config"},
-		{"up/down or k/j", "move the selection, or scroll Config"},
+		{"1 / 2 / 3 / 4 / 5", "Dashboard / Violations / Packages / Config / Matrix"},
+		{"up/down or k/j", "move the selection, or scroll Config / Matrix"},
 		{"/", "filter the list (Violations, Packages)"},
 		{"e", "open $EDITOR: the selection (Violations, Packages) or depdog.yaml (Config)"},
 		{"r", "re-run the check and refresh every screen"},
@@ -408,12 +421,15 @@ func (m Model) footer() string {
 		return styleWarn.Render(m.status)
 	}
 	if m.active == tabViolations || m.active == tabPackages {
-		return styleDim.Render("tab/1-4 switch · ↑/↓ move · / filter · e edit · r re-run · ? help · q quit")
+		return styleDim.Render("tab/1-5 switch · ↑/↓ move · / filter · e edit · r re-run · ? help · q quit")
 	}
 	if m.active == tabConfig {
-		return styleDim.Render("tab/1-4 switch · ↑/↓ scroll · e edit depdog.yaml · r re-run · ? help · q quit")
+		return styleDim.Render("tab/1-5 switch · ↑/↓ scroll · e edit depdog.yaml · r re-run · ? help · q quit")
 	}
-	return styleDim.Render("tab/1-4 switch · ↑/↓ move · r re-run · ? help · q quit")
+	if m.active == tabMatrix {
+		return styleDim.Render("tab/1-5 switch · ↑/↓ scroll · r re-run · ? help · q quit")
+	}
+	return styleDim.Render("tab/1-5 switch · ↑/↓ move · r re-run · ? help · q quit")
 }
 
 func plural(n int, word string) string {

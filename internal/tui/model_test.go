@@ -134,7 +134,7 @@ func TestViolationSelectionMoves(t *testing.T) {
 
 func TestTabWraps(t *testing.T) {
 	m := New(fixtureResult(), fixturePkgs())
-	for _, want := range []tab{tabViolations, tabPackages, tabConfig, tabDashboard} {
+	for _, want := range []tab{tabViolations, tabPackages, tabConfig, tabMatrix, tabDashboard} {
 		m = update(m, tea.KeyMsg{Type: tea.KeyTab})
 		if m.active != want {
 			t.Fatalf("tab sequence: active = %d, want %d", m.active, want)
@@ -144,7 +144,7 @@ func TestTabWraps(t *testing.T) {
 
 func TestTabWrapsBackward(t *testing.T) {
 	m := New(fixtureResult(), fixturePkgs())
-	for _, want := range []tab{tabConfig, tabPackages, tabViolations, tabDashboard} {
+	for _, want := range []tab{tabMatrix, tabConfig, tabPackages, tabViolations, tabDashboard} {
 		m = update(m, tea.KeyMsg{Type: tea.KeyShiftTab})
 		if m.active != want {
 			t.Fatalf("shift+tab sequence: active = %d, want %d", m.active, want)
@@ -493,6 +493,78 @@ func TestConfigViewWithoutRuleSet(t *testing.T) {
 	}
 	if v := m.View(); v == "" {
 		t.Error("config view should not be empty without a rule set")
+	}
+}
+
+func TestMatrixView(t *testing.T) {
+	m := update(New(fixtureResult(), fixturePkgs(), WithConfig("depdog.yaml", fixtureRuleSet())), runes("5"))
+	if m.active != tabMatrix {
+		t.Fatalf("5 should select the Matrix tab")
+	}
+	v := m.View()
+	for _, want := range []string{"Rule matrix", "Matrix", "domain", "handler", "std", "allow", "self"} {
+		if !strings.Contains(v, want) {
+			t.Errorf("matrix view missing %q:\n%s", want, v)
+		}
+	}
+	if strings.Contains(v, "\x1b") {
+		t.Errorf("ANSI leaked into forced-plain view:\n%q", v)
+	}
+}
+
+func TestMatrixVerdicts(t *testing.T) {
+	rs := fixtureRuleSet() // domain: allow[std]; handler: allow[domain, std]; policy deny
+	cases := []struct {
+		from, to string
+		want     cellKind
+	}{
+		{"domain", "domain", cellSelf},
+		{"domain", "std", cellAllow},           // explicit allow
+		{"domain", "handler", cellDefaultDeny}, // whitelist stance, not listed
+		{"domain", "external", cellDefaultDeny},
+		{"handler", "domain", cellAllow}, // explicit allow of a peer
+		{"handler", "std", cellAllow},
+		{"handler", "unassigned", cellDefaultDeny},
+	}
+	for _, c := range cases {
+		if got := cellVerdict(rs, c.from, c.to); got != c.want {
+			t.Errorf("cellVerdict(%s→%s) = %d, want %d", c.from, c.to, got, c.want)
+		}
+	}
+}
+
+func TestMatrixViewWithoutRuleSet(t *testing.T) {
+	// No WithConfig: the Matrix tab must still render a hint, never panic.
+	m := update(New(fixtureResult(), fixturePkgs()), runes("5"))
+	if m.active != tabMatrix {
+		t.Fatalf("5 should select the Matrix tab even without a rule set")
+	}
+	if !strings.Contains(m.View(), "no compiled rule set") {
+		t.Errorf("matrix without a rule set should show a hint:\n%s", m.View())
+	}
+}
+
+func TestMatrixScrollClamps(t *testing.T) {
+	m := update(New(fixtureResult(), fixturePkgs(), WithConfig("depdog.yaml", manyComponentRuleSet(40))), runes("5"))
+	m = update(m, tea.WindowSizeMsg{Width: 200, Height: 20})
+
+	if m.matrixScroll != 0 {
+		t.Fatalf("initial matrixScroll = %d, want 0", m.matrixScroll)
+	}
+	m = update(m, runes("k")) // up at the top stays clamped
+	if m.matrixScroll != 0 {
+		t.Errorf("up at top: matrixScroll = %d, want 0", m.matrixScroll)
+	}
+	for i := 0; i < 100; i++ { // scroll far past the end
+		m = update(m, runes("j"))
+	}
+	if !strings.Contains(m.View(), "▲") {
+		t.Errorf("a 40-row matrix on a 20-row screen should show an above-marker:\n%s", m.View())
+	}
+	last := m.matrixScroll
+	m = update(m, runes("j"))
+	if m.matrixScroll != last {
+		t.Errorf("scroll past the end should clamp: %d then %d", last, m.matrixScroll)
 	}
 }
 

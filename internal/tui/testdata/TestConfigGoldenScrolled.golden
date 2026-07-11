@@ -1,5 +1,5 @@
 depdog · example.test/shop
- Dashboard | Violations | Packages | Config 
+ Dashboard | Violations | Packages | Config | Matrix 
 ────────────────────────────────────────────────────────────────────────
 
   ▲ 8 more
@@ -17,4 +17,4 @@ depdog · example.test/shop
       internal/comp04/**
   ▼ 76 more
 
-tab/1-4 switch · ↑/↓ scroll · e edit depdog.yaml · r re-run · ? help · q quit
+tab/1-5 switch · ↑/↓ scroll · e edit depdog.yaml · r re-run · ? help · q quit
