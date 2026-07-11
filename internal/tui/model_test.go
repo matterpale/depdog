@@ -693,7 +693,7 @@ func TestMatrixToggleReadOnlyAndSelf(t *testing.T) {
 	// With an editor but the cursor on the diagonal (domain→domain): no edit staged.
 	s := &stubEditor{}
 	m = editorModel(s, fixtureRuleSet())
-	m = update(m, runes(" ")) // cursor starts at col 0 == domain (self)
+	update(m, runes(" ")) // cursor starts at col 0 == domain (self)
 	if len(s.calls) != 0 {
 		t.Error("toggling a component against itself must not stage an edit")
 	}

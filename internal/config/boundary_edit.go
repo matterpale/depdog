@@ -151,9 +151,10 @@ func matchBracket(s string, open int) (int, bool) {
 				inSingle = false
 			}
 		case inDouble:
-			if c == '\\' {
+			switch c {
+			case '\\':
 				i++
-			} else if c == '"' {
+			case '"':
 				inDouble = false
 			}
 		case c == '\'':

@@ -276,9 +276,10 @@ func trailingComment(rest string) string {
 				inSingle = false
 			}
 		case inDouble:
-			if c == '\\' {
+			switch c {
+			case '\\':
 				i++
-			} else if c == '"' {
+			case '"':
 				inDouble = false
 			}
 		case c == '\'':
