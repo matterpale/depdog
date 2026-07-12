@@ -92,11 +92,12 @@ func editComponentLine(data []byte, component string, mutate func(val *yaml.Node
 		return nil, fmt.Errorf("component %q line %d is out of range", component, key.Line)
 	}
 	orig := lines[li]
-	if val.Column-1 > len(orig) {
+	col := byteOffset(orig, val.Column) // yaml columns count characters, not bytes
+	if col >= len(orig) {
 		return nil, fmt.Errorf("cannot locate component %q value on its line", component)
 	}
-	prefix := orig[:val.Column-1] // "  name:" plus any alignment padding
-	comment := trailingComment(orig[val.Column-1:])
+	prefix := orig[:col] // "  name:" plus any alignment padding
+	comment := trailingComment(orig[col:])
 	lines[li] = prefix + body + comment
 
 	out := []byte(strings.Join(lines, "\n"))

@@ -62,8 +62,11 @@ func RenameComponent(data []byte, oldName, newName string) ([]byte, error) {
 		sort.Sort(sort.Reverse(sort.IntSlice(cols)))
 		s := lines[li]
 		for _, c := range cols {
-			start, end := c-1, c-1+len(oldName)
-			if start < 0 || end > len(s) || s[start:end] != oldName {
+			// Rewrite right-to-left, so each byte offset (yaml columns count
+			// characters, not bytes) is measured against an unchanged prefix.
+			start := byteOffset(s, c)
+			end := start + len(oldName)
+			if end > len(s) || s[start:end] != oldName {
 				return nil, fmt.Errorf("a reference to %q on line %d is quoted or shifted — rename it by hand", oldName, ln)
 			}
 			s = s[:start] + newName + s[end:]

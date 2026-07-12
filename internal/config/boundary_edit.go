@@ -82,8 +82,8 @@ func editBoundaryMembers(data []byte, boundary string, mutate func(seq *yaml.Nod
 		return nil, fmt.Errorf("boundary %q line %d is out of range", boundary, seq.Line)
 	}
 	orig := lines[li]
-	col := seq.Column - 1
-	if col < 0 || col >= len(orig) || orig[col] != '[' {
+	col := byteOffset(orig, seq.Column) // yaml columns count characters, not bytes
+	if col >= len(orig) || orig[col] != '[' {
 		return nil, fmt.Errorf("cannot locate boundary %q members on its line", boundary)
 	}
 	end, ok := matchBracket(orig, col)
