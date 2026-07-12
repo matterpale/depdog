@@ -48,23 +48,23 @@ failing build.*</sub>
 
 [**CI**](#ci)
 
-- `depdog check` exits non-zero on any violation and
+`depdog check` exits non-zero on any violation and
   speaks `github` and `sarif`.
 
 [**Coding agents**](#for-ai-agents)
 
-- A stable JSON schema, contract
+A stable JSON schema, contract
   [exit codes](#commands), and a skill
   help your agent get you started.
 
 [**Local exploration**](#commands)
 
-- The TUI and `depdog explain`
+The TUI and `depdog explain`
   help with reading an existing graph and debugging by hand.
 
 [**LSP for your IDE**](#lsp-setup)
 
-- `depdog lsp` surfaces violations as inline
+`depdog lsp` surfaces violations as inline
   diagnostics in the editor of your choice.
 
 ## Install
