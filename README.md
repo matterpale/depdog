@@ -49,23 +49,23 @@ failing build.*</sub>
 [**CI**](#ci)
 
 `depdog check` exits non-zero on any violation and
-  speaks `github` and `sarif`.
+speaks `github` and `sarif`.
 
 [**Coding agents**](#for-ai-agents)
 
 A stable JSON schema, contract
-  [exit codes](#commands), and a skill
-  help your agent get you started.
+[exit codes](#commands), and a skill
+help your agent get you started.
 
 [**Local exploration**](#commands)
 
 The TUI and `depdog explain`
-  help with reading an existing graph and debugging by hand.
+help with reading an existing graph and debugging by hand.
 
 [**LSP for your IDE**](#lsp-setup)
 
 `depdog lsp` surfaces violations as inline
-  diagnostics in the editor of your choice.
+diagnostics in the editor of your choice.
 
 ## Install
 
@@ -107,34 +107,41 @@ version: 2
 
 # Each component lists its path glob(s) and, inline, who it may import.
 components:
-  main: { path: "cmd/**" }                                    # no rule → open (the default)
-  domain: { path: "internal/domain/**", allow: [ std ] }      # whitelist: std only
-  handler: { path: "internal/handler/**", deny: [ service, repository ] } # forbids its peers
-  service: { path: "internal/service/**", deny: [ handler, repository ] }
-  repository: { path: "internal/repository/**", deny: [ handler, service ] }
+  main: { path: "cmd/**" }                                     # no rule → open (the default)
+  domain: { path: "internal/domain/**", allow: [ std ] }         # whitelist: std only — the pure core
+  handler: { path: "internal/handler/**", deny: [ unassigned ] }  # blacklist: no imports from unmapped packages
+  service: { path: "internal/service/**" }
+  repository: { path: "internal/repository/**" }
 
-default: allow   # fallback for a rule-less component (like main); the default if omitted
+# Boundaries are the orthogonal, symmetric axis: no member may import another —
+# peer isolation without the O(n²) deny lists.
+boundaries:
+  peers: [ handler, service, repository ]
+
+default: allow   # fallback for a rule-less component (main, service, repository)
 
 options:
   test_files: hybrid                # default; also: same-rules, relaxed
   skip: [ "internal/legacy/**" ]    # package dirs excluded from analysis
 ```
 
-Here `domain` is a **whitelist** (an `allow` list — only what's listed passes) and the
-three peers are **blacklists** (a `deny` list — everything except what's listed); the
-stance is read per component from which word you use. `main` has no rule at all, so it
-falls back to the top-level `default` — which is `allow`, so it may import anything
-(an explicit `allow: ["*"]` would be equivalent, just noisier). `path` takes a single
-glob or a list (`path: ["internal/api/**", "internal/rpc/**"]`).
+Here `domain` is a **whitelist** (an `allow` list — only what's listed may be imported)
+and `handler` is a **blacklist** (a `deny` list — everything passes except what's
+listed); the stance is read per component from which word you use. The **boundary**
+`peers` is the orthogonal axis: rather than every peer denying every other (the O(n²)
+`deny` lists this replaces), one member set isolates them symmetrically — no member may
+import another. `main`, `service` and `repository` carry no component rule, so they
+fall back to the top-level `default` (`allow` — they may import anything, still subject
+to the boundary). `path` takes a single glob or a list
+(`path: ["internal/api/**", "internal/rpc/**"]`).
 
 An editor JSON Schema ships at
 [`schema/depdog.schema.json`](schema/depdog.schema.json) for autocomplete and
 validation (a test keeps it in lockstep with the parser).
 
-Two more knobs, both optional: **groups** name a reusable set of components you
-can reference in any allow/deny list, and **boundaries** add an orthogonal
-mutual-exclusion axis — named member sets that may not import across each other,
-for isolating services in a monorepo without O(n²) deny lists.
+One more optional knob: **groups** name a reusable set of components you can
+reference in any allow/deny list. Boundaries (shown above) are the other axis,
+and can be *sealed* into a one-way wall — nothing outside the set may import in.
 
 **Full reference — [docs/configuration.md](docs/configuration.md):** component
 matching and precedence, the complete `allow`/`deny` vocabulary, groups, the
@@ -168,25 +175,26 @@ depdog check --fail-on new      # exits 1 only on violations not in the baseline
 
 ## Commands
 
-| Command                                          | What it does                                                                                                                                       |
-|--------------------------------------------------|----------------------------------------------------------------------------------------------------------------------------------------------------|
-| `depdog init`                                    | Scan the module and write a starter `depdog.yaml`; `--merge` extends an existing one in place                                                      |
-| `depdog check [packages]`                        | Evaluate every import edge against the rules                                                                                                       |
-| `depdog graph`                                   | Emit the dependency graph as DOT or Mermaid                                                                                                        |
-| `depdog explain <component-or-package> [import]` | Explain why something is red (rule/boundary that fired, with file:line), constraints, boundary membership etc.                                     |
-| `depdog config`                                  | Print the compiled rule set — components, patterns, inferred stances, boundaries, options — for debugging a config                                 |
-| `depdog lsp`                                     | LSP server over stdio: violations become inline editor diagnostics at their import lines ([editor setup](docs/editors.md) · [design](docs/lsp.md)) |
-| `depdog tui` (or bare `depdog`)                  | Interactive terminal UI: component dashboard, browsable violations, per-package imports and importers, and a Config tab showing the compiled rules |
-| `depdog baseline`                                | Record current violations to `depdog.baseline.yaml` for the [ratchet](#adopting-rules-on-a-codebase-that-doesnt-pass-yet)                          |
+| Command                                          | What it does                                                                                                                                          |
+|--------------------------------------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `depdog init`                                    | Scan the module and write a starter `depdog.yaml`; `--merge` extends an existing one in place                                                         |
+| `depdog check [packages]`                        | Evaluate every import edge against the rules — a bare `depdog` (no subcommand) runs this                                                              |
+| `depdog graph`                                   | Emit the dependency graph as DOT or Mermaid                                                                                                           |
+| `depdog explain <component-or-package> [import]` | Explain why something is red (rule/boundary that fired, with file:line), constraints, boundary membership etc.                                        |
+| `depdog config`                                  | Print the compiled rule set — components, patterns, inferred stances, boundaries, options — for debugging a config                                    |
+| `depdog lsp`                                     | LSP server over stdio: violations become inline editor diagnostics at their import lines ([editor setup](docs/editors.md) · [design](docs/lsp.md))    |
+| `depdog tui`                                     | Interactive terminal UI: dashboard, browsable violations, per-package import/ers, and a Config tab with compiled rules and experimental visual editor |
+| `depdog baseline`                                | Record current violations to `depdog.baseline.yaml` for the [ratchet](#ratchet-friendly)                                                              |
 
 <details>
 <summary><b>All flags</b></summary>
 
-| Command | Flags                                                                                                                                                                                            |
-|---------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `init`  | `--preset ddd\|hexagonal\|layered\|flat` · `--default deny\|allow` · `--yes` (non-interactive) · `--force` (overwrite) · `--merge` (extend an existing file, preserving comments and formatting) |
-| `check` | `--format text\|json\|github\|sarif` · `--fail-on any\|new` · `--color auto\|always\|never`                                                                                                      |
-| `graph` | `--format dot\|mermaid` · `--level component\|package` · `--violations-only` · `--focus <component>`                                                                                             |
+| Command  | Flags                                                                                                                                                                                            |
+|----------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `init`   | `--preset ddd\|hexagonal\|layered\|flat` · `--default deny\|allow` · `--yes` (non-interactive) · `--force` (overwrite) · `--merge` (extend an existing file, preserving comments and formatting) |
+| `check`  | `--format text\|json\|github\|sarif` · `--fail-on any\|new` · `--color auto\|always\|never`                                                                                                      |
+| `config` | `--color auto\|always\|never`                                                                                                                                                                    |
+| `graph`  | `--format dot\|mermaid` · `--level component\|package` · `--violations-only` · `--focus <component>`                                                                                             |
 
 </details>
 
@@ -200,7 +208,10 @@ lists scroll and filter with <kbd>/</kbd>; <kbd>e</kbd> opens the selection in
 <kbd>?</kbd> shows all keys. The Config tab (<kbd>4</kbd>) shows the active
 config path and the compiled rule set (the same data as `depdog config`);
 <kbd>e</kbd> there opens `depdog.yaml` in `$EDITOR`, and the editor exiting
-auto-re-runs the check so the edited rules take effect on every screen.
+auto-re-runs the check so the edited rules take effect on every screen. Press
+<kbd>m</kbd> to open the **matrix** — an experimental visual rule editor that
+stages toggles, path/rename/boundary edits in memory and writes them back to
+`depdog.yaml` on save.
 
 </details>
 
@@ -260,7 +271,6 @@ Wire `depdog lsp` into Neovim, Helix, VS Code (via the bundled
 [`editors/vscode`](editors/vscode) extension scaffold), Zed, GoLand/JetBrains
 (via the LSP4IJ plugin), or Emacs for inline architecture diagnostics —
 per-editor snippets in [docs/editors.md](docs/editors.md).
-
 
 ## Limitations
 
