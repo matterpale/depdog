@@ -9,7 +9,7 @@
 [![License: MIT](https://img.shields.io/badge/license-MIT-d68a1e)](LICENSE)
 
 [**Install**](#install)&nbsp;·&nbsp;[**Quick start**](#quick-start)&nbsp;·&nbsp;[**Configuration**](#configuration)
-&nbsp;·&nbsp;[**Commands**](#commands)&nbsp;·&nbsp;[**CI**](#ci)
+&nbsp;·&nbsp;[**CI**](#ci)&nbsp;·&nbsp;[**Commands**](#commands)
 
 </div>
 
