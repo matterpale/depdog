@@ -107,14 +107,13 @@ version: 2
 
 # Each component lists its path glob(s) and, inline, who it may import.
 components:
-  main: { path: "cmd/**" }                                     # no rule → open (the default)
-  domain: { path: "internal/domain/**", allow: [ std ] }         # whitelist: std only — the pure core
-  handler: { path: "internal/handler/**", deny: [ unassigned ] }  # blacklist: no imports from unmapped packages
+  main: { path: "cmd/**" }                                     # no rule → open (default)
+  domain: { path: "internal/domain/**", allow: [ std ] }       # whitelist: std only
+  handler: { path: "internal/handler/**"}
   service: { path: "internal/service/**" }
   repository: { path: "internal/repository/**" }
 
-# Boundaries are the orthogonal, symmetric axis: no member may import another —
-# peer isolation without the O(n²) deny lists.
+# Boundaries are an orthogonal axis: no member may import another
 boundaries:
   peers: [ handler, service, repository ]
 
@@ -127,10 +126,13 @@ options:
 
 Here `domain` is a **whitelist** (an `allow` list — only what's listed may be imported)
 and `handler` is a **blacklist** (a `deny` list — everything passes except what's
-listed); the stance is read per component from which word you use. The **boundary**
+listed); the stance is read per component from which word you use.
+
+The **boundary**
 `peers` is the orthogonal axis: rather than every peer denying every other (the O(n²)
-`deny` lists this replaces), one member set isolates them symmetrically — no member may
-import another. `main`, `service` and `repository` carry no component rule, so they
+`deny` lists this replaces), one member set isolates them symmetrically.
+
+`main`, `handler`, `service` and `repository` carry no component rule, so they
 fall back to the top-level `default` (`allow` — they may import anything, still subject
 to the boundary). `path` takes a single glob or a list
 (`path: ["internal/api/**", "internal/rpc/**"]`).
@@ -141,7 +143,8 @@ validation (a test keeps it in lockstep with the parser).
 
 One more optional knob: **groups** name a reusable set of components you can
 reference in any allow/deny list. Boundaries (shown above) are the other axis,
-and can be *sealed* into a one-way wall — nothing outside the set may import in.
+and can be *sealed* into a one-way wall — nothing outside the set may import
+from within.
 
 **Full reference — [docs/configuration.md](docs/configuration.md):** component
 matching and precedence, the complete `allow`/`deny` vocabulary, groups, the
