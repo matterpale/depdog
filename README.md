@@ -142,6 +142,30 @@ non-blocking signals (unmapped packages, dead patterns, component cycles), and
 test-file handling. Boundaries have their own page —
 [docs/boundaries.md](docs/boundaries.md).
 
+## CI
+
+`depdog check` is CI-ready as-is. For inline pull-request annotations use the
+GitHub format; for GitHub code scanning, emit SARIF:
+
+```yaml
+- run: go run github.com/matterpale/depdog/cmd/depdog check --format github
+
+# or, for the code-scanning tab:
+- run: go run github.com/matterpale/depdog/cmd/depdog check --format sarif > depdog.sarif
+- uses: github/codeql-action/upload-sarif@v3
+  with: { sarif_file: depdog.sarif }
+```
+
+### Ratchet-friendly
+
+For a codebase that doesn't pass yet: record today's violations as a baseline,
+then fail only on new ones — and shrink the baseline over time:
+
+```bash
+depdog baseline                 # writes depdog.baseline.yaml
+depdog check --fail-on new      # exits 1 only on violations not in the baseline
+```
+
 ## Commands
 
 | Command                                          | What it does                                                                                                                                       |
@@ -187,30 +211,6 @@ Exit codes are a contract:
 | `0`  | clean      |
 | `1`  | violations |
 | `2`  | error      |
-
-## CI
-
-`depdog check` is CI-ready as-is. For inline pull-request annotations use the
-GitHub format; for GitHub code scanning, emit SARIF:
-
-```yaml
-- run: go run github.com/matterpale/depdog/cmd/depdog check --format github
-
-# or, for the code-scanning tab:
-- run: go run github.com/matterpale/depdog/cmd/depdog check --format sarif > depdog.sarif
-- uses: github/codeql-action/upload-sarif@v3
-  with: { sarif_file: depdog.sarif }
-```
-
-### Ratchet-friendly
-
-For a codebase that doesn't pass yet: record today's violations as a baseline,
-then fail only on new ones — and shrink the baseline over time:
-
-```bash
-depdog baseline                 # writes depdog.baseline.yaml
-depdog check --fail-on new      # exits 1 only on violations not in the baseline
-```
 
 ## Multi-language support
 
