@@ -116,7 +116,7 @@ components:
 default: allow   # fallback for a rule-less component (like main); the default if omitted
 
 options:
-  test_files: hybrid              # default; also: same-rules, relaxed
+  test_files: hybrid                # default; also: same-rules, relaxed
   skip: [ "internal/legacy/**" ]    # package dirs excluded from analysis
 ```
 
