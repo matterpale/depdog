@@ -128,27 +128,36 @@ func configRelPath(root, configPath string) string {
 	return filepath.Base(configPath)
 }
 
-// runBare backs a plain `depdog` invocation: it opens the TUI when a terminal
-// and a config are both present, and otherwise prints guidance. It never errors
-// on a missing config — a first-time user gets pointed at `init` instead.
-func runBare(cmd *cobra.Command) error {
-	if isInteractive(cmd) {
-		if cwd, err := os.Getwd(); err == nil {
-			language, lerr := languageFlag(cmd)
-			if lerr == nil {
-				if _, _, _, ferr := resolveProject(cwd, language); ferr == nil {
-					ev, eerr := evaluateModule(cmd, "", nil)
-					if eerr != nil {
-						return eerr
-					}
-					return launch(cmd, "", nil, ev)
-				}
-			}
-		}
+// runBare backs a plain `depdog` invocation: it runs the check (like
+// `depdog check`), so a bare `depdog` yields the real 0/1/2 exit code, on a
+// terminal or in a pipe. `depdog tui` opens the interactive view.
+//
+// A first-time user in a directory with no depdog project is pointed at `init`
+// rather than shown a config error — but only when they named no explicit target
+// (a package arg or --config); an explicit target always runs the check.
+func runBare(cmd *cobra.Command, args []string, o checkOptions) error {
+	if len(args) == 0 && o.configPath == "" && !projectResolves(cmd) {
+		out := cmd.OutOrStdout()
+		fmt.Fprintln(out, "depdog keeps a project's internal imports pointing the right way.")
+		fmt.Fprintln(out, "Run `depdog init` to create a depdog.yaml, `depdog check` to verify import rules,")
+		fmt.Fprintln(out, "or `depdog tui` for the interactive view. `depdog --help` lists everything.")
+		return nil
 	}
-	out := cmd.OutOrStdout()
-	fmt.Fprintln(out, "depdog keeps a project's internal imports pointing the right way.")
-	fmt.Fprintln(out, "Run `depdog init` to create a depdog.yaml, `depdog check` to verify import rules,")
-	fmt.Fprintln(out, "or `depdog tui` for the interactive view. `depdog --help` lists everything.")
-	return nil
+	return runCheck(cmd, args, o)
+}
+
+// projectResolves reports whether a depdog project (an adapter and a config) can
+// be found from the current directory — the signal that separates a first-time
+// user from a real check run.
+func projectResolves(cmd *cobra.Command) bool {
+	cwd, err := os.Getwd()
+	if err != nil {
+		return false
+	}
+	language, err := languageFlag(cmd)
+	if err != nil {
+		return false
+	}
+	_, _, _, err = resolveProject(cwd, language)
+	return err == nil
 }
