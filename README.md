@@ -85,21 +85,18 @@ Prebuilt binaries for Linux, macOS, and Windows are on the
 [releases page](https://github.com/matterpale/depdog/releases); building from
 source (`go build -o depdog ./cmd/depdog`) needs Go 1.26+.
 
-## Quick start
+## Quickstart
 
 ```bash
-depdog init      # scan the module and write a starter depdog.yaml
+depdog init      # interactively kick off a starter depdog.yaml
 depdog check     # check against the rules; exit 1 on violations
 ```
 
 `init` inspects your layout, matches it against an architecture preset, and
 proposes a component mapping you refine interactively — drop, rename, or
-re-pattern components — or accept as-is with `--yes`. It refuses to touch an
-existing `depdog.yaml`; as the code grows, `depdog init --merge` rescans the
-module and appends a component (and, under `default: deny`, a starter rule)
-for every directory no existing pattern covers — editing the file in place
-without disturbing your comments, ordering or formatting. When everything is
-covered it changes nothing and says so.
+re-path components. Or accept all as-is with `--yes`.
+
+Alternatively, ask a coding agent to get you started with the dedicated [skill](skills/depdog-config/SKILL.md).
 
 ## Configuration
 
