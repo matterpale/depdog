@@ -47,20 +47,24 @@ failing build.*</sub>
 ## Use cases
 
 **CI**
-  - `depdog check` exits non-zero on any violation and
+
+- `depdog check` exits non-zero on any violation and
   speaks `github` and `sarif`. See [more](#ci).
 
 **Coding agents**
-  - A stable JSON schema, contract
+
+- A stable JSON schema, contract
   [exit codes](#commands), and a skill
   help your agent get you started. See [more](#for-ai-agents).
 
 **Local exploration**
-  - The [TUI](#commands) and `depdog explain`
+
+- The [TUI](#commands) and `depdog explain`
   help with reading an existing graph and debugging by hand.
 
 **LSP for your IDE**
-  - `depdog lsp` surfaces violations as inline
+
+- `depdog lsp` surfaces violations as inline
   diagnostics in the editor of your choice.
 
 ## Install
@@ -143,16 +147,16 @@ test-file handling. Boundaries have their own page —
 
 ## Commands
 
-| Command                                          | What it does                                                                                                                                                                                                 |
-|--------------------------------------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `depdog init`                                    | Scan the module and write a starter `depdog.yaml`; `--merge` extends an existing one in place                                                                                                                |
-| `depdog check [packages]`                        | Evaluate every import edge against the rules                                                                                                                                                                 |
-| `depdog baseline`                                | Record current violations to `depdog.baseline.yaml` for the [ratchet](#adopting-rules-on-a-codebase-that-doesnt-pass-yet)                                                                                    |
-| `depdog graph`                                   | Emit the dependency graph as DOT or Mermaid                                                                                                                                                                  |
-| `depdog explain <component-or-package> [import]` | Explain why something is red (the rule or boundary that fired, with file:line), how a component is constrained, its boundary membership, or whether *A* may import *B* and which rule or boundary decides it |
-| `depdog config`                                  | Print the compiled rule set — components, patterns, inferred stances, boundaries, options — for debugging a config                                                                                           |
-| `depdog lsp`                                     | LSP server over stdio: violations become inline editor diagnostics at their import lines ([editor setup](docs/editors.md) · [design](docs/lsp.md))                                                           |
-| `depdog tui` (or bare `depdog`)                  | Interactive terminal UI: component dashboard, browsable violations, per-package imports and importers, and a Config tab showing the compiled rules                                                           |
+| Command                                          | What it does                                                                                                                                       |
+|--------------------------------------------------|----------------------------------------------------------------------------------------------------------------------------------------------------|
+| `depdog init`                                    | Scan the module and write a starter `depdog.yaml`; `--merge` extends an existing one in place                                                      |
+| `depdog check [packages]`                        | Evaluate every import edge against the rules                                                                                                       |
+| `depdog graph`                                   | Emit the dependency graph as DOT or Mermaid                                                                                                        |
+| `depdog explain <component-or-package> [import]` | Explain why something is red (rule/boundary that fired, with file:line), constraints, boundary membership etc.                                     |
+| `depdog config`                                  | Print the compiled rule set — components, patterns, inferred stances, boundaries, options — for debugging a config                                 |
+| `depdog lsp`                                     | LSP server over stdio: violations become inline editor diagnostics at their import lines ([editor setup](docs/editors.md) · [design](docs/lsp.md)) |
+| `depdog tui` (or bare `depdog`)                  | Interactive terminal UI: component dashboard, browsable violations, per-package imports and importers, and a Config tab showing the compiled rules |
+| `depdog baseline`                                | Record current violations to `depdog.baseline.yaml` for the [ratchet](#adopting-rules-on-a-codebase-that-doesnt-pass-yet)                          |
 
 <details>
 <summary><b>All flags</b></summary>
@@ -191,11 +195,11 @@ auto-re-runs the check so the edited rules take effect on every screen.
 
 Exit codes are a contract:
 
-| Code | Meaning                      |
-|:----:|------------------------------|
-| `0`  | clean                        |
-| `1`  | violations                   |
-| `2`  | configuration or usage error |
+| Code | Meaning    |
+|:----:|------------|
+| `0`  | clean      |
+| `1`  | violations |
+| `2`  | error      |
 
 ## CI
 
@@ -211,10 +215,10 @@ GitHub format; for GitHub code scanning, emit SARIF:
   with: { sarif_file: depdog.sarif }
 ```
 
-### Adopting rules on a codebase that doesn't pass yet
+### Ratchet-friendly
 
-Record today's violations as a baseline, then fail only on new ones — and shrink
-the baseline over time:
+For a codebase that doesn't pass yet: record today's violations as a baseline,
+then fail only on new ones — and shrink the baseline over time:
 
 ```bash
 depdog baseline                 # writes depdog.baseline.yaml
@@ -224,25 +228,24 @@ depdog check --fail-on new      # exits 1 only on violations not in the baseline
 ## Multi-language support
 
 depdog checks **nine** languages with the *same* `depdog.yaml`, the *same*
-commands (`check`, `graph`, `explain`, `config`, TUI), and the *same* engine.
+commands, and the *same* engine.
+
 Only a thin language adapter differs; the rule format is neutral — component
 `path` globs match project-relative directories, and `std` / `external` are
-abstract buckets each adapter fills (Go stdlib vs Node builtins vs the Python
-stdlib; a Go module vs an `node_modules` package vs a gem). Every adapter is a
-pure-Go static import scanner — **no language toolchain is required** (no
-Node/`tsc`, no `python`, no `cargo`), depdog stays a single binary.
+abstract buckets each adapter fills. Every adapter is a
+pure-Go static import scanner — **no language toolchain is required**, depdog stays a single binary.
 
-|        | Language | Detected by                               | Scans                                               |
-|--------|----------|-------------------------------------------|-----------------------------------------------------|
-| `go`   | Go       | `go.mod`                                  | package imports                                     |
-| `rs`   | Rust     | `Cargo.toml`                              | `use` / `mod` / `extern crate`                      |
-| `py`   | Python   | `pyproject.toml`, `setup.py`, `setup.cfg` | `import` / `from … import` (incl. relative)         |
-| `kt`   | Kotlin   | `build.gradle.kts`, `settings.gradle.kts` | `package` + `import`                                |
-| `java` | Java     | `pom.xml`, `build.gradle`                 | `package` + `import`                                |
-| `scala`| Scala    | `build.sbt`, `build.sc`                   | `package` + `import` (incl. `{A,B}`, `._`, `.*`, `given`) |
-| `elm`  | Elm      | `elm.json`                                | `module` + `import` (module-name resolution)        |
-| `rb`   | Ruby     | `Gemfile`, `.ruby-version`, `Rakefile`    | `require` / `require_relative` / `autoload`         |
-| `ts`   | TS / JS  | `tsconfig.json`, `package.json`           | `import`/`export from`/`require`/dynamic `import()` |
+|         | Language | Detected by                               | Scans                                                     |
+|---------|----------|-------------------------------------------|-----------------------------------------------------------|
+| `go`    | Go       | `go.mod`                                  | package imports                                           |
+| `rs`    | Rust     | `Cargo.toml`                              | `use` / `mod` / `extern crate`                            |
+| `py`    | Python   | `pyproject.toml`, `setup.py`, `setup.cfg` | `import` / `from … import` (incl. relative)               |
+| `kt`    | Kotlin   | `build.gradle.kts`, `settings.gradle.kts` | `package` + `import`                                      |
+| `java`  | Java     | `pom.xml`, `build.gradle`                 | `package` + `import`                                      |
+| `scala` | Scala    | `build.sbt`, `build.sc`                   | `package` + `import` (incl. `{A,B}`, `._`, `.*`, `given`) |
+| `elm`   | Elm      | `elm.json`                                | `module` + `import` (module-name resolution)              |
+| `rb`    | Ruby     | `Gemfile`, `.ruby-version`, `Rakefile`    | `require` / `require_relative` / `autoload`               |
+| `ts`    | TS / JS  | `tsconfig.json`, `package.json`           | `import`/`export from`/`require`/dynamic `import()`       |
 
 `internal/core` (the engine) never changed as languages were added — the whole
 point of the [adapter registry](internal/cli/languages.go) is that a new
@@ -256,11 +259,11 @@ layouts and two-language ambiguity, in [docs/languages.md](docs/languages.md).
 
 depdog is built to be driven by tools and agents, not just humans:
 `check --format json` emits a stable schema and the [exit codes](#commands) are
-a contract; auto-detect (or `--lang`) means an agent needn't know the language
-up front; and [`skills/depdog-config/SKILL.md`](skills/depdog-config/SKILL.md)
+a contract.
+
+[`skills/depdog-config/SKILL.md`](skills/depdog-config/SKILL.md)
 is a self-contained, tool-agnostic playbook any coding agent can follow to map a
-codebase to components and author a `depdog.yaml` — drop the folder wherever your
-agent discovers skills, or point it at the file directly. The editor
+codebase to components and author a `depdog.yaml`. The editor
 [JSON Schema](schema/depdog.schema.json) hands the same autocomplete and
 validation to any schema-aware agent.
 
@@ -281,17 +284,6 @@ validation to any schema-aware agent.
   a single module, so an import between two workspace members classifies as
   `external` — depdog does not yet govern edges *between* members. `GOWORK=off`
   forces the classic single-module check.
-
-## Status
-
-v0.6.0 — the current release. depdog now checks **nine** languages (Go,
-TypeScript/JS, Python, Rust, Java, Ruby, Kotlin, Scala, Elm) through a pluggable adapter
-registry, on top of the config v2 format (per-component `allow`/`deny`,
-`default` stance) and `boundaries` (orthogonal mutual-exclusion groups). In a Go
-workspace, `depdog check` now fans out over the member modules, each checked
-against its own `depdog.yaml` (see [Limitations](#limitations)). The M0–M5
-roadmap is complete, and editor/LSP integration has landed: `depdog lsp` plus a
-per-editor [setup guide](docs/editors.md).
 
 ## License
 
