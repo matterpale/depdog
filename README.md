@@ -107,7 +107,7 @@ version: 2
 
 # Each component lists its path glob(s) and, inline, who it may import.
 components:
-  main: { path: "cmd/**" }                                # no rule → open (the default)
+  main: { path: "cmd/**" }                                    # no rule → open (the default)
   domain: { path: "internal/domain/**", allow: [ std ] }      # whitelist: std only
   handler: { path: "internal/handler/**", deny: [ service, repository ] } # forbids its peers
   service: { path: "internal/service/**", deny: [ handler, repository ] }
