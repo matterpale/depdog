@@ -87,6 +87,53 @@ func update(m Model, msg tea.Msg) Model {
 	return next.(Model)
 }
 
+// stubEditor is a test double for the staged visual editor. Transformers record
+// their calls and return fresh bytes (so the session goes dirty); Eval returns a
+// fixed rule set/result so the grid stays valid; failWith, when set, makes every
+// transformer fail with that message.
+type stubEditor struct {
+	calls    []string
+	saved    []byte
+	failWith string
+}
+
+func (s *stubEditor) editor(rs *core.RuleSet, res *core.Result, pkgs []core.PackageView) Editor {
+	tr := func(kind string, args ...string) ([]byte, error) {
+		if s.failWith != "" {
+			return nil, fmt.Errorf("%s", s.failWith)
+		}
+		s.calls = append(s.calls, kind+" "+strings.Join(args, " "))
+		return []byte(fmt.Sprintf("cfg%d", len(s.calls))), nil // new bytes ⇒ dirty
+	}
+	return Editor{
+		Load:         func() ([]byte, error) { return []byte("cfg0"), nil },
+		Save:         func(d []byte) error { s.saved = append([]byte(nil), d...); return nil },
+		Eval:         func(d []byte) (*core.Result, []core.PackageView, *core.RuleSet, error) { return res, pkgs, rs, nil },
+		SetRule:      func(d []byte, from, target, verdict string) ([]byte, error) { return tr("rule", from, target, verdict) },
+		AddComponent: func(d []byte, name, pattern string) ([]byte, error) { return tr("add", name, pattern) },
+		Repath: func(d []byte, comp string, patterns []string) ([]byte, error) {
+			return tr("repath", comp, strings.Join(patterns, ","))
+		},
+		Rename:       func(d []byte, o, n string) ([]byte, error) { return tr("rename", o, n) },
+		AddMember:    func(d []byte, b, mem string) ([]byte, error) { return tr("addmember", b, mem) },
+		RemoveMember: func(d []byte, b, mem string) ([]byte, error) { return tr("removemember", b, mem) },
+	}
+}
+
+func (s *stubEditor) last() string {
+	if len(s.calls) == 0 {
+		return ""
+	}
+	return s.calls[len(s.calls)-1]
+}
+
+// editorModel builds a model with the stub editor wired and opens the editor.
+func editorModel(s *stubEditor, rs *core.RuleSet) Model {
+	res, pkgs := fixtureResult(), fixturePkgs()
+	m := New(res, pkgs, WithConfig("depdog.yaml", rs), WithEditor(s.editor(rs, res, pkgs)))
+	return update(m, runes("m"))
+}
+
 func TestDashboardView(t *testing.T) {
 	m := update(New(fixtureResult(), fixturePkgs()), tea.WindowSizeMsg{Width: 80, Height: 24})
 	v := m.View()
@@ -493,6 +540,666 @@ func TestConfigViewWithoutRuleSet(t *testing.T) {
 	}
 	if v := m.View(); v == "" {
 		t.Error("config view should not be empty without a rule set")
+	}
+}
+
+func TestMatrixView(t *testing.T) {
+	m := update(New(fixtureResult(), fixturePkgs(), WithConfig("depdog.yaml", fixtureRuleSet())), runes("m"))
+	if !m.matrixMode {
+		t.Fatalf("m should open the visual editor")
+	}
+	v := m.View()
+	// Grid + legend + the focus pane for the default selection (domain, first row).
+	for _, want := range []string{"Rule matrix", "domain", "handler", "std", "self", "focus: domain", "allow →"} {
+		if !strings.Contains(v, want) {
+			t.Errorf("matrix view missing %q:\n%s", want, v)
+		}
+	}
+	if strings.Contains(v, "\x1b") {
+		t.Errorf("ANSI leaked into forced-plain view:\n%q", v)
+	}
+
+	// The focus pane follows the selection: down one row selects handler, whose
+	// allow list names domain.
+	v = update(m, runes("j")).View()
+	if !strings.Contains(v, "focus: handler") {
+		t.Errorf("after ↓ the focus pane should show handler:\n%s", v)
+	}
+}
+
+func TestMatrixVerdicts(t *testing.T) {
+	rs := fixtureRuleSet() // domain: allow[std]; handler: allow[domain, std]; policy deny
+	cases := []struct {
+		from, to string
+		want     cellKind
+	}{
+		{"domain", "domain", cellSelf},
+		{"domain", "std", cellAllow},           // explicit allow
+		{"domain", "handler", cellDefaultDeny}, // whitelist stance, not listed
+		{"domain", "external", cellDefaultDeny},
+		{"handler", "domain", cellAllow}, // explicit allow of a peer
+		{"handler", "std", cellAllow},
+		{"handler", "unassigned", cellDefaultDeny},
+	}
+	for _, c := range cases {
+		if got := cellVerdict(rs, c.from, c.to); got != c.want {
+			t.Errorf("cellVerdict(%s→%s) = %d, want %d", c.from, c.to, got, c.want)
+		}
+	}
+}
+
+func TestMatrixViewWithoutRuleSet(t *testing.T) {
+	// No WithConfig: the Matrix tab must still render a hint, never panic.
+	m := update(New(fixtureResult(), fixturePkgs()), runes("m"))
+	if !m.matrixMode {
+		t.Fatalf("m should open the visual editor even without a rule set")
+	}
+	if !strings.Contains(m.View(), "no compiled rule set") {
+		t.Errorf("the editor without a rule set should show a hint:\n%s", m.View())
+	}
+}
+
+func TestEditorEntryExit(t *testing.T) {
+	m := New(fixtureResult(), fixturePkgs(), WithConfig("depdog.yaml", fixtureRuleSet()))
+
+	// Outside the editor, left/right page between tabs (the reported fix).
+	m = update(m, tea.KeyMsg{Type: tea.KeyRight})
+	if m.active != tabViolations {
+		t.Fatalf("→ should switch tabs outside the editor, got %d", m.active)
+	}
+
+	// m opens the editor, which renders under the Config tab.
+	m = update(m, runes("m"))
+	if !m.matrixMode || m.active != tabConfig {
+		t.Fatalf("m should open the editor on Config (mode=%v active=%d)", m.matrixMode, m.active)
+	}
+	// Inside the editor, left/right move the grid cursor, not the tabs.
+	m = update(m, tea.KeyMsg{Type: tea.KeyRight})
+	if m.active != tabConfig {
+		t.Errorf("→ inside the editor must not switch tabs, got %d", m.active)
+	}
+	if m.matrixCol != 1 {
+		t.Errorf("→ inside the editor should move the grid cursor, got col %d", m.matrixCol)
+	}
+
+	// esc leaves the editor back to the Config document (does not quit).
+	m = update(m, tea.KeyMsg{Type: tea.KeyEsc})
+	if m.matrixMode || m.active != tabConfig || m.quitting {
+		t.Errorf("esc should leave the editor to Config (mode=%v active=%d quit=%v)", m.matrixMode, m.active, m.quitting)
+	}
+	// esc again quits.
+	next, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	if !next.(Model).quitting || cmd == nil {
+		t.Errorf("esc outside the editor should quit")
+	}
+}
+
+func TestEditorTabExits(t *testing.T) {
+	m := update(New(fixtureResult(), fixturePkgs(), WithConfig("depdog.yaml", fixtureRuleSet())), runes("m"))
+	if m = update(m, tea.KeyMsg{Type: tea.KeyTab}); m.matrixMode {
+		t.Error("tab should exit the editor")
+	}
+}
+
+func TestNextVerdict(t *testing.T) {
+	cases := map[cellKind]string{
+		cellDefaultAllow: "allow",
+		cellDefaultDeny:  "allow",
+		cellAllow:        "deny",
+		cellDeny:         "default",
+	}
+	for k, want := range cases {
+		if got := nextVerdict(k); got != want {
+			t.Errorf("nextVerdict(%d) = %q, want %q", k, got, want)
+		}
+	}
+}
+
+func TestMatrixToggleStagesVerdict(t *testing.T) {
+	// domain row, std column (idx 2): explicit allow -> toggling stages a deny.
+	s := &stubEditor{}
+	m := editorModel(s, fixtureRuleSet())
+	m = update(m, tea.KeyMsg{Type: tea.KeyRight})
+	m = update(m, tea.KeyMsg{Type: tea.KeyRight})
+	m = update(m, runes(" "))
+	if s.last() != "rule domain std deny" {
+		t.Errorf("explicit-allow domain→std should stage a deny, got %q", s.last())
+	}
+	if !m.matrixDirty() {
+		t.Error("staging an edit should mark the session unsaved")
+	}
+	if s.saved != nil {
+		t.Error("staging must not write to disk")
+	}
+
+	// domain row, handler column (idx 1): default-deny -> toggling stages an allow.
+	s = &stubEditor{}
+	m = editorModel(s, fixtureRuleSet())
+	m = update(m, tea.KeyMsg{Type: tea.KeyRight})
+	update(m, runes(" "))
+	if s.last() != "rule domain handler allow" {
+		t.Errorf("default domain→handler should stage an allow, got %q", s.last())
+	}
+}
+
+func TestMatrixToggleReadOnlyAndSelf(t *testing.T) {
+	// No editor: space is inert and says so, never panics.
+	m := update(New(fixtureResult(), fixturePkgs(), WithConfig("depdog.yaml", fixtureRuleSet())), runes("m"))
+	m = update(m, runes(" "))
+	if !strings.Contains(m.View(), "read-only") {
+		t.Errorf("space without an editor should report read-only:\n%s", m.View())
+	}
+
+	// With an editor but the cursor on the diagonal (domain→domain): no edit staged.
+	s := &stubEditor{}
+	m = editorModel(s, fixtureRuleSet())
+	update(m, runes(" ")) // cursor starts at col 0 == domain (self)
+	if len(s.calls) != 0 {
+		t.Error("toggling a component against itself must not stage an edit")
+	}
+}
+
+func TestMatrixColumnCursorClamps(t *testing.T) {
+	m := update(New(fixtureResult(), fixturePkgs(), WithConfig("depdog.yaml", fixtureRuleSet())), runes("m"))
+	if m.matrixCol != 0 {
+		t.Fatalf("initial matrixCol = %d, want 0", m.matrixCol)
+	}
+	m = update(m, tea.KeyMsg{Type: tea.KeyLeft}) // clamp at 0
+	if m.matrixCol != 0 {
+		t.Errorf("left at col 0 should clamp, got %d", m.matrixCol)
+	}
+	// 2 components + 3 special targets = 5 columns; index maxes at 4.
+	for i := 0; i < 20; i++ {
+		m = update(m, tea.KeyMsg{Type: tea.KeyRight})
+	}
+	if m.matrixCol != 4 {
+		t.Errorf("right past the end should clamp at 4, got %d", m.matrixCol)
+	}
+}
+
+func fixtureBoundaryRuleSet() *core.RuleSet {
+	rs := fixtureRuleSet()
+	rs.Boundaries = []core.Boundary{
+		{Name: "adapters", Members: []core.BoundaryMember{{Label: "domain"}, {Label: "handler"}}},
+		{Name: "cmd-services", Sealed: true, Members: []core.BoundaryMember{{Label: "cmd/a/**"}, {Label: "cmd/b/**"}}},
+	}
+	return rs
+}
+
+func TestBoundariesOverlayToggle(t *testing.T) {
+	m := update(New(fixtureResult(), fixturePkgs(), WithConfig("depdog.yaml", fixtureBoundaryRuleSet())), runes("m"))
+	if m.matrixBoundaries {
+		t.Fatal("the Matrix tab should start on the rules grid")
+	}
+	if !strings.Contains(m.View(), "Rule matrix") {
+		t.Errorf("expected the grid before b:\n%s", m.View())
+	}
+
+	m = update(m, runes("b"))
+	if !m.matrixBoundaries {
+		t.Fatal("b should enter the boundaries overlay")
+	}
+	v := m.View()
+	for _, want := range []string{"Boundaries", "adapters", "cmd-services", "sealed", "members", "no member may import"} {
+		if !strings.Contains(v, want) {
+			t.Errorf("boundaries overlay missing %q:\n%s", want, v)
+		}
+	}
+
+	m2 := update(m, runes("j"))
+	if m2.matrixBoundSel != 1 {
+		t.Errorf("j should select the second boundary, got %d", m2.matrixBoundSel)
+	}
+	if !strings.Contains(m2.View(), "── cmd-services ──") {
+		t.Errorf("the detail pane should follow the selection:\n%s", m2.View())
+	}
+
+	m = update(m, runes("b"))
+	if m.matrixBoundaries || !strings.Contains(m.View(), "Rule matrix") {
+		t.Errorf("b should toggle back to the grid")
+	}
+}
+
+func TestBoundariesOverlayEmpty(t *testing.T) {
+	m := update(New(fixtureResult(), fixturePkgs(), WithConfig("depdog.yaml", fixtureRuleSet())), runes("m"))
+	m = update(m, runes("b"))
+	if !strings.Contains(m.View(), "no boundaries defined") {
+		t.Errorf("expected a hint when no boundaries exist:\n%s", m.View())
+	}
+}
+
+func TestBoundariesOverlayLiveViolation(t *testing.T) {
+	res := &core.Result{
+		ModulePath: "m",
+		Violations: []core.Violation{
+			{FromComponent: "domain", ImportPath: "m/h", Target: "handler", Boundary: "adapters", Reason: core.ReasonBoundary},
+		},
+	}
+	m := update(New(res, nil, WithConfig("depdog.yaml", fixtureBoundaryRuleSet())), runes("m"))
+	m = update(m, runes("b"))
+	if !strings.Contains(m.View(), "1 live boundary violation") {
+		t.Errorf("expected a live boundary-violation count for adapters:\n%s", m.View())
+	}
+}
+
+func typeString(m Model, s string) Model {
+	for _, r := range s {
+		m = update(m, runes(string(r)))
+	}
+	return m
+}
+
+func TestAddComponentForm(t *testing.T) {
+	s := &stubEditor{}
+	m := editorModel(s, fixtureRuleSet())
+
+	m = update(m, runes("a"))
+	if m.matrixForm != formAdd {
+		t.Fatal("a should open the add-component form")
+	}
+	if !strings.Contains(m.View(), "Add component") {
+		t.Errorf("form should render:\n%s", m.View())
+	}
+	m = typeString(m, "service")
+	m = update(m, tea.KeyMsg{Type: tea.KeyEnter}) // name -> path
+	m = typeString(m, "internal/service/**")
+	if m.formName != "service" || m.formPattern != "internal/service/**" {
+		t.Fatalf("fields = %q, %q", m.formName, m.formPattern)
+	}
+	m = update(m, tea.KeyMsg{Type: tea.KeyEnter}) // submit
+	if s.last() != "add service internal/service/**" {
+		t.Errorf("submit should stage the component, got %q", s.last())
+	}
+	if m.matrixForm != formNone {
+		t.Error("a successful add should close the form")
+	}
+	if !m.matrixDirty() {
+		t.Error("staging should mark the session unsaved")
+	}
+}
+
+func TestAddComponentFormError(t *testing.T) {
+	s := &stubEditor{failWith: "that name is reserved"}
+	m := editorModel(s, fixtureRuleSet())
+	m = update(m, runes("a"))
+	m = typeString(m, "std")
+	m = update(m, tea.KeyMsg{Type: tea.KeyEnter})
+	m = typeString(m, "x/**")
+	m = update(m, tea.KeyMsg{Type: tea.KeyEnter}) // submit -> error
+	if m.matrixForm != formAdd {
+		t.Error("a failed add should keep the form open")
+	}
+	if !strings.Contains(m.View(), "that name is reserved") {
+		t.Errorf("the error should show in the form:\n%s", m.View())
+	}
+}
+
+func TestAddComponentFormCancel(t *testing.T) {
+	s := &stubEditor{}
+	m := editorModel(s, fixtureRuleSet())
+	m = update(m, runes("a"))
+	m = typeString(m, "svc")
+	m = update(m, tea.KeyMsg{Type: tea.KeyEsc})
+	if m.matrixForm != formNone {
+		t.Error("esc should cancel the form")
+	}
+	if len(s.calls) != 0 {
+		t.Error("cancel should not stage anything")
+	}
+	if m = update(m, runes("2")); m.active != tabViolations {
+		t.Error("after cancel, keys navigate normally again")
+	}
+}
+
+func TestAddComponentUnavailable(t *testing.T) {
+	m := update(New(fixtureResult(), fixturePkgs(), WithConfig("depdog.yaml", fixtureRuleSet())), runes("m"))
+	m = update(m, runes("a"))
+	if m.matrixForm != formNone {
+		t.Error("without an editor, `a` must be inert")
+	}
+}
+
+func TestRepathForm(t *testing.T) {
+	s := &stubEditor{}
+	m := editorModel(s, fixtureRuleSet())
+
+	// Selection starts on the first component (domain); p opens the form prefilled.
+	m = update(m, runes("p"))
+	if m.matrixForm != formRepath {
+		t.Fatal("p should open the re-path form")
+	}
+	v := m.View()
+	if !strings.Contains(v, "Re-path") || !strings.Contains(v, "domain") {
+		t.Errorf("re-path form should name the component:\n%s", v)
+	}
+	if m.formTarget != "domain" || m.formPattern != "internal/domain/**" {
+		t.Errorf("re-path form should target domain and prefill its path, got target=%q path=%q", m.formTarget, m.formPattern)
+	}
+	// Replace the path with two globs.
+	for i := 0; i < len("internal/domain/**"); i++ {
+		m = update(m, tea.KeyMsg{Type: tea.KeyBackspace})
+	}
+	m = typeString(m, "internal/model/** internal/entity/**")
+	m = update(m, tea.KeyMsg{Type: tea.KeyEnter}) // submit
+	if s.last() != "repath domain internal/model/**,internal/entity/**" {
+		t.Errorf("submit should stage the re-path with both globs, got %q", s.last())
+	}
+	if m.matrixForm != formNone {
+		t.Error("a successful re-path should close the form")
+	}
+}
+
+func TestRepathFormErrorAndUnavailable(t *testing.T) {
+	// Error keeps the form open with the message.
+	s := &stubEditor{failWith: "bad glob"}
+	m := editorModel(s, fixtureRuleSet())
+	m = update(m, runes("p"))
+	m = update(m, tea.KeyMsg{Type: tea.KeyEnter}) // submit prefilled -> error
+	if m.matrixForm != formRepath || !strings.Contains(m.View(), "bad glob") {
+		t.Errorf("a failed re-path should keep the form open with the error:\n%s", m.View())
+	}
+
+	// No editor: p is inert.
+	m2 := update(New(fixtureResult(), fixturePkgs(), WithConfig("depdog.yaml", fixtureRuleSet())), runes("m"))
+	m2 = update(m2, runes("p"))
+	if m2.matrixForm != formNone {
+		t.Error("without an editor, `p` must be inert")
+	}
+}
+
+func TestRenameForm(t *testing.T) {
+	s := &stubEditor{}
+	m := editorModel(s, fixtureRuleSet())
+
+	m = update(m, runes("R"))
+	if m.matrixForm != formRename {
+		t.Fatal("R should open the rename form")
+	}
+	if m.formTarget != "domain" || m.formName != "domain" {
+		t.Errorf("rename form should target domain and prefill the name, got target=%q name=%q", m.formTarget, m.formName)
+	}
+	if v := m.View(); !strings.Contains(v, "Rename") || !strings.Contains(v, "domain") {
+		t.Errorf("rename form should name the component:\n%s", v)
+	}
+	for i := 0; i < len("domain"); i++ {
+		m = update(m, tea.KeyMsg{Type: tea.KeyBackspace})
+	}
+	m = typeString(m, "model")
+	m = update(m, tea.KeyMsg{Type: tea.KeyEnter}) // submit
+	if s.last() != "rename domain model" {
+		t.Errorf("submit should stage the rename, got %q", s.last())
+	}
+	if m.matrixForm != formNone {
+		t.Error("a successful rename should close the form")
+	}
+}
+
+func TestRenameFormNoOpErrorUnavailable(t *testing.T) {
+	// Renaming to the same name closes the form without staging.
+	s := &stubEditor{}
+	m := editorModel(s, fixtureRuleSet())
+	m = update(m, runes("R"))
+	m = update(m, tea.KeyMsg{Type: tea.KeyEnter}) // submit unchanged "domain"
+	if len(s.calls) != 0 || m.matrixForm != formNone {
+		t.Errorf("a no-op rename should close without staging (calls=%d)", len(s.calls))
+	}
+
+	// Error keeps the form open.
+	s = &stubEditor{failWith: "name collides"}
+	m = editorModel(s, fixtureRuleSet())
+	m = update(m, runes("R"))
+	for i := 0; i < len("domain"); i++ {
+		m = update(m, tea.KeyMsg{Type: tea.KeyBackspace})
+	}
+	m = typeString(m, "handler")
+	m = update(m, tea.KeyMsg{Type: tea.KeyEnter})
+	if m.matrixForm != formRename || !strings.Contains(m.View(), "name collides") {
+		t.Errorf("a failed rename should keep the form open with the error:\n%s", m.View())
+	}
+
+	// No editor: R inert.
+	m2 := update(New(fixtureResult(), fixturePkgs(), WithConfig("depdog.yaml", fixtureRuleSet())), runes("m"))
+	m2 = update(m2, runes("R"))
+	if m2.matrixForm != formNone {
+		t.Error("without an editor, `R` must be inert")
+	}
+}
+
+func TestBoundaryMemberCursorAndRemove(t *testing.T) {
+	s := &stubEditor{}
+	m := editorModel(s, fixtureBoundaryRuleSet())
+	m = update(m, runes("b")) // overlay; adapters selected, members [domain, handler]
+
+	m = update(m, tea.KeyMsg{Type: tea.KeyRight})
+	if m.matrixMemberSel != 1 {
+		t.Fatalf("→ should move the member cursor to 1, got %d", m.matrixMemberSel)
+	}
+	m = update(m, tea.KeyMsg{Type: tea.KeyRight}) // clamp (2 members)
+	if m.matrixMemberSel != 1 {
+		t.Errorf("member cursor should clamp at 1, got %d", m.matrixMemberSel)
+	}
+	update(m, runes("d")) // remove the cursored member (handler)
+	if s.last() != "removemember adapters handler" {
+		t.Errorf("d should stage removing adapters/handler, got %q", s.last())
+	}
+
+	m = update(m, runes("j")) // changing boundary resets the member cursor
+	if m.matrixMemberSel != 0 {
+		t.Errorf("changing boundary should reset the member cursor, got %d", m.matrixMemberSel)
+	}
+}
+
+func TestBoundaryAddMemberForm(t *testing.T) {
+	s := &stubEditor{}
+	m := editorModel(s, fixtureBoundaryRuleSet())
+	m = update(m, runes("b"))
+	m = update(m, runes("a"))
+	if m.matrixForm != formAddMember {
+		t.Fatal("a should open the add-member form in the overlay")
+	}
+	if m.formTarget != "adapters" {
+		t.Errorf("the form should target the selected boundary, got %q", m.formTarget)
+	}
+	m = typeString(m, "service")
+	m = update(m, tea.KeyMsg{Type: tea.KeyEnter})
+	if s.last() != "addmember adapters service" {
+		t.Errorf("submit should stage adding adapters/service, got %q", s.last())
+	}
+	if m.matrixForm != formNone {
+		t.Error("a successful add should close the form")
+	}
+}
+
+func TestBoundaryMembersReadOnly(t *testing.T) {
+	m := update(New(fixtureResult(), fixturePkgs(), WithConfig("depdog.yaml", fixtureBoundaryRuleSet())), runes("m"))
+	m = update(m, runes("b"))
+	if m = update(m, runes("a")); m.matrixForm != formNone {
+		t.Error("without an editor, a must be inert in the overlay")
+	}
+	update(m, runes("d")) // no hook: no panic, no change
+}
+
+func stageOneEdit(m Model) Model {
+	m = update(m, tea.KeyMsg{Type: tea.KeyRight}) // cursor -> handler column
+	return update(m, runes(" "))                  // stage a toggle
+}
+
+func TestEditorStageSaveDiscard(t *testing.T) {
+	s := &stubEditor{}
+	m := stageOneEdit(editorModel(s, fixtureRuleSet()))
+	if !m.matrixDirty() {
+		t.Fatal("a staged edit should mark the session unsaved")
+	}
+	if s.saved != nil {
+		t.Fatal("staging must not write to disk")
+	}
+
+	// w saves to disk and clears the unsaved flag.
+	m = update(m, runes("w"))
+	if m.matrixDirty() || s.saved == nil {
+		t.Errorf("w should write and clear dirty (dirty=%v saved=%v)", m.matrixDirty(), s.saved != nil)
+	}
+
+	// A further edit, then esc, raises the save/discard prompt.
+	m = update(m, runes(" "))
+	if !m.matrixDirty() {
+		t.Fatal("a further edit should be unsaved")
+	}
+	m = update(m, tea.KeyMsg{Type: tea.KeyEsc})
+	if !m.matrixExit || !strings.Contains(m.View(), "Unsaved changes") {
+		t.Fatalf("esc with unsaved edits should raise the prompt:\n%s", m.View())
+	}
+	// Discard rolls back to the last saved state and leaves the editor.
+	m = update(m, runes("d"))
+	if m.matrixMode || m.matrixExit {
+		t.Error("discard should close the prompt and leave the editor")
+	}
+	if m.matrixDirty() {
+		t.Error("discard should reset the working copy to the saved state")
+	}
+}
+
+func TestEditorExitPromptSaveCancel(t *testing.T) {
+	// c cancels the prompt and returns to editing.
+	s := &stubEditor{}
+	m := stageOneEdit(editorModel(s, fixtureRuleSet()))
+	m = update(m, tea.KeyMsg{Type: tea.KeyEsc})
+	m = update(m, runes("c"))
+	if m.matrixExit || !m.matrixMode {
+		t.Error("c should cancel the prompt and keep editing")
+	}
+	// esc then s saves and leaves.
+	m = update(m, tea.KeyMsg{Type: tea.KeyEsc})
+	m = update(m, runes("s"))
+	if m.matrixMode || s.saved == nil {
+		t.Errorf("s should save and leave (mode=%v saved=%v)", m.matrixMode, s.saved != nil)
+	}
+}
+
+func TestEditorCleanExitNoPrompt(t *testing.T) {
+	s := &stubEditor{}
+	m := editorModel(s, fixtureRuleSet())
+	m = update(m, tea.KeyMsg{Type: tea.KeyEsc}) // no edits → leaves directly
+	if m.matrixMode || m.matrixExit {
+		t.Error("esc with no edits should leave without a prompt")
+	}
+}
+
+func TestEditorDirtyBlocksTabSwitch(t *testing.T) {
+	s := &stubEditor{}
+	m := stageOneEdit(editorModel(s, fixtureRuleSet()))
+	m = update(m, tea.KeyMsg{Type: tea.KeyTab}) // tab with unsaved edits → prompt, no switch
+	if !m.matrixExit {
+		t.Error("tab with unsaved edits should raise the prompt")
+	}
+	if m.active != tabConfig {
+		t.Errorf("must not switch tabs with unsaved edits, active=%d", m.active)
+	}
+}
+
+func TestEditorRevertAllTheWay(t *testing.T) {
+	s := &stubEditor{}
+	m := stageOneEdit(editorModel(s, fixtureRuleSet()))
+
+	// Save mid-session, then edit again: revert-all now differs from discard.
+	m = update(m, runes("w"))
+	if !m.savedSinceOpen() {
+		t.Fatal("a mid-session save should make revert-all meaningful")
+	}
+	m = update(m, runes(" ")) // stage a further edit
+	m = update(m, tea.KeyMsg{Type: tea.KeyEsc})
+	if !strings.Contains(m.View(), "revert all the way") {
+		t.Errorf("after a save, the prompt should offer revert-all:\n%s", m.View())
+	}
+
+	// o restores the config the editor opened with (to disk) and leaves.
+	m = update(m, runes("o"))
+	if m.matrixMode {
+		t.Error("revert-all should leave the editor")
+	}
+	if string(s.saved) != "cfg0" {
+		t.Errorf("revert-all should write the entry config back to disk, got %q", s.saved)
+	}
+}
+
+func TestEditorNoRevertOptionWithoutSave(t *testing.T) {
+	s := &stubEditor{}
+	m := stageOneEdit(editorModel(s, fixtureRuleSet()))
+	m = update(m, tea.KeyMsg{Type: tea.KeyEsc}) // prompt; no save happened this session
+	if strings.Contains(m.View(), "revert all the way") {
+		t.Errorf("without a mid-session save the prompt should not offer revert-all:\n%s", m.View())
+	}
+	// d still discards to the (unchanged) entry state and leaves.
+	m = update(m, runes("d"))
+	if m.matrixMode {
+		t.Error("discard should leave the editor")
+	}
+}
+
+func TestEditorIgnoresEditAndRerun(t *testing.T) {
+	// e (hand-edit depdog.yaml) and r (re-run from disk) must be inert inside the
+	// visual editor: both bypass the staged working copy, and e's on-disk edit
+	// would be clobbered by a later save. They stay live everywhere else.
+	s := &stubEditor{}
+	res, pkgs, rs := fixtureResult(), fixturePkgs(), fixtureRuleSet()
+	refreshed := false
+	m := New(res, pkgs,
+		WithConfig("depdog.yaml", rs),
+		WithEditor(s.editor(rs, res, pkgs)),
+		WithRefresh(func() (*core.Result, []core.PackageView, *core.RuleSet, error) {
+			refreshed = true
+			return res, pkgs, rs, nil
+		}))
+	m = stageOneEdit(update(m, runes("m"))) // open the editor with one staged edit
+
+	m = update(m, runes("e"))
+	if !m.matrixMode || m.editedConfig || s.saved != nil {
+		t.Errorf("e inside the editor must not open $EDITOR or touch disk (mode=%v armed=%v saved=%v)",
+			m.matrixMode, m.editedConfig, s.saved != nil)
+	}
+	if !strings.Contains(m.status, "leave") {
+		t.Errorf("e should explain why it did nothing, got %q", m.status)
+	}
+
+	m = update(m, runes("r"))
+	if refreshed || strings.Contains(m.status, "re-running") {
+		t.Errorf("r inside the editor must not re-run from disk, got status %q", m.status)
+	}
+	if !strings.Contains(m.status, "re-evaluates") {
+		t.Errorf("r should explain the editor re-evaluates live, got %q", m.status)
+	}
+	if !m.matrixDirty() {
+		t.Error("neither key should have discarded the staged edit")
+	}
+}
+
+func TestMatrixSelectionClamps(t *testing.T) {
+	m := update(New(fixtureResult(), fixturePkgs(), WithConfig("depdog.yaml", manyComponentRuleSet(40))), runes("m"))
+	m = update(m, tea.WindowSizeMsg{Width: 200, Height: 20})
+
+	if m.matrixSel != 0 {
+		t.Fatalf("initial matrixSel = %d, want 0", m.matrixSel)
+	}
+	m = update(m, runes("k")) // up at the top stays clamped
+	if m.matrixSel != 0 {
+		t.Errorf("up at top: matrixSel = %d, want 0", m.matrixSel)
+	}
+	m = update(m, runes("j")) // down moves the selection
+	if m.matrixSel != 1 {
+		t.Errorf("down: matrixSel = %d, want 1", m.matrixSel)
+	}
+	for i := 0; i < 100; i++ { // move far past the end
+		m = update(m, runes("j"))
+	}
+	if m.matrixSel != 39 {
+		t.Errorf("selection past the end should clamp at 39, got %d", m.matrixSel)
+	}
+	if !strings.Contains(m.View(), "▲") {
+		t.Errorf("a 40-row matrix on a 20-row screen, selection at the end, should show an above-marker:\n%s", m.View())
+	}
+	// The focus pane tracks the selection (comp39 is the last component).
+	if !strings.Contains(m.View(), "focus: comp39") {
+		t.Errorf("focus pane should follow the selection to comp39:\n%s", m.View())
 	}
 }
 

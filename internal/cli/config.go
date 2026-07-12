@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 
@@ -11,7 +12,10 @@ import (
 )
 
 func configCmd() *cobra.Command {
-	var configPath string
+	var (
+		configPath string
+		color      string
+	)
 	cmd := &cobra.Command{
 		Use:   "config",
 		Short: "Print the compiled rule set",
@@ -22,6 +26,11 @@ to debug a configuration without running a full check.
 Exit codes: 0 shown, 2 configuration or usage error.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			switch color {
+			case "auto", "always", "never":
+			default:
+				return fmt.Errorf("unknown --color %q (auto, always or never)", color)
+			}
 			cfgPath := configPath
 			if cfgPath == "" {
 				language, err := languageFlag(cmd)
@@ -45,9 +54,10 @@ Exit codes: 0 shown, 2 configuration or usage error.`,
 			if err != nil {
 				return err
 			}
-			return report.RuleSet(cmd.OutOrStdout(), rs)
+			return report.RuleSet(cmd.OutOrStdout(), rs, color)
 		},
 	}
 	cmd.Flags().StringVar(&configPath, "config", "", "path to depdog.yaml (default: found next to go.mod)")
+	cmd.Flags().StringVar(&color, "color", "auto", "colorize output: auto, always or never")
 	return cmd
 }

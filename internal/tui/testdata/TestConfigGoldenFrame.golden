@@ -16,4 +16,4 @@ components
       internal/handler/**
       allow  domain, std
 
-tab/1-4 switch · ↑/↓ scroll · e edit depdog.yaml · r re-run · ? help · q quit
+tab/1-4 switch · ↑/↓ scroll · m matrix · e edit · r re-run · ? help · q quit

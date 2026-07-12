@@ -9,8 +9,10 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/matterpale/depdog/internal/config"
 	"github.com/matterpale/depdog/internal/core"
 	"github.com/matterpale/depdog/internal/tui"
+	"github.com/matterpale/depdog/internal/wizard"
 )
 
 func tuiCmd() *cobra.Command {
@@ -61,10 +63,60 @@ func launch(cmd *cobra.Command, configPath string, args []string, ev *evaluation
 		}
 		return ev.Result, pkgs, ev.Rules, nil
 	}
+	// The visual editor stages edits in memory: the transformers are pure config
+	// rewriters, Eval recompiles a candidate config against the loaded graph (code
+	// doesn't change during a session, so the graph is reused), and only Save
+	// writes the file. Validation mirrors `init` (ValidateName / ValidatePattern).
+	editor := tui.Editor{
+		Load: func() ([]byte, error) { return os.ReadFile(ev.ConfigPath) },
+		Save: func(data []byte) error { return os.WriteFile(ev.ConfigPath, data, 0o644) },
+		Eval: func(data []byte) (*core.Result, []core.PackageView, *core.RuleSet, error) {
+			rs, err := config.Parse(data)
+			if err != nil {
+				return nil, nil, nil, err
+			}
+			res, err := core.Evaluate(ev.Graph, rs)
+			if err != nil {
+				return nil, nil, nil, err
+			}
+			views, err := core.BuildPackageViews(ev.Graph, rs)
+			if err != nil {
+				return nil, nil, nil, err
+			}
+			return res, views, rs, nil
+		},
+		SetRule: config.SetComponentRule,
+		AddComponent: func(data []byte, name, pattern string) ([]byte, error) {
+			if err := wizard.ValidateName(name); err != nil {
+				return nil, err
+			}
+			if err := core.ValidatePattern(pattern); err != nil {
+				return nil, err
+			}
+			return config.MergeComponents(data, []config.MergeComponent{{Name: name, Patterns: []string{pattern}}})
+		},
+		Repath: func(data []byte, component string, patterns []string) ([]byte, error) {
+			for _, p := range patterns {
+				if err := core.ValidatePattern(p); err != nil {
+					return nil, err
+				}
+			}
+			return config.SetComponentPath(data, component, patterns)
+		},
+		Rename: func(data []byte, oldName, newName string) ([]byte, error) {
+			if err := wizard.ValidateName(newName); err != nil {
+				return nil, err
+			}
+			return config.RenameComponent(data, oldName, newName)
+		},
+		AddMember:    config.AddBoundaryMember,
+		RemoveMember: config.RemoveBoundaryMember,
+	}
 	return tui.Run(ev.Result, pkgs,
 		tui.WithRoot(root),
 		tui.WithConfig(configRel, ev.Rules),
-		tui.WithRefresh(refresh))
+		tui.WithRefresh(refresh),
+		tui.WithEditor(editor))
 }
 
 // configRelPath renders the config path relative to the module root for display,
@@ -76,27 +128,36 @@ func configRelPath(root, configPath string) string {
 	return filepath.Base(configPath)
 }
 
-// runBare backs a plain `depdog` invocation: it opens the TUI when a terminal
-// and a config are both present, and otherwise prints guidance. It never errors
-// on a missing config — a first-time user gets pointed at `init` instead.
-func runBare(cmd *cobra.Command) error {
-	if isInteractive(cmd) {
-		if cwd, err := os.Getwd(); err == nil {
-			language, lerr := languageFlag(cmd)
-			if lerr == nil {
-				if _, _, _, ferr := resolveProject(cwd, language); ferr == nil {
-					ev, eerr := evaluateModule(cmd, "", nil)
-					if eerr != nil {
-						return eerr
-					}
-					return launch(cmd, "", nil, ev)
-				}
-			}
-		}
+// runBare backs a plain `depdog` invocation: it runs the check (like
+// `depdog check`), so a bare `depdog` yields the real 0/1/2 exit code, on a
+// terminal or in a pipe. `depdog tui` opens the interactive view.
+//
+// A first-time user in a directory with no depdog project is pointed at `init`
+// rather than shown a config error — but only when they named no explicit target
+// (a package arg or --config); an explicit target always runs the check.
+func runBare(cmd *cobra.Command, args []string, o checkOptions) error {
+	if len(args) == 0 && o.configPath == "" && !projectResolves(cmd) {
+		out := cmd.OutOrStdout()
+		fmt.Fprintln(out, "depdog keeps a project's internal imports pointing the right way.")
+		fmt.Fprintln(out, "Run `depdog init` to create a depdog.yaml, `depdog check` to verify import rules,")
+		fmt.Fprintln(out, "or `depdog tui` for the interactive view. `depdog --help` lists everything.")
+		return nil
 	}
-	out := cmd.OutOrStdout()
-	fmt.Fprintln(out, "depdog keeps a project's internal imports pointing the right way.")
-	fmt.Fprintln(out, "Run `depdog init` to create a depdog.yaml, `depdog check` to verify import rules,")
-	fmt.Fprintln(out, "or `depdog tui` for the interactive view. `depdog --help` lists everything.")
-	return nil
+	return runCheck(cmd, args, o)
+}
+
+// projectResolves reports whether a depdog project (an adapter and a config) can
+// be found from the current directory — the signal that separates a first-time
+// user from a real check run.
+func projectResolves(cmd *cobra.Command) bool {
+	cwd, err := os.Getwd()
+	if err != nil {
+		return false
+	}
+	language, err := languageFlag(cmd)
+	if err != nil {
+		return false
+	}
+	_, _, _, err = resolveProject(cwd, language)
+	return err == nil
 }

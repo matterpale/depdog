@@ -23,17 +23,21 @@ func TestRuleSetDump(t *testing.T) {
 		Skip:      []string{"internal/legacy/**"},
 	}
 	var buf bytes.Buffer
-	if err := RuleSet(&buf, rs); err != nil {
+	if err := RuleSet(&buf, rs, "never"); err != nil {
 		t.Fatal(err)
 	}
 	out := buf.String()
 	for _, want := range []string{
-		"default:    deny", "test_files: relaxed", "skip:       internal/legacy/**",
-		"internal/domain/**", "stance: whitelist", "allow:  [std]",
-		"stance: blacklist", "deny:   [domain]",
+		"default", "deny", "rule-less components import nothing",
+		"test_files", "relaxed", "skip", "internal/legacy/**",
+		"domain", "whitelist", "internal/domain/**", "allow  std",
+		"handler", "blacklist", "deny   domain",
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("rule-set dump missing %q\n%s", want, out)
 		}
+	}
+	if strings.Contains(out, "\x1b") {
+		t.Errorf("--color never must not emit ANSI escapes:\n%q", out)
 	}
 }

@@ -1,0 +1,214 @@
+package tui
+
+import (
+	"fmt"
+	"strings"
+
+	tea "github.com/charmbracelet/bubbletea"
+)
+
+// The Matrix tab has one text-input form with three modes: add a component
+// (`a` — name + path), re-path the selected component (`p` — a new path glob),
+// and rename it (`R` — a new name). Validation lives in the injected hooks (the
+// same checks `init` uses), so a bad name or glob is reported inline and the
+// form stays open.
+
+type formKind int
+
+const (
+	formNone formKind = iota
+	formAdd
+	formRepath
+	formRename
+	formAddMember
+)
+
+// updateForm captures keystrokes while a form is open. Runes extend the focused
+// field; tab switches fields in add mode; enter advances name → path then
+// submits (add) or submits (re-path); esc cancels.
+func (m Model) updateForm(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.Type {
+	case tea.KeyEsc:
+		m.closeForm()
+	case tea.KeyCtrlC:
+		m.quitting = true
+		return m, tea.Quit
+	case tea.KeyTab, tea.KeyShiftTab:
+		if m.matrixForm == formAdd {
+			m.formField = 1 - m.formField
+		}
+	case tea.KeyEnter:
+		if m.matrixForm == formAdd && m.formField == 0 && strings.TrimSpace(m.formName) != "" {
+			m.formField = 1
+			return m, nil
+		}
+		return m.submitForm()
+	case tea.KeyBackspace:
+		if m.formField == 0 {
+			m.formName = dropLast(m.formName)
+		} else {
+			m.formPattern = dropLast(m.formPattern)
+		}
+		m.formErr = ""
+	case tea.KeyRunes, tea.KeySpace:
+		s := string(msg.Runes)
+		if msg.Type == tea.KeySpace {
+			s = " "
+		}
+		if m.formField == 0 {
+			m.formName += s
+		} else {
+			m.formPattern += s
+		}
+		m.formErr = ""
+	}
+	return m, nil
+}
+
+// submitForm validates the fields, then stages the edit in memory (no disk
+// write). On success it closes the form; on failure it keeps the form open with
+// the error.
+func (m Model) submitForm() (tea.Model, tea.Cmd) {
+	if m.editor == nil {
+		m.formErr = "editing is not available in this session"
+		return m, nil
+	}
+	var transform func([]byte) ([]byte, error)
+	var desc string
+
+	switch m.matrixForm {
+	case formAdd:
+		name, pattern := strings.TrimSpace(m.formName), strings.TrimSpace(m.formPattern)
+		if name == "" || pattern == "" {
+			m.formErr = "both a name and a path pattern are required"
+			return m, nil
+		}
+		transform = func(d []byte) ([]byte, error) { return m.editor.AddComponent(d, name, pattern) }
+		desc = fmt.Sprintf("added component %q", name)
+
+	case formRepath:
+		patterns := strings.Fields(m.formPattern)
+		if len(patterns) == 0 {
+			m.formErr = "a component needs at least one path pattern"
+			return m, nil
+		}
+		target := m.formTarget
+		transform = func(d []byte) ([]byte, error) { return m.editor.Repath(d, target, patterns) }
+		desc = fmt.Sprintf("re-pathed %q", target)
+
+	case formRename:
+		newName := strings.TrimSpace(m.formName)
+		if newName == "" {
+			m.formErr = "type a new name"
+			return m, nil
+		}
+		if newName == m.formTarget {
+			m.closeForm() // no-op rename
+			return m, nil
+		}
+		old := m.formTarget
+		transform = func(d []byte) ([]byte, error) { return m.editor.Rename(d, old, newName) }
+		desc = fmt.Sprintf("renamed %q → %q", old, newName)
+
+	case formAddMember:
+		member := strings.TrimSpace(m.formName)
+		if member == "" {
+			m.formErr = "type a member — a component name or a path glob"
+			return m, nil
+		}
+		boundary := m.formTarget
+		transform = func(d []byte) ([]byte, error) { return m.editor.AddMember(d, boundary, member) }
+		desc = fmt.Sprintf("added %q to %q", member, boundary)
+
+	default:
+		return m, nil
+	}
+
+	staged, err := m.stage(transform)
+	if err != nil {
+		m.formErr = oneLine(err.Error())
+		return m, nil
+	}
+	staged.closeForm()
+	staged.status = desc + " · unsaved (w save · esc to save/discard)"
+	return staged, nil
+}
+
+func (m *Model) closeForm() {
+	m.matrixForm = formNone
+	m.formTarget, m.formName, m.formPattern, m.formField, m.formErr = "", "", "", 0, ""
+}
+
+// formView renders the active form as a small labelled panel with a caret on the
+// focused field. In re-path mode the component name is a fixed label, not a
+// field.
+func (m Model) formView() string {
+	field := func(idx int, value string) string {
+		box := value
+		if idx == m.formField {
+			box += "▊"
+			return styleActive.Render(box)
+		}
+		return box
+	}
+
+	var lines []string
+	switch m.matrixForm {
+	case formAdd:
+		lines = []string{
+			styleTitle.Render("Add component"),
+			"",
+			styleDim.Render("  name  ") + field(0, m.formName),
+			styleDim.Render("  path  ") + field(1, m.formPattern),
+			"",
+		}
+	case formRepath:
+		lines = []string{
+			styleTitle.Render("Re-path ") + styleTitle.Render(m.formTarget),
+			"",
+			styleDim.Render("  path  ") + field(1, m.formPattern),
+			"",
+		}
+	case formRename:
+		lines = []string{
+			styleTitle.Render("Rename ") + styleTitle.Render(m.formTarget),
+			"",
+			styleDim.Render("  name  ") + field(0, m.formName),
+			"",
+		}
+	case formAddMember:
+		lines = []string{
+			styleTitle.Render("Add member to ") + styleTitle.Render(m.formTarget),
+			"",
+			styleDim.Render("  member  ") + field(0, m.formName),
+			"",
+		}
+	}
+	switch {
+	case m.formErr != "":
+		lines = append(lines, styleBad.Render("  "+m.formErr), "")
+	case m.matrixForm == formAdd:
+		lines = append(lines, styleDim.Render("  e.g. name \"service\", path \"internal/service/**\""), "")
+	case m.matrixForm == formRepath:
+		lines = append(lines, styleDim.Render("  space-separate multiple globs, e.g. \"internal/api/** internal/rpc/**\""), "")
+	case m.matrixForm == formRename:
+		lines = append(lines, styleDim.Render("  every allow/deny ref, boundary member and group entry follows the rename"), "")
+	case m.matrixForm == formAddMember:
+		lines = append(lines, styleDim.Render("  a component name or a path glob, e.g. \"cmd/service-c/**\""), "")
+	}
+
+	hint := "  tab: switch field · enter: next / add · esc: cancel"
+	if m.matrixForm != formAdd {
+		hint = "  enter: save · esc: cancel"
+	}
+	return strings.Join(append(lines, styleDim.Render(hint)), "\n")
+}
+
+// dropLast removes the last rune of s (backspace over multibyte input).
+func dropLast(s string) string {
+	if s == "" {
+		return s
+	}
+	r := []rune(s)
+	return string(r[:len(r)-1])
+}

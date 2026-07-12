@@ -7,6 +7,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 
 	"gopkg.in/yaml.v3"
 )
@@ -156,6 +157,23 @@ func endLine(n *yaml.Node) int {
 		}
 	}
 	return last
+}
+
+// byteOffset converts a 1-based character column — the unit yaml.v3 reports in
+// Node.Column — to a 0-based byte index into line. yaml counts columns in
+// characters, so a line with multibyte runes before the column would misplace a
+// raw byte splice without this translation. A column past the line's end clamps
+// to len(line).
+func byteOffset(line string, col int) int {
+	i := 0
+	for c := 1; c < col; c++ {
+		if i >= len(line) {
+			return len(line)
+		}
+		_, size := utf8.DecodeRuneInString(line[i:])
+		i += size
+	}
+	return i
 }
 
 // indentOf is the indentation (in spaces) of a block mapping's keys.
