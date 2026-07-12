@@ -46,23 +46,23 @@ failing build.*</sub>
 
 ## Use cases
 
-**CI**
+[**CI**](#ci)
 
 - `depdog check` exits non-zero on any violation and
-  speaks `github` and `sarif`. See [more](#ci).
+  speaks `github` and `sarif`.
 
-**Coding agents**
+[**Coding agents**](#for-ai-agents)
 
 - A stable JSON schema, contract
   [exit codes](#commands), and a skill
-  help your agent get you started. See [more](#for-ai-agents).
+  help your agent get you started.
 
-**Local exploration**
+[**Local exploration**](#commands)
 
-- The [TUI](#commands) and `depdog explain`
+- The TUI and `depdog explain`
   help with reading an existing graph and debugging by hand.
 
-**LSP for your IDE**
+[**LSP for your IDE**](#lsp-setup)
 
 - `depdog lsp` surfaces violations as inline
   diagnostics in the editor of your choice.
@@ -170,16 +170,6 @@ test-file handling. Boundaries have their own page —
 </details>
 
 <details>
-<summary><b>Editor / LSP setup</b></summary>
-
-Wire `depdog lsp` into Neovim, Helix, VS Code (via the bundled
-[`editors/vscode`](editors/vscode) extension scaffold), Zed, GoLand/JetBrains
-(via the LSP4IJ plugin), or Emacs for inline architecture diagnostics —
-per-editor snippets in [docs/editors.md](docs/editors.md).
-
-</details>
-
-<details>
 <summary><b>TUI keys</b></summary>
 
 In the TUI, <kbd>1</kbd>–<kbd>4</kbd> (or <kbd>tab</kbd>) switch between the
@@ -266,6 +256,14 @@ is a self-contained, tool-agnostic playbook any coding agent can follow to map a
 codebase to components and author a `depdog.yaml`. The editor
 [JSON Schema](schema/depdog.schema.json) hands the same autocomplete and
 validation to any schema-aware agent.
+
+## LSP Setup
+
+Wire `depdog lsp` into Neovim, Helix, VS Code (via the bundled
+[`editors/vscode`](editors/vscode) extension scaffold), Zed, GoLand/JetBrains
+(via the LSP4IJ plugin), or Emacs for inline architecture diagnostics —
+per-editor snippets in [docs/editors.md](docs/editors.md).
+
 
 ## Limitations
 
