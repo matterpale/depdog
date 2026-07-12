@@ -1136,6 +1136,43 @@ func TestEditorNoRevertOptionWithoutSave(t *testing.T) {
 	}
 }
 
+func TestEditorIgnoresEditAndRerun(t *testing.T) {
+	// e (hand-edit depdog.yaml) and r (re-run from disk) must be inert inside the
+	// visual editor: both bypass the staged working copy, and e's on-disk edit
+	// would be clobbered by a later save. They stay live everywhere else.
+	s := &stubEditor{}
+	res, pkgs, rs := fixtureResult(), fixturePkgs(), fixtureRuleSet()
+	refreshed := false
+	m := New(res, pkgs,
+		WithConfig("depdog.yaml", rs),
+		WithEditor(s.editor(rs, res, pkgs)),
+		WithRefresh(func() (*core.Result, []core.PackageView, *core.RuleSet, error) {
+			refreshed = true
+			return res, pkgs, rs, nil
+		}))
+	m = stageOneEdit(update(m, runes("m"))) // open the editor with one staged edit
+
+	m = update(m, runes("e"))
+	if !m.matrixMode || m.editedConfig || s.saved != nil {
+		t.Errorf("e inside the editor must not open $EDITOR or touch disk (mode=%v armed=%v saved=%v)",
+			m.matrixMode, m.editedConfig, s.saved != nil)
+	}
+	if !strings.Contains(m.status, "leave") {
+		t.Errorf("e should explain why it did nothing, got %q", m.status)
+	}
+
+	m = update(m, runes("r"))
+	if refreshed || strings.Contains(m.status, "re-running") {
+		t.Errorf("r inside the editor must not re-run from disk, got status %q", m.status)
+	}
+	if !strings.Contains(m.status, "re-evaluates") {
+		t.Errorf("r should explain the editor re-evaluates live, got %q", m.status)
+	}
+	if !m.matrixDirty() {
+		t.Error("neither key should have discarded the staged edit")
+	}
+}
+
 func TestMatrixSelectionClamps(t *testing.T) {
 	m := update(New(fixtureResult(), fixturePkgs(), WithConfig("depdog.yaml", manyComponentRuleSet(40))), runes("m"))
 	m = update(m, tea.WindowSizeMsg{Width: 200, Height: 20})

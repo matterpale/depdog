@@ -279,7 +279,7 @@ func (m Model) matrixGrid(sel, col int) (header, rows []string) {
 			strings.Repeat("─", matrixCompW*len(comps)) + "─┼" +
 			strings.Repeat("─", matrixSpecW*len(specialTargets)))
 	header = []string{
-		styleTitle.Render("Rule matrix") + styleDim.Render("   rows import columns · ↑↓←→ move the cursor"),
+		styleTitle.Render("Rule matrix") + styleWarn.Render("  experimental") + styleDim.Render("   rows import columns · ↑↓←→ move the cursor"),
 		"", h.String(), divider,
 	}
 

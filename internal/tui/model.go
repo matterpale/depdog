@@ -375,8 +375,22 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "down", "j":
 			m.moveSelection(1)
 		case "e":
+			// Outside the editor `e` opens depdog.yaml in $EDITOR. Inside it, the
+			// on-disk file lacks the staged edits, so hand-editing it would fight the
+			// in-memory working copy (a later save would clobber it) — save or leave
+			// the editor first.
+			if m.matrixMode {
+				m.status = "save (w) or leave (esc) the editor before hand-editing depdog.yaml"
+				return m, nil
+			}
 			return m, m.openInEditor()
 		case "r":
+			// The editor re-evaluates every staged edit live, and a disk re-run would
+			// replace the staged rule set — so `r` only re-runs outside the editor.
+			if m.matrixMode {
+				m.status = "the editor already re-evaluates edits live"
+				return m, nil
+			}
 			return m, m.startRefresh()
 		}
 	}
@@ -709,8 +723,8 @@ func helpView() string {
 		{"tab / shift+tab", "next / previous screen"},
 		{"1 / 2 / 3 / 4", "Dashboard / Violations / Packages / Config"},
 		{"up/down or k/j", "move the selection (or scroll the Config document)"},
-		{"m", "Config tab: open the visual rule editor (esc to leave)"},
-		{"─ in the editor ─", ""},
+		{"m", "Config tab: open the rule matrix editor (esc to leave)"},
+		{"─ in the matrix (experimental) ─", ""},
 		{"↑↓←→", "move the edit cursor over the grid"},
 		{"space", "toggle the cursored edge — allow → deny → default"},
 		{"b", "boundaries overlay — ←/→ pick a member, a add, d remove"},
@@ -814,7 +828,7 @@ func (m Model) footer() string {
 		return styleDim.Render("tab/1-4 switch · ↑/↓ move · / filter · e edit · r re-run · ? help · q quit")
 	}
 	if m.active == tabConfig {
-		return styleDim.Render("tab/1-4 switch · ↑/↓ scroll · m visual editor · e edit · r re-run · ? help · q quit")
+		return styleDim.Render("tab/1-4 switch · ↑/↓ scroll · m matrix · e edit · r re-run · ? help · q quit")
 	}
 	return styleDim.Render("tab/1-4 switch · ↑/↓ move · r re-run · ? help · q quit")
 }
