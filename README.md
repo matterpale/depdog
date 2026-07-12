@@ -46,17 +46,17 @@ failing build.*</sub>
 
 ## Use cases
 
-- **CI**
+**CI**
   - `depdog check` exits non-zero on any violation and
   speaks `github` and `sarif`. See [more](#ci).
-- **Coding agents**
+**Coding agents**
   - A stable JSON schema, contract
   [exit codes](#commands), and a skill
   help your agent get you started. See [more](#for-ai-agents).
-- **Local exploration**
+**Local exploration**
   - The [TUI](#commands) and `depdog explain`
   help with reading an existing graph and debugging by hand.
-- **LSP for your IDE**
+**LSP for your IDE**
   - `depdog lsp` surfaces violations as inline
   diagnostics in the editor of your choice.
 
