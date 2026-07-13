@@ -1,0 +1,5 @@
+# A Ruby marker with NO depdog.yaml: legacy/ is disjoint from every unit, so
+# discovery (D5) reports it as an advisory skip ("no depdog.yaml").
+source "https://rubygems.org"
+
+gem "sinatra", "~> 3.0"
