@@ -1,0 +1,10 @@
+### depdog: architecture diff since `origin/main`
+
+**2 new cross-component edges added (1 crosses a boundary), 1 removed** vs `origin/main`.
+
+**Added**
+- `handler` → `repository` — crosses boundary `adapters`
+- `handler` → `service`
+
+**Removed**
+- `service` → `config`

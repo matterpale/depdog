@@ -1,9 +1,11 @@
 package report
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
 	"sort"
+	"strings"
 
 	"github.com/matterpale/depdog/internal/core"
 )
@@ -169,16 +171,9 @@ func DiffText(w io.Writer, d ArchDiff, since string) error {
 // appendEdges renders one edge per line, "<sign> from → to" with a boundary
 // callout when the edge crosses one.
 func appendEdges(b []byte, edges []ComponentEdge, sign string) []byte {
-	// Keep the input order (callers pass already-sorted slices), but guard
-	// against an unsorted caller so text output stays deterministic.
-	sorted := append([]ComponentEdge(nil), edges...)
-	sort.Slice(sorted, func(i, j int) bool {
-		if sorted[i].From != sorted[j].From {
-			return sorted[i].From < sorted[j].From
-		}
-		return sorted[i].To < sorted[j].To
-	})
-	for _, e := range sorted {
+	// Callers pass already-sorted slices, but re-sort so text output stays
+	// deterministic even for an unsorted caller.
+	for _, e := range sortEdges(edges) {
 		if e.CrossesBoundary {
 			b = appendf(b, "    %s %s → %s  (crosses boundary %q)\n", sign, e.From, e.To, e.Boundary)
 		} else {
@@ -186,6 +181,128 @@ func appendEdges(b []byte, edges []ComponentEdge, sign string) []byte {
 		}
 	}
 	return b
+}
+
+// DiffGitHub writes a PR-comment markdown block summarising the architecture
+// diff: a heading, a one-line count relative to `since`, then bulleted Added
+// and Removed lists with boundary crossings called out per line. This is a
+// human-readable comment (not the ::error:: workflow-command style of
+// report.GitHub) — a reviewer reads it inline on the PR. An empty diff reads
+// clearly. Output is deterministic.
+func DiffGitHub(w io.Writer, d ArchDiff, since string) error {
+	var b []byte
+	b = appendf(b, "### depdog: architecture diff since `%s`\n", mdCode(since))
+
+	if d.AddedCount == 0 && d.RemovedCount == 0 {
+		b = appendf(b, "\nNo cross-component edge changes.\n")
+		_, err := w.Write(b)
+		return err
+	}
+
+	b = appendf(b, "\n**%s added", plural(d.AddedCount, "new cross-component edge"))
+	if d.BoundaryCrossings > 0 {
+		b = appendf(b, " (%s a boundary)", crossingPhrase(d.BoundaryCrossings))
+	}
+	b = appendf(b, ", %s removed** vs `%s`.\n", countOnly(d.RemovedCount), mdCode(since))
+
+	if len(d.Added) > 0 {
+		b = appendf(b, "\n**Added**\n")
+		b = appendGitHubEdges(b, d.Added)
+	}
+	if len(d.Removed) > 0 {
+		b = appendf(b, "\n**Removed**\n")
+		b = appendGitHubEdges(b, d.Removed)
+	}
+
+	_, err := w.Write(b)
+	return err
+}
+
+// appendGitHubEdges renders one markdown bullet per edge, "- `from` → `to`",
+// with a boundary callout when the edge crosses one. Edges are re-sorted so a
+// caller passing an unsorted slice still yields deterministic output.
+func appendGitHubEdges(b []byte, edges []ComponentEdge) []byte {
+	for _, e := range sortEdges(edges) {
+		if e.CrossesBoundary {
+			b = appendf(b, "- `%s` → `%s` — crosses boundary `%s`\n", mdCode(e.From), mdCode(e.To), mdCode(e.Boundary))
+		} else {
+			b = appendf(b, "- `%s` → `%s`\n", mdCode(e.From), mdCode(e.To))
+		}
+	}
+	return b
+}
+
+// mdCode neutralises a backtick in a value rendered inside inline code spans,
+// so a component or ref name containing one cannot break out of the span.
+func mdCode(s string) string {
+	return strings.ReplaceAll(s, "`", "'")
+}
+
+// jsonDiff is the stable structured delta emitted by DiffJSON. Field names are
+// snake_case and absent collections encode as [] rather than null, matching the
+// report/json.go schema conventions — this is part of depdog's public
+// interface.
+type jsonDiff struct {
+	Since   string         `json:"since"`
+	Added   []jsonDiffEdge `json:"added"`
+	Removed []jsonDiffEdge `json:"removed"`
+	Stats   jsonDiffStats  `json:"stats"`
+}
+
+type jsonDiffEdge struct {
+	From            string `json:"from"`
+	To              string `json:"to"`
+	CrossesBoundary bool   `json:"crosses_boundary"`
+	Boundary        string `json:"boundary,omitempty"` // boundary name; omitted when the edge crosses none
+}
+
+type jsonDiffStats struct {
+	Added             int `json:"added"`
+	Removed           int `json:"removed"`
+	BoundaryCrossings int `json:"boundary_crossings"`
+}
+
+// DiffJSON writes the architecture diff as a stable structured delta: the
+// `since` ref, sorted added/removed edge arrays (each with a boundary-crossing
+// flag), and roll-up stats. snake_case; empty arrays encode as [] not null;
+// deterministic given a sorted ArchDiff (and re-sorted here to be safe).
+func DiffJSON(w io.Writer, d ArchDiff, since string) error {
+	out := jsonDiff{
+		Since:   since,
+		Added:   jsonDiffEdges(d.Added),
+		Removed: jsonDiffEdges(d.Removed),
+		Stats: jsonDiffStats{
+			Added:             d.AddedCount,
+			Removed:           d.RemovedCount,
+			BoundaryCrossings: d.BoundaryCrossings,
+		},
+	}
+	enc := json.NewEncoder(w)
+	enc.SetIndent("", "  ")
+	return enc.Encode(out)
+}
+
+// jsonDiffEdges maps engine edges to their JSON shape, always returning a
+// non-nil slice so an absent list encodes as [] rather than null.
+func jsonDiffEdges(edges []ComponentEdge) []jsonDiffEdge {
+	out := make([]jsonDiffEdge, 0, len(edges))
+	for _, e := range sortEdges(edges) {
+		out = append(out, jsonDiffEdge(e))
+	}
+	return out
+}
+
+// sortEdges returns a copy of edges sorted by From then To, so every renderer
+// emits deterministic output even if a caller passes an unsorted slice.
+func sortEdges(edges []ComponentEdge) []ComponentEdge {
+	sorted := append([]ComponentEdge(nil), edges...)
+	sort.Slice(sorted, func(i, j int) bool {
+		if sorted[i].From != sorted[j].From {
+			return sorted[i].From < sorted[j].From
+		}
+		return sorted[i].To < sorted[j].To
+	})
+	return sorted
 }
 
 // countOnly renders just a number of removed edges ("N removed" reads as

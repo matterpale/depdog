@@ -1,6 +1,7 @@
 package e2e
 
 import (
+	"encoding/json"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -90,6 +91,64 @@ default: allow
 	// The working tree is the "after" graph; leftover worktrees must be gone.
 	if wt := git(t, dir, "worktree", "list"); strings.Count(wt, "\n") != 0 {
 		t.Errorf("temp worktree not cleaned up:\n%s", wt)
+	}
+
+	// The same diff in --format json must be a well-formed, deterministic delta
+	// naming the one added edge with snake_case keys and [] (not null) arrays.
+	jsonOut, stderr, exit := run(t, dir, "diff", "--since", first, "--format", "json")
+	if exit != 0 {
+		t.Fatalf("diff --format json exit %d, want 0\nstdout:\n%s\nstderr:\n%s", exit, jsonOut, stderr)
+	}
+	var delta struct {
+		Since string `json:"since"`
+		Added []struct {
+			From string `json:"from"`
+			To   string `json:"to"`
+		} `json:"added"`
+		Removed []json.RawMessage `json:"removed"`
+		Stats   struct {
+			Added int `json:"added"`
+		} `json:"stats"`
+	}
+	if err := json.Unmarshal([]byte(jsonOut), &delta); err != nil {
+		t.Fatalf("diff --format json is not valid JSON: %v\n%s", err, jsonOut)
+	}
+	if delta.Since != first {
+		t.Errorf("since = %q, want %q", delta.Since, first)
+	}
+	if delta.Stats.Added != 1 || len(delta.Added) != 1 {
+		t.Fatalf("json should report one added edge, got %+v", delta)
+	}
+	if delta.Added[0].From != "handler" || delta.Added[0].To != "repository" {
+		t.Errorf("added edge = %s → %s, want handler → repository", delta.Added[0].From, delta.Added[0].To)
+	}
+	// removed must be [] (not null) even when empty.
+	if delta.Removed == nil || strings.Contains(jsonOut, "null") {
+		t.Errorf("empty removed must encode as [], not null:\n%s", jsonOut)
+	}
+
+	// A second json run is byte-identical (deterministic).
+	jsonOut2, _, _ := run(t, dir, "diff", "--since", first, "--format", "json")
+	if jsonOut2 != jsonOut {
+		t.Errorf("diff --format json not deterministic:\n%s\n---\n%s", jsonOut, jsonOut2)
+	}
+}
+
+// TestDiffUnknownFormat is a usage error (exit 2): an invalid --format value is
+// rejected with an actionable message before any git or scan work.
+func TestDiffUnknownFormat(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "go.mod"), "module example.test/diff\n\ngo 1.26\n")
+	writeFile(t, filepath.Join(dir, "depdog.yaml"),
+		"version: 2\ncomponents:\n  a: { path: \"**\", allow: [\"*\"] }\ndefault: allow\n")
+	writeFile(t, filepath.Join(dir, "a.go"), "package a\n")
+
+	_, stderr, exit := run(t, dir, "diff", "--since", "HEAD", "--format", "toml")
+	if exit != 2 {
+		t.Fatalf("exit %d, want 2 (unknown --format)", exit)
+	}
+	if !strings.Contains(strings.ToLower(stderr), "format") {
+		t.Errorf("stderr should point at --format:\n%s", stderr)
 	}
 }
 

@@ -42,7 +42,7 @@ Exit codes: 0 diff written, 2 usage, git or scan error.`,
 	}
 	cmd.Flags().StringVar(&configPath, "config", "", "path to depdog.yaml (default: found next to go.mod)")
 	cmd.Flags().StringVar(&since, "since", "", "git ref to diff against (required)")
-	cmd.Flags().StringVarP(&format, "format", "f", "text", "output format: text, github or json (github/json land later)")
+	cmd.Flags().StringVarP(&format, "format", "f", "text", "output format: text, github or json")
 	return cmd
 }
 
@@ -51,11 +51,9 @@ func runDiff(cmd *cobra.Command, args []string, configPath, since, format string
 		return fmt.Errorf("--since <ref> is required (the git ref to diff against)")
 	}
 	switch format {
-	case "text":
-	case "github", "json":
-		return fmt.Errorf("--format %q is not yet implemented (text only for now)", format)
+	case "text", "github", "json":
 	default:
-		return fmt.Errorf("unknown --format %q (text, github or json)", format)
+		return fmt.Errorf("unknown --format %q (choose text, github or json)", format)
 	}
 
 	// Resolve the project exactly as check does: adapter, module root, config.
@@ -85,7 +83,15 @@ func runDiff(cmd *cobra.Command, args []string, configPath, since, format string
 	if err != nil {
 		return err
 	}
-	return report.DiffText(cmd.OutOrStdout(), d, since)
+	out := cmd.OutOrStdout()
+	switch format {
+	case "github":
+		return report.DiffGitHub(out, d, since)
+	case "json":
+		return report.DiffJSON(out, d, since)
+	default:
+		return report.DiffText(out, d, since)
+	}
 }
 
 // beforeGraph materializes the git ref in a detached worktree, locates the
