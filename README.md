@@ -277,6 +277,11 @@ with depdog end to end — mapping a codebase to components, authoring the
 [JSON Schema](schema/depdog.schema.json) hands the same autocomplete and
 validation to any schema-aware agent.
 
+depdog also speaks **MCP** — `depdog mcp` exposes read-only
+`check`/`explain`/`can_import` tools (plus `config`/`components` resources) over
+stdio so an MCP-capable agent can consult the architecture in the loop. See
+[docs/mcp.md](docs/mcp.md).
+
 ## LSP Setup
 
 Wire `depdog lsp` into Neovim, Helix, VS Code (via the bundled
