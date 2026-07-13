@@ -32,6 +32,7 @@ Exit codes: 0 shown, 2 configuration or usage error.`,
 				return fmt.Errorf("unknown --color %q (auto, always or never)", color)
 			}
 			cfgPath := configPath
+			var root string
 			if cfgPath == "" {
 				language, err := languageFlag(cmd)
 				if err != nil {
@@ -41,7 +42,7 @@ Exit codes: 0 shown, 2 configuration or usage error.`,
 				if err != nil {
 					return err
 				}
-				if _, _, cfgPath, err = resolveProject(cwd, language); err != nil {
+				if _, root, cfgPath, err = resolveProject(cwd, language); err != nil {
 					return err
 				}
 			} else {
@@ -49,12 +50,15 @@ Exit codes: 0 shown, 2 configuration or usage error.`,
 				if cfgPath, err = filepath.Abs(cfgPath); err != nil {
 					return err
 				}
+				root = filepath.Dir(cfgPath)
 			}
 			rs, err := config.Load(cfgPath)
 			if err != nil {
 				return err
 			}
-			return report.RuleSet(cmd.OutOrStdout(), rs, color)
+			// The same module-relative path label the TUI's Config tab titles
+			// itself with, so both surfaces name the file identically.
+			return report.RuleSet(cmd.OutOrStdout(), rs, configRelPath(root, cfgPath), color)
 		},
 	}
 	cmd.Flags().StringVar(&configPath, "config", "", "path to depdog.yaml (default: found next to go.mod)")

@@ -23,10 +23,13 @@ func TestRuleSetDump(t *testing.T) {
 		Skip:      []string{"internal/legacy/**"},
 	}
 	var buf bytes.Buffer
-	if err := RuleSet(&buf, rs, "never"); err != nil {
+	if err := RuleSet(&buf, rs, "depdog.yaml", "never"); err != nil {
 		t.Fatal(err)
 	}
 	out := buf.String()
+	if !strings.HasPrefix(out, "depdog.yaml\n\n") {
+		t.Errorf("dump should open with the config path title:\n%s", out)
+	}
 	for _, want := range []string{
 		"default", "deny", "rule-less components import nothing",
 		"test_files", "relaxed", "skip", "internal/legacy/**",

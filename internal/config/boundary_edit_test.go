@@ -89,3 +89,109 @@ func TestBoundaryMemberRefusals(t *testing.T) {
 		t.Error("an unknown boundary should be refused")
 	}
 }
+
+func TestSetBoundarySealed(t *testing.T) {
+	// Shorthand → sealed: the member text is kept verbatim inside the expanded
+	// single-line form, and the trailing comment survives.
+	out, err := SetBoundarySealed([]byte(boundaryFixture), "peers", true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pl := lineFor(t, out, "peers:")
+	if !strings.Contains(pl, "{ members: [ a, b ], sealed: true }") || !strings.Contains(pl, "# shorthand") {
+		t.Errorf("peers should expand in place and keep its comment:\n%s", pl)
+	}
+	rs, err := Parse(out)
+	if err != nil {
+		t.Fatalf("Parse after seal: %v", err)
+	}
+	for _, b := range rs.Boundaries {
+		if b.Name == "peers" && !b.Sealed {
+			t.Error("peers should compile sealed")
+		}
+	}
+
+	// Unsealing a shorthand boundary is a no-op (absent means false).
+	same, err := SetBoundarySealed([]byte(boundaryFixture), "peers", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(same) != boundaryFixture {
+		t.Error("unsealing an unsealed shorthand boundary should be a no-op")
+	}
+
+	// Existing sealed scalar rewritten in place (block mapping).
+	out, err = SetBoundarySealed([]byte(boundaryFixture), "sealed-set", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sl := lineFor(t, out, "sealed:"); !strings.Contains(sl, "sealed: false") {
+		t.Errorf("sealed-set should rewrite its scalar:\n%s", sl)
+	}
+	if _, err := Parse(out); err != nil {
+		t.Fatalf("Parse after unseal: %v", err)
+	}
+
+	// Sealing it again with the flag it already has is a no-op.
+	same, err = SetBoundarySealed([]byte(boundaryFixture), "sealed-set", true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(same) != boundaryFixture {
+		t.Error("sealing an already-sealed boundary should be a no-op")
+	}
+}
+
+func TestSetBoundarySealedShapes(t *testing.T) {
+	// Single-line flow mapping without a sealed key gains one before the brace.
+	flow := `version: 2
+components:
+  a: { path: "a/**" }
+  b: { path: "b/**" }
+boundaries:
+  flowy: { members: [a, b] } # flow form
+`
+	out, err := SetBoundarySealed([]byte(flow), "flowy", true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fl := lineFor(t, out, "flowy:")
+	if !strings.Contains(fl, "{ members: [a, b], sealed: true }") || !strings.Contains(fl, "# flow form") {
+		t.Errorf("flow mapping should gain sealed inline and keep its comment:\n%s", fl)
+	}
+	if _, err := Parse(out); err != nil {
+		t.Fatalf("Parse after flow seal: %v", err)
+	}
+
+	// Block mapping without a sealed key gains an aligned sealed line.
+	block := `version: 2
+components:
+  a: { path: "a/**" }
+  b: { path: "b/**" }
+boundaries:
+  blocky:
+    members: [a, b]
+
+default: allow
+`
+	out, err = SetBoundarySealed([]byte(block), "blocky", true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	txt := string(out)
+	if !strings.Contains(txt, "    members: [a, b]\n    sealed: true\n") {
+		t.Errorf("block mapping should gain an aligned sealed line:\n%s", txt)
+	}
+	if !strings.Contains(txt, "default: allow") {
+		t.Error("the rest of the file must survive")
+	}
+	if _, err := Parse(out); err != nil {
+		t.Fatalf("Parse after block seal: %v", err)
+	}
+
+	// Unknown boundary errors.
+	if _, err := SetBoundarySealed([]byte(flow), "ghost", true); err == nil ||
+		!strings.Contains(err.Error(), `boundary "ghost" is not in the config`) {
+		t.Errorf("unknown boundary error = %v", err)
+	}
+}
