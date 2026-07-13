@@ -115,6 +115,55 @@ func TestLSPWorkspaceTarget(t *testing.T) {
 	})
 }
 
+// TestLSPMixedRepoResolvesOwningUnit is the polyglot-monorepo regression for
+// the LSP: in a mixed repo that is NOT a go.work workspace, a triggering file
+// resolves the unit that OWNS it by walking up from the file's directory — a
+// file in web/ checks web's TS config, a file in services/api/ checks that
+// unit's Python config — never a sibling's or the scaffolding root's. This is
+// exactly the resolution evaluateForLSP performs for every didSave round, and
+// it must not leak across unit boundaries.
+func TestLSPMixedRepoResolvesOwningUnit(t *testing.T) {
+	t.Setenv("GOWORK", "") // the root has no go.work; keep any ambient one out too
+
+	const cfg = "version: 2\ncomponents:\n  a: { path: \"**\", allow: [\"*\"] }\ndefault: deny\n"
+	root := t.TempDir()
+
+	// web/ — a TypeScript unit with its own depdog.yaml.
+	touch(t, root, "web/tsconfig.json", "{}\n")
+	touch(t, root, "web/"+config.DefaultName, cfg)
+	touch(t, root, "web/src/app.ts", "export const x = 1;\n")
+
+	// services/api/ — a Python unit with its own depdog.yaml. A different
+	// language proves per-unit adapter selection, not just per-unit config.
+	touch(t, root, "services/api/pyproject.toml", "[project]\nname = \"api\"\n")
+	touch(t, root, "services/api/"+config.DefaultName, cfg)
+	touch(t, root, "services/api/app.py", "x = 1\n")
+
+	cases := []struct {
+		name    string
+		trigger string
+		wantCfg string
+	}{
+		{"file in web resolves web", filepath.Join(root, "web", "src", "app.ts"), filepath.Join(root, "web", config.DefaultName)},
+		{"file in services/api resolves that unit", filepath.Join(root, "services", "api", "app.py"), filepath.Join(root, "services", "api", config.DefaultName)},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			cmd := cmdWithLang(t, "") // no --lang: each unit auto-detects
+			ev, rel, err := evaluateForLSP(cmd, "", tc.trigger)
+			if err != nil {
+				t.Fatalf("evaluateForLSP(%s): %v", tc.trigger, err)
+			}
+			if rel != "" {
+				t.Errorf("rel = %q, want \"\" (not a go.work member)", rel)
+			}
+			if ev.ConfigPath != mustAbs(t, tc.wantCfg) {
+				t.Errorf("resolved config = %q, want the owning unit's %q", ev.ConfigPath, mustAbs(t, tc.wantCfg))
+			}
+		})
+	}
+}
+
 // TestLSPRealWiring drives `depdog lsp` end to end — real evaluateModule, real
 // TypeScript adapter — against the ts-dirty fixture, whose known violation is
 // src/api/server.ts importing ../domain/order on line 6 (api may not reach

@@ -172,17 +172,60 @@ func resolveProject(startDir, langFlag string) (a lang.Adapter, root, cfgPath st
 		effLang = nearestConfigLang(startDir)
 	}
 	if a, err = pickAdapter(startDir, effLang); err != nil {
-		return lang.Adapter{}, "", "", err
+		return lang.Adapter{}, "", "", withUnitHint(startDir, err)
 	}
 	if root, err = adapterRoot(a, startDir); err != nil {
-		return lang.Adapter{}, "", "", err
+		return lang.Adapter{}, "", "", withUnitHint(startDir, err)
 	}
 	cfgPath = filepath.Join(root, config.DefaultName)
 	if !fileExists(cfgPath) {
-		return lang.Adapter{}, "", "", fmt.Errorf("%w: no %s in %s — run `depdog init` to create one",
-			errResolution, config.DefaultName, root)
+		return lang.Adapter{}, "", "", withUnitHint(startDir, fmt.Errorf("%w: no %s in %s — run `depdog init` to create one",
+			errResolution, config.DefaultName, root))
 	}
 	return a, root, cfgPath, nil
+}
+
+// withUnitHint appends a one-line hint to a single-project resolution failure
+// when depdog.yaml units exist below startDir, so the single-unit commands
+// (explain/graph/config/baseline/tui) teach `--all` at the moment of confusion.
+// It only augments errResolution errors — the two "no project" shapes the
+// single-project path can hit — leaving ambiguity and other errors untouched,
+// and never changes the exit code (still 2). The hint is a no-op when discovery
+// finds nothing, and for `check` the errResolution fallback fans out over the
+// same units before this error is ever surfaced, so the hint is seen only by
+// the commands that stay single-unit.
+func withUnitHint(startDir string, err error) error {
+	if !errors.Is(err, errResolution) {
+		return err
+	}
+	units, _, derr := config.DiscoverUnits(startDir, registryMarkers())
+	if derr != nil || len(units) == 0 {
+		return err
+	}
+	return fmt.Errorf("%w\n\nfound %d %s under this tree — cd into a unit (%s) or run `depdog check --all`",
+		err, len(units), config.DefaultName, unitHintDirs(units))
+}
+
+// unitHintDirs renders a couple of discovered unit directories for the hint,
+// eliding the rest with an ellipsis so the line stays short regardless of how
+// many units the tree holds.
+func unitHintDirs(units []config.Unit) string {
+	const show = 2
+	names := make([]string, 0, show+1)
+	for i, u := range units {
+		if i >= show {
+			names = append(names, "…")
+			break
+		}
+		rel := u.Rel
+		if rel == "." {
+			rel = "the repo root"
+		} else {
+			rel += "/"
+		}
+		names = append(names, rel)
+	}
+	return strings.Join(names, ", ")
 }
 
 // nearestConfigLang walks up from startDir to the nearest depdog.yaml and

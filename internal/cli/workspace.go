@@ -133,7 +133,10 @@ func checkFlagConflicts(cmd *cobra.Command, o checkOptions, args []string) error
 	}
 	if o.all {
 		if lang, _ := cmd.Flags().GetString("lang"); lang != "" {
-			return fmt.Errorf("--lang cannot be combined with --all: units auto-detect their language; pin one unit with `lang:` in its depdog.yaml")
+			// Phrased so the flag name is not the first word: fang
+			// title-cases the first letter of the error banner, which would
+			// otherwise render "--lang" as "--Lang".
+			return fmt.Errorf("combining --lang with --all is not allowed: units auto-detect their language; pin one unit with `lang:` in its depdog.yaml")
 		}
 		if len(o.modules) > 0 {
 			return fmt.Errorf("--module cannot be combined with --all (--module is go.work-only; use --unit to narrow an --all run)")

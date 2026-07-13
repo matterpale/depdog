@@ -24,3 +24,28 @@ depdog graph --lang rs        # force the Rust adapter
 A directory that carries markers for **two** languages with no `--lang` is
 genuinely ambiguous: depdog exits with a usage error naming `--lang` rather than
 silently guessing.
+
+## The `lang:` config key
+
+For a project whose markers are ambiguous, the optional top-level `lang:` key in
+its `depdog.yaml` pins the adapter without passing `--lang` on every invocation:
+
+```yaml
+version: 2
+lang: kt        # a JVM project rooted only on build.gradle: pin Kotlin
+components:
+  # …
+```
+
+Resolution order is: an explicit `--lang` flag, else the config's `lang:` key,
+else auto-detection. `lang:` takes any adapter id from the table above.
+
+## Monorepos and `--all`
+
+`--lang` and `lang:` select the adapter for a **single** project. A polyglot
+monorepo has many projects in one tree, each its own language — so
+`depdog check --all` discovers every `depdog.yaml` under the cwd and lets **each
+unit** auto-detect its own adapter (or pin one with its `lang:` key). A global
+`--lang` would force one language on every unit, which never makes sense under
+`--all`, so depdog rejects the combination. See
+[docs/monorepo.md](monorepo.md).

@@ -25,10 +25,14 @@ usually live in someone's head or a wiki, and they rot.
 
 You declare who may import whom in a `depdog.yaml`, and
 depdog checks it against every import edge in your codebase, exiting
-non-zero for CI. One neutral rule format and one engine, **polyglot**
-across [nine languages](#multi-language-support) through thin, hot-swappable
-adapters. Every adapter is a pure static import scanner — **no build, no
-toolchain** — so depdog is fast and runs even on code that doesn't compile yet.
+non-zero for CI. **Nine languages, one tool, one command — even in one repo:**
+one neutral rule format and one engine, **polyglot** across
+[nine languages](#multi-language-support) through thin, hot-swappable adapters,
+and `depdog check --all` governs a mixed monorepo — a `web/` TS app, a
+`services/api` Go module, an `ml/` Python package — in a single pass with one
+exit code ([monorepos](#monorepos)). Every adapter is a pure static import
+scanner — **no build, no toolchain** — so depdog is fast and runs even on code
+that doesn't compile yet.
 
 <sub>*Unlike Go-package-loader–based linters such as
 [go-arch-lint](https://github.com/fe3dback/go-arch-lint) (which load your
@@ -163,6 +167,17 @@ GitHub format; for GitHub code scanning, emit SARIF:
   with: { sarif_file: depdog.sarif }
 ```
 
+For a **polyglot monorepo**, one step governs every language at once — from the
+repo root, `--all` discovers every `depdog.yaml` under the tree, checks each
+unit against its own auto-detected adapter, and aggregates into one report with
+a single exit code:
+
+```yaml
+- run: go run github.com/matterpale/depdog/cmd/depdog check --all --format github
+```
+
+See [monorepos](#monorepos) for what a unit is and how discovery works.
+
 ### Ratchet-friendly
 
 For a codebase that doesn't pass yet: record today's violations as a baseline,
@@ -280,13 +295,20 @@ per-editor snippets in [docs/editors.md](docs/editors.md).
   the host's `GOOS`/`GOARCH` and default build tags; imports guarded by other
   build constraints (e.g. `//go:build windows` on a non-Windows machine) aren't
   seen.
-- **Go workspaces — per-module checks.** In a Go workspace (`go.work`), `depdog
-  check` fans out over every member module that has its own `depdog.yaml`,
-  reporting them together (members without one are advisory-skipped); narrow the
-  run with `--module <path-or-dir>` (repeatable). Each member is still checked as
-  a single module, so an import between two workspace members classifies as
-  `external` — depdog does not yet govern edges *between* members. `GOWORK=off`
-  forces the classic single-module check.
+- <a id="monorepos"></a>**Monorepos — per-unit, no cross-unit governance.**
+  depdog checks a monorepo by fanning out over its **units**, each checked
+  independently against its own `depdog.yaml`, via two discovery kinds:
+  **`go.work` fan-out** (automatic — inside a Go workspace `depdog check` fans
+  out over every member module with a `depdog.yaml`; members without one are
+  advisory-skipped, `--module <path-or-dir>` narrows, `GOWORK=off` opts out),
+  and **`--all` polyglot discovery** (any language — from the repo root `depdog
+  check --all` walks down, discovers *every* `depdog.yaml`, and checks each unit
+  against its own auto-detected adapter; `--unit <dir>` narrows). Both aggregate
+  into one report and a single exit code (max severity across units) in every
+  `--format`. Each unit is still checked in isolation, so an import from one
+  unit into another classifies as `external`: depdog does **not** yet govern
+  edges *between* units — cross-unit governance is designed future work, not
+  part of this release. Full guide: [docs/monorepo.md](docs/monorepo.md).
 
 ## License
 

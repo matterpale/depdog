@@ -46,8 +46,20 @@ files, or `--lang <id>` forces one:
 | `scala` | Scala | `build.sbt`, `build.sc` |
 | `elm` | Elm | `elm.json` |
 
+If a directory's markers are ambiguous (e.g. a JVM project rooted only on
+`build.gradle`, claimed by both Java and Kotlin), pin the adapter per project
+with an optional top-level `lang:` key in its `depdog.yaml` (`lang: kt`) instead
+of passing `--lang` every time.
+
 A bare `depdog` (no subcommand) runs `depdog check`. The subcommands are `init`,
 `check`, `config`, `explain`, `graph`, `baseline`, `tui`, and `lsp`.
+
+**Polyglot monorepo:** for a repo with several projects in one tree — a `web/`
+TS app, a `services/api` Go module, an `ml/` Python package, each with its own
+`depdog.yaml` — run `depdog check --all` from the repo root. It discovers every
+`depdog.yaml` under the cwd, checks each unit against its own auto-detected
+adapter, and aggregates into one report with a single exit code. Narrow it with
+`--unit <dir>` (repeatable). Full guide: [docs/monorepo.md](../../docs/monorepo.md).
 
 ## The main task: author & maintain depdog.yaml
 
@@ -192,7 +204,8 @@ annotations:
 ```
 
 Combine with `--fail-on new` (and a committed `depdog.baseline.yaml`) to gate only
-new violations on a legacy repo.
+new violations on a legacy repo. In a **polyglot monorepo**, `depdog check --all
+--format github` governs every unit in one step (see the monorepo note above).
 
 ## Editors (LSP)
 
