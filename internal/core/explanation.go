@@ -252,10 +252,12 @@ func (e Explain) targetDescription() string {
 	switch e.Target {
 	case "std":
 		return "the standard library"
-	case "external":
+	case "external", "external module":
+		// Both classify the destination as outside the module. The two spellings
+		// are a resolution-path artifact (check emits "external"; explain/MCP
+		// resolve a specific module and emit "external module"), so they must
+		// read identically — the concrete module path is named via TargetRef.
 		return "an external dependency"
-	case "external module":
-		return "an external module"
 	case "unassigned", "":
 		return "an unassigned package"
 	default:

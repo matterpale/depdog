@@ -82,9 +82,30 @@ func TestExplanation(t *testing.T) {
 				Target:        "external module",
 				TargetRef:     "github.com/evil/mod",
 			},
-			wantContains: []string{"handler", "`golang.org/x/sync`", "external module", "Fix:", "add `github.com/evil/mod`"},
+			wantContains: []string{"handler", "`golang.org/x/sync`", "external dependency", "Fix:", "add `github.com/evil/mod`"},
 			want: "`m/internal/handler/checkout` (component `handler`) may import only `golang.org/x/sync`; " +
-				"`github.com/evil/mod` (an external module) is not among them. " +
+				"`github.com/evil/mod` (an external dependency) is not among them. " +
+				"Fix: add `github.com/evil/mod` to `handler`'s allow list, or depend only on what `handler` already allows.",
+		},
+		{
+			// Same external-module edge as above, but with the classification the
+			// check path emits (Target "external" rather than the explain/MCP
+			// path's "external module"). Both MUST read identically — this pins
+			// the two paths together so the cross-surface wording can't drift.
+			name: "rule/whitelist/external target (check-path shape) matches explain-path wording",
+			in: Explain{
+				From:          "m/internal/handler/checkout",
+				To:            "github.com/evil/mod",
+				Kind:          ReasonRule,
+				FromComponent: "handler",
+				Allow:         []Ref{{Kind: RefExternalModule, Name: "golang.org/x/sync"}},
+				Stance:        PolicyDeny,
+				Target:        "external",
+				TargetRef:     "github.com/evil/mod",
+			},
+			wantContains: []string{"handler", "`golang.org/x/sync`", "external dependency", "Fix:", "add `github.com/evil/mod`"},
+			want: "`m/internal/handler/checkout` (component `handler`) may import only `golang.org/x/sync`; " +
+				"`github.com/evil/mod` (an external dependency) is not among them. " +
 				"Fix: add `github.com/evil/mod` to `handler`'s allow list, or depend only on what `handler` already allows.",
 		},
 		{
