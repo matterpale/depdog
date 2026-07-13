@@ -18,8 +18,9 @@ components:
   report: { path: "internal/report/**",      allow: [core, std, external] } # lipgloss styles the human output
   wizard: { path: "internal/wizard/**",      allow: [core, std] } # pure heuristics: engine matcher + std only
   lsp:    { path: "internal/lsp/**",         allow: [core, std] } # hand-rolled JSON-RPC: stdlib only, like core
+  mcp:    { path: "internal/mcp/**",         allow: [core, std] } # hand-rolled JSON-RPC: stdlib only, like lsp
   tui:    { path: "internal/tui/**",         allow: [core, std, external] } # bubbletea view over core
-  cli:    { path: "internal/cli/**",         allow: [core, config, lang, golang, typescript, python, ruby, rust, java, kotlin, scala, elm, report, wizard, lsp, tui, std, external] }
+  cli:    { path: "internal/cli/**",         allow: [core, config, lang, golang, typescript, python, ruby, rust, java, kotlin, scala, elm, report, wizard, lsp, mcp, tui, std, external] }
   e2e:    { path: "internal/e2e/**",         allow: [std] }
 
 default: deny

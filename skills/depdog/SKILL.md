@@ -214,6 +214,18 @@ inline diagnostics at their import lines, with `explain` verdicts on hover. Poin
 any LSP-capable editor at the command `depdog lsp` (project marker: `depdog.yaml`).
 Per-editor setup is in [docs/editors.md](../../docs/editors.md).
 
+## Agents (MCP)
+
+If you are an MCP-capable agent, you can call depdog's read-only tools in the
+loop instead of shelling out: `depdog mcp` exposes `check` (violations as JSON),
+`explain(from, to)` (an edge's verdict + deciding rule/boundary with file:line),
+and `can_import(from, to)` (a cheap rule-set-only pre-check — "may this package
+import that?", no graph scan) as MCP tools, plus `depdog://config` and
+`depdog://components` as resources. Use `can_import` before writing an import and
+`check`/`explain` to interpret violations. Read-only — authoring `depdog.yaml`
+stays in your editor (validated with `check`/`config`), never over MCP. Setup and
+the full tool/resource reference: [docs/mcp.md](../../docs/mcp.md).
+
 ## Best practices
 
 - **Start permissive, tighten incrementally.** Begin with `default: allow` and
