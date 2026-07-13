@@ -156,13 +156,21 @@ func TestAdapterForUnit(t *testing.T) {
 		}
 	})
 
-	t.Run("empty lang on ambiguous markers errors", func(t *testing.T) {
+	t.Run("empty lang on ambiguous markers errors, suggesting the lang: key", func(t *testing.T) {
 		dir := t.TempDir()
 		touch(t, dir, "go.mod", "module x\n")
 		touch(t, dir, "package.json", `{"name":"x"}`)
 		_, err := adapterForUnit(dir, "")
 		if err == nil {
 			t.Fatal("ambiguous markers with no lang: key must error")
+		}
+		// Under --all, --lang is a usage error, so the remediation must point at
+		// the `lang:` config key (D7), not the single-project --lang guidance.
+		if !strings.Contains(err.Error(), "lang:") {
+			t.Errorf("ambiguity error should suggest the `lang:` config key:\n%v", err)
+		}
+		if strings.Contains(err.Error(), "pass --lang") {
+			t.Errorf("ambiguity error must not tell an --all unit to pass --lang (it is a usage error under --all):\n%v", err)
 		}
 	})
 

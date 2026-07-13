@@ -104,7 +104,9 @@ func evaluateCheckTargets(cmd *cobra.Command, o checkOptions, args []string) (*c
 	}
 	if ws == nil {
 		// [d] single module, with the discovery fallback on a resolution error.
-		run, err := singleRun(cmd, o.configPath, args)
+		// configPath is necessarily "" here — branch [a] already returned for a
+		// non-empty --config.
+		run, err := singleRun(cmd, "", args)
 		if err == nil {
 			return run, nil
 		}

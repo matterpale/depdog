@@ -264,6 +264,14 @@ func adapterForUnit(dir, cfgLang string) (lang.Adapter, error) {
 	}
 	a, _, err := detectLanguage(dir)
 	if err != nil {
+		// Under --all, --lang is a usage error, so the single-project
+		// "pass --lang" guidance would point at a forbidden action. Redirect
+		// an ambiguous unit to the `lang:` config key (D7) instead.
+		var amb *ambiguousLangError
+		if errors.As(err, &amb) {
+			return lang.Adapter{}, fmt.Errorf("ambiguous project language: %s matches %s — add `lang: <one of: %s>` to this unit's depdog.yaml (--lang is not available under --all)",
+				amb.dir, strings.Join(amb.names, " and "), strings.Join(amb.names, ", "))
+		}
 		return lang.Adapter{}, err
 	}
 	return a, nil
@@ -343,13 +351,26 @@ func unknownLangError(name string) error {
 	return fmt.Errorf("unknown --lang %q (one of: %s)", name, strings.Join(languageNames(), ", "))
 }
 
+// ambiguousLangError reports a directory whose markers match more than one
+// adapter. It carries the matched names so callers can tailor the remediation:
+// single-project runs suggest --lang, whereas a --all fan-out unit suggests the
+// `lang:` config key (since --lang is a usage error under --all).
+type ambiguousLangError struct {
+	dir   string
+	names []string
+}
+
+func (e *ambiguousLangError) Error() string {
+	return fmt.Sprintf("ambiguous project language: %s matches %s — pass --lang (one of: %s) to choose the adapter",
+		e.dir, strings.Join(e.names, " and "), strings.Join(languageNames(), ", "))
+}
+
 func ambiguityError(dir string, matched []lang.Adapter) error {
 	names := make([]string, len(matched))
 	for i, a := range matched {
 		names[i] = a.Name
 	}
-	return fmt.Errorf("ambiguous project language: %s matches %s — pass --lang (one of: %s) to choose the adapter",
-		dir, strings.Join(names, " and "), strings.Join(languageNames(), ", "))
+	return &ambiguousLangError{dir: dir, names: names}
 }
 
 func noProjectError(startDir string) error {
