@@ -29,9 +29,13 @@ type memberEval struct {
 
 // checkRun is what `check` resolved to evaluate. Workspace is nil for a plain
 // single-module run (Members holds exactly one analyzed entry) and non-nil for
-// a workspace fan-out.
+// a go.work fan-out. Root is the walk-root's basename (the go.work dir for a
+// workspace fan-out, the cwd for a polyglot --all/fallback run), labelling the
+// JSON envelope's "root" field without leaking an absolute path; it is empty for
+// a single-module run.
 type checkRun struct {
 	Workspace *config.Workspace
+	Root      string
 	Members   []memberEval
 }
 
@@ -183,7 +187,7 @@ func evaluateWorkspace(cmd *cobra.Command, ws *config.Workspace, modules, args [
 	if err != nil {
 		return nil, err
 	}
-	run := &checkRun{Workspace: ws}
+	run := &checkRun{Workspace: ws, Root: filepath.Base(ws.Dir)}
 	for _, dir := range dirs {
 		rel := relSlash(ws.Dir, dir)
 		cfgPath := filepath.Join(dir, config.DefaultName)
@@ -195,7 +199,7 @@ func evaluateWorkspace(cmd *cobra.Command, ws *config.Workspace, modules, args [
 		if err != nil {
 			return nil, fmt.Errorf("checking ./%s: %w", rel, err)
 		}
-		run.Members = append(run.Members, memberEval{Rel: rel, Eval: ev})
+		run.Members = append(run.Members, memberEval{Rel: rel, Lang: adapter.Name, Eval: ev})
 	}
 	if !run.hasAnalyzed() {
 		return nil, fmt.Errorf("no workspace member has a %s — run `depdog init` in the members you want checked", config.DefaultName)
@@ -231,7 +235,7 @@ func runUnits(cmd *cobra.Command, cwd string, units []config.Unit, ungoverned, s
 	if err != nil {
 		return nil, err
 	}
-	run := &checkRun{}
+	run := &checkRun{Root: filepath.Base(cwd)}
 	for _, u := range selected {
 		cfgPath := filepath.Join(u.Dir, config.DefaultName)
 		rs, err := config.Load(cfgPath)
@@ -376,7 +380,7 @@ func reportCheck(cmd *cobra.Command, run *checkRun, format, color string, elapse
 	case "text":
 		return total, report.TextWorkspace(out, mods, skipped, elapsed, color)
 	case "json":
-		return total, report.JSONWorkspace(out, workspaceName(run), mods, skipped, elapsed)
+		return total, report.JSONWorkspace(out, run.Root, mods, skipped, elapsed)
 	case "github":
 		return total, report.GitHubWorkspace(out, mods)
 	case "sarif":
@@ -384,16 +388,6 @@ func reportCheck(cmd *cobra.Command, run *checkRun, format, color string, elapse
 	default:
 		return 0, fmt.Errorf("unknown --format %q (text, json, github or sarif)", format)
 	}
-}
-
-// workspaceName is the go.work directory's basename, labelling the JSON
-// envelope without leaking an absolute path. The aggregate branch is only
-// reached in workspace mode, but the nil guard keeps it defensive.
-func workspaceName(run *checkRun) string {
-	if run.Workspace == nil {
-		return ""
-	}
-	return filepath.Base(run.Workspace.Dir)
 }
 
 func renderSingle(out io.Writer, format string, res *core.Result, rules *core.RuleSet, elapsed time.Duration, color string) error {

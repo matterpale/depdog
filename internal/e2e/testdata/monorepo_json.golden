@@ -1,0 +1,191 @@
+{
+  "root": "monorepo",
+  "units": [
+    {
+      "dir": "ml",
+      "lang": "py",
+      "module": "ml",
+      "default": "deny",
+      "violations": [],
+      "warnings": [],
+      "components": [
+        {
+          "name": "domain",
+          "stance": "whitelist",
+          "allow": [
+            "std"
+          ],
+          "packages": 1,
+          "edges": 2,
+          "violations": 0
+        },
+        {
+          "name": "handler",
+          "stance": "whitelist",
+          "allow": [
+            "service",
+            "std",
+            "external"
+          ],
+          "packages": 1,
+          "edges": 3,
+          "violations": 0
+        },
+        {
+          "name": "service",
+          "stance": "whitelist",
+          "allow": [
+            "domain",
+            "std"
+          ],
+          "packages": 1,
+          "edges": 2,
+          "violations": 0
+        }
+      ],
+      "boundaries": [],
+      "cycles": [],
+      "stats": {
+        "packages": 3,
+        "edges": 7,
+        "duration_ms": 0
+      }
+    },
+    {
+      "dir": "services/api",
+      "lang": "go",
+      "module": "example.test/api",
+      "default": "deny",
+      "violations": [],
+      "warnings": [],
+      "components": [
+        {
+          "name": "domain",
+          "stance": "whitelist",
+          "allow": [
+            "std"
+          ],
+          "packages": 1,
+          "edges": 1,
+          "violations": 0
+        },
+        {
+          "name": "handler",
+          "stance": "whitelist",
+          "allow": [
+            "service",
+            "domain",
+            "std"
+          ],
+          "packages": 1,
+          "edges": 3,
+          "violations": 0
+        },
+        {
+          "name": "main",
+          "stance": "whitelist",
+          "allow": [
+            "*"
+          ],
+          "packages": 1,
+          "edges": 2,
+          "violations": 0
+        },
+        {
+          "name": "service",
+          "stance": "whitelist",
+          "allow": [
+            "domain",
+            "std"
+          ],
+          "packages": 1,
+          "edges": 2,
+          "violations": 0
+        }
+      ],
+      "boundaries": [],
+      "cycles": [],
+      "stats": {
+        "packages": 4,
+        "edges": 8,
+        "duration_ms": 0
+      }
+    },
+    {
+      "dir": "web",
+      "lang": "ts",
+      "module": "web",
+      "default": "deny",
+      "violations": [
+        {
+          "from_package": "web/src/api",
+          "from_component": "api",
+          "import": "../domain/order",
+          "target": "domain",
+          "rule": "api: allow [service, std, external]",
+          "test_only": false,
+          "positions": [
+            {
+              "file": "src/api/server.ts",
+              "line": 7
+            }
+          ]
+        }
+      ],
+      "warnings": [],
+      "components": [
+        {
+          "name": "api",
+          "stance": "whitelist",
+          "allow": [
+            "service",
+            "std",
+            "external"
+          ],
+          "packages": 1,
+          "edges": 3,
+          "violations": 1
+        },
+        {
+          "name": "domain",
+          "stance": "whitelist",
+          "allow": [
+            "std"
+          ],
+          "packages": 1,
+          "edges": 1,
+          "violations": 0
+        },
+        {
+          "name": "service",
+          "stance": "whitelist",
+          "allow": [
+            "domain",
+            "std"
+          ],
+          "packages": 1,
+          "edges": 2,
+          "violations": 0
+        }
+      ],
+      "boundaries": [],
+      "cycles": [],
+      "stats": {
+        "packages": 3,
+        "edges": 6,
+        "duration_ms": 0
+      }
+    }
+  ],
+  "skipped": [
+    {
+      "dir": "./legacy",
+      "reason": "no depdog.yaml"
+    }
+  ],
+  "stats": {
+    "packages": 10,
+    "edges": 21,
+    "duration_ms": 0
+  }
+}

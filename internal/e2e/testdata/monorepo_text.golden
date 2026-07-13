@@ -1,0 +1,23 @@
+▸ ./ml (py)
+depdog check — ml
+
+✓ no violations · 3 packages · 7 edges checked in X
+
+▸ ./services/api (go)
+depdog check — example.test/api
+
+✓ no violations · 4 packages · 8 edges checked in X
+
+▸ ./web (ts)
+depdog check — web
+
+✗ api: allow [service, std, external]  (1 violation)
+    web/src/api
+      → ../domain/order  src/api/server.ts:7
+
+1 violation · 3 packages · 6 edges checked in X
+
+! 1 unit skipped (no depdog.yaml):
+    ./legacy
+
+✗ 1 violation across 3 checked units (1 skipped) · 10 packages · 21 edges · checked in X

@@ -21,8 +21,8 @@ func GitHub(w io.Writer, res *core.Result) error {
 	return err
 }
 
-// GitHubWorkspace emits annotations for every analyzed member, each file path
-// prefixed with the member's workspace-relative directory so annotations land
+// GitHubWorkspace emits annotations for every analyzed unit, each file path
+// prefixed with the unit's walk-root-relative directory so annotations land
 // on the right file from the repo root, then one aggregate summary line.
 func GitHubWorkspace(w io.Writer, mods []Module) error {
 	var b strings.Builder
@@ -32,14 +32,14 @@ func GitHubWorkspace(w io.Writer, mods []Module) error {
 		totalV += len(m.Result.Violations)
 		totalP += m.Result.Stats.Packages
 	}
-	fmt.Fprintf(&b, "depdog check — workspace · %s · %s across %s\n",
-		plural(totalV, "violation"), plural(totalP, "package"), plural(len(mods), "module"))
+	fmt.Fprintf(&b, "depdog check — monorepo · %s · %s across %s\n",
+		plural(totalV, "violation"), plural(totalP, "package"), plural(len(mods), "checked unit"))
 	_, err := io.WriteString(w, b.String())
 	return err
 }
 
 // githubAnnotations writes the ::error::/::warning:: lines for one result.
-// prefix (a member's workspace-relative dir, "" for a single module) is joined
+// prefix (a unit's walk-root-relative dir, "" for a single unit) is joined
 // onto each file location.
 func githubAnnotations(b *strings.Builder, res *core.Result, prefix string) {
 	for _, v := range res.Violations {

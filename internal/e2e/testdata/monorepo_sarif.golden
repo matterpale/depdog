@@ -1,0 +1,66 @@
+{
+  "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
+  "version": "2.1.0",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "name": "depdog",
+          "informationUri": "https://github.com/matterpale/depdog",
+          "version": "0.0.0-dev",
+          "rules": []
+        }
+      },
+      "results": []
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "depdog",
+          "informationUri": "https://github.com/matterpale/depdog",
+          "version": "0.0.0-dev",
+          "rules": []
+        }
+      },
+      "results": []
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "depdog",
+          "informationUri": "https://github.com/matterpale/depdog",
+          "version": "0.0.0-dev",
+          "rules": [
+            {
+              "id": "api",
+              "shortDescription": {
+                "text": "Import rules for component api"
+              }
+            }
+          ]
+        }
+      },
+      "results": [
+        {
+          "ruleId": "api",
+          "level": "error",
+          "message": {
+            "text": "api imports ../domain/order (api: allow [service, std, external])"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "web/src/api/server.ts"
+                },
+                "region": {
+                  "startLine": 7
+                }
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

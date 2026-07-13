@@ -106,16 +106,26 @@ func JSON(w io.Writer, res *core.Result, rs *core.RuleSet, elapsed time.Duration
 	return enc.Encode(buildReport(res, rs, elapsed))
 }
 
-// jsonWorkspaceReport is the aggregate envelope for a workspace check: the
-// go.work directory's basename, one jsonReport per analyzed member, the members
-// skipped for lack of a config, and rolled-up stats. A single-module run keeps
-// emitting jsonReport at the top level (no envelope), so existing consumers are
-// unaffected; the presence of the "modules" array is the discriminator.
+// jsonWorkspaceReport is the aggregate envelope for a multi-unit check (a go.work
+// fan-out or a polyglot --all run): the walk-root's basename, one jsonUnit per
+// analyzed unit, the marker directories skipped for lack of a config, and
+// rolled-up stats. A single-unit run keeps emitting jsonReport at the top level
+// (no envelope), so existing consumers are unaffected; the presence of the
+// "units" array is the discriminator.
 type jsonWorkspaceReport struct {
-	Workspace string       `json:"workspace"`
-	Modules   []jsonReport `json:"modules"`
-	Skipped   []jsonSkip   `json:"skipped"`
-	Stats     jsonStats    `json:"stats"`
+	Root    string     `json:"root"`
+	Units   []jsonUnit `json:"units"`
+	Skipped []jsonSkip `json:"skipped"`
+	Stats   jsonStats  `json:"stats"`
+}
+
+// jsonUnit is one analyzed unit in the envelope: its walk-root-relative
+// directory (a stable key), the adapter that checked it, and the same per-unit
+// jsonReport fields a single-unit run emits ("module", "violations", …).
+type jsonUnit struct {
+	Dir  string `json:"dir"`
+	Lang string `json:"lang"`
+	jsonReport
 }
 
 type jsonSkip struct {
@@ -123,18 +133,22 @@ type jsonSkip struct {
 	Reason string `json:"reason"`
 }
 
-// JSONWorkspace encodes the workspace envelope. Per-module duration is left at 0
-// (only the aggregate carries elapsed); workspace is the go.work directory's
-// basename and each member self-identifies by its module path, so no
-// machine-specific absolute path leaks into the output.
-func JSONWorkspace(w io.Writer, workspace string, mods []Module, skipped []Skipped, elapsed time.Duration) error {
+// JSONWorkspace encodes the aggregate envelope. Per-unit duration is left at 0
+// (only the aggregate carries elapsed); root is the walk-root's basename and
+// each unit self-identifies by its dir + module path, so no machine-specific
+// absolute path leaks into the output.
+func JSONWorkspace(w io.Writer, root string, mods []Module, skipped []Skipped, elapsed time.Duration) error {
 	out := jsonWorkspaceReport{
-		Workspace: workspace,
-		Modules:   make([]jsonReport, 0, len(mods)),
-		Skipped:   make([]jsonSkip, 0, len(skipped)),
+		Root:    root,
+		Units:   make([]jsonUnit, 0, len(mods)),
+		Skipped: make([]jsonSkip, 0, len(skipped)),
 	}
 	for _, m := range mods {
-		out.Modules = append(out.Modules, buildReport(m.Result, m.Rules, 0))
+		out.Units = append(out.Units, jsonUnit{
+			Dir:        m.Rel,
+			Lang:       m.Lang,
+			jsonReport: buildReport(m.Result, m.Rules, 0),
+		})
 		out.Stats.Packages += m.Result.Stats.Packages
 		out.Stats.Edges += m.Result.Stats.Edges
 	}
