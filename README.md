@@ -25,9 +25,16 @@ usually live in someone's head or a wiki, and they rot.
 
 You declare who may import whom in a `depdog.yaml`, and
 depdog checks it against every import edge in your codebase, exiting
-non-zero for CI. One neutral rule format,
-one engine, and a thin hot-swappable
-[language adapter](#multi-language-support).
+non-zero for CI. One neutral rule format and one engine, **polyglot**
+across [nine languages](#multi-language-support) through thin, hot-swappable
+adapters. Every adapter is a pure static import scanner — **no build, no
+toolchain** — so depdog is fast and runs even on code that doesn't compile yet.
+
+<sub>*Unlike Go-package-loader–based linters such as
+[go-arch-lint](https://github.com/fe3dback/go-arch-lint) (which load your
+packages through the Go toolchain), depdog scans source directly — so it works
+mid-refactor, on a broken build, and across languages with no Go toolchain at
+all.*</sub>
 
 ```
 depdog check — github.com/matterpale/depdog
