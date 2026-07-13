@@ -188,6 +188,37 @@ depdog baseline                 # writes depdog.baseline.yaml
 depdog check --fail-on new      # exits 1 only on violations not in the baseline
 ```
 
+### Diff your architecture per PR
+
+`depdog diff --since <ref>` reports how a change *moved* the architecture: the
+cross-component import edges a branch **adds** and **removes** relative to a git
+ref, each flagged when it crosses a boundary — e.g. "3 new cross-component edges
+(1 crosses the `adapters` boundary), 1 removed". It is **informational** (always
+exits `0`, unlike `check`), so it never blocks a merge — it surfaces new
+structure a reviewer should notice.
+
+Post it as a PR comment with the GitHub-flavoured markdown format:
+
+```yaml
+- name: Architecture diff
+  run: |
+    go run github.com/matterpale/depdog/cmd/depdog diff \
+      --since origin/${{ github.base_ref }} --format github > diff.md
+    gh pr comment ${{ github.event.number }} --body-file diff.md
+  env: { GH_TOKEN: ${{ github.token }} }
+```
+
+Use `--format json` for tooling — a stable, sorted `{ since, added[], removed[],
+stats }` delta (snake_case; empty collections are `[]`, never `null`):
+
+```bash
+depdog diff --since origin/main --format json | jq '.stats'
+```
+
+The "before" graph is the ref materialized in a throwaway git worktree; both
+graphs are mapped to components under the *current* `depdog.yaml`, so the diff
+reflects structural movement, not a config change.
+
 ## Commands
 
 | Command                                          | What it does                                                                                                                                       |
@@ -195,6 +226,7 @@ depdog check --fail-on new      # exits 1 only on violations not in the baseline
 | `depdog init`                                    | Scan the module and write a starter `depdog.yaml`; `--merge` extends an existing one in place                                                      |
 | `depdog check [packages]`                        | Evaluate every import edge against the rules                                                                                                       |
 | `depdog graph`                                   | Emit the dependency graph as DOT or Mermaid                                                                                                        |
+| `depdog diff --since <ref>`                      | Show how a change moved the architecture vs a git ref: cross-component edges added/removed, boundary crossings flagged (informational, exits `0`)   |
 | `depdog explain <component-or-package> [import]` | Explain why something is red (rule/boundary that fired, with file:line), constraints, boundary membership etc.                                     |
 | `depdog config`                                  | Print the compiled rule set — components, patterns, inferred stances, boundaries, options — for debugging a config                                 |
 | `depdog lsp`                                     | LSP server over stdio: violations become inline editor diagnostics at their import lines ([editor setup](docs/editors.md) · [design](docs/lsp.md)) |
@@ -209,6 +241,7 @@ depdog check --fail-on new      # exits 1 only on violations not in the baseline
 | `init`  | `--preset ddd\|hexagonal\|layered\|flat` · `--default deny\|allow` · `--yes` (non-interactive) · `--force` (overwrite) · `--merge` (extend an existing file, preserving comments and formatting) |
 | `check` | `--format text\|json\|github\|sarif` · `--fail-on any\|new` · `--color auto\|always\|never`                                                                                                      |
 | `graph` | `--format dot\|mermaid` · `--level component\|package` · `--violations-only` · `--focus <component>`                                                                                             |
+| `diff`  | `--since <ref>` (required) · `--format text\|github\|json`                                                                                                                                       |
 
 </details>
 

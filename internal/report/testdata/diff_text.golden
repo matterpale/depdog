@@ -1,0 +1,10 @@
+depdog diff — since origin/main
+
+2 cross-component edges added, 1 removed; 1 crosses a boundary
+
++ added
+    + handler → repository  (crosses boundary "adapters")
+    + handler → service
+
+- removed
+    - service → config

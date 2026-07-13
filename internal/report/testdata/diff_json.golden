@@ -1,0 +1,28 @@
+{
+  "since": "origin/main",
+  "added": [
+    {
+      "from": "handler",
+      "to": "repository",
+      "crosses_boundary": true,
+      "boundary": "adapters"
+    },
+    {
+      "from": "handler",
+      "to": "service",
+      "crosses_boundary": false
+    }
+  ],
+  "removed": [
+    {
+      "from": "service",
+      "to": "config",
+      "crosses_boundary": false
+    }
+  ],
+  "stats": {
+    "added": 2,
+    "removed": 1,
+    "boundary_crossings": 1
+  }
+}
