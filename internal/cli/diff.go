@@ -156,13 +156,16 @@ func resolveModule(cmd *cobra.Command, configPath string) (adapter lang.Adapter,
 }
 
 // gitRepoRoot returns the repository top-level dir for the tree at dir, or an
-// actionable error when dir is not inside a git repo.
+// actionable error when dir is not inside a git repo. git reports the path with
+// forward slashes even on Windows, so normalize it to the OS-native separator —
+// otherwise filepath.Rel against Go's native module path yields a broken
+// module-relative dir and the worktree scan can't find go.mod (Windows CI).
 func gitRepoRoot(dir string) (string, error) {
 	out, err := runGit(dir, "rev-parse", "--show-toplevel")
 	if err != nil {
 		return "", fmt.Errorf("not a git repository (%s) — `depdog diff` needs git to materialize the --since ref: %w", dir, err)
 	}
-	return strings.TrimSpace(out), nil
+	return filepath.FromSlash(strings.TrimSpace(out)), nil
 }
 
 func gitWorktreeAdd(repoRoot, tmp, ref string) error {

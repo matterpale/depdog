@@ -134,6 +134,36 @@ default: allow
 	}
 }
 
+// TestDiffCleansUpWorktreeOnScanError locks in the safety invariant that the
+// temporary worktree is torn down even when the "before" scan fails AFTER the
+// worktree is created: the first commit has no go.mod, so scanning that ref
+// errors, and the deferred cleanup must still leave no worktree behind.
+func TestDiffCleansUpWorktreeOnScanError(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "depdog.yaml"),
+		"version: 2\ncomponents:\n  a: { path: \"**\", allow: [\"*\"] }\ndefault: allow\n")
+	writeFile(t, filepath.Join(dir, "a.go"), "package a\n")
+	gitInit(t, dir)
+	git(t, dir, "add", "-A")
+	git(t, dir, "commit", "-q", "-m", "no go.mod yet")
+	first := git(t, dir, "rev-parse", "HEAD")
+
+	// Current tree adds go.mod so the "after" scan resolves; the "before" ref
+	// still lacks it, so scanning the materialized worktree fails after add.
+	writeFile(t, filepath.Join(dir, "go.mod"), "module example.test/diff\n\ngo 1.26\n")
+	git(t, dir, "add", "-A")
+	git(t, dir, "commit", "-q", "-m", "add go.mod")
+
+	_, stderr, exit := run(t, dir, "diff", "--since", first)
+	if exit != 2 {
+		t.Fatalf("exit %d, want 2 (before-scan fails: no go.mod at the ref)\nstderr:\n%s", exit, stderr)
+	}
+	// Despite the scan error, the deferred cleanup must have removed the worktree.
+	if wt := git(t, dir, "worktree", "list"); strings.Count(wt, "\n") != 0 {
+		t.Errorf("temp worktree leaked after a scan error:\n%s", wt)
+	}
+}
+
 // TestDiffUnknownFormat is a usage error (exit 2): an invalid --format value is
 // rejected with an actionable message before any git or scan work.
 func TestDiffUnknownFormat(t *testing.T) {
