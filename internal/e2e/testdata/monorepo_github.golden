@@ -1,0 +1,2 @@
+::error file=web/src/api/server.ts,line=7::api imports ../domain/order (api: allow [service, std, external])
+depdog check — monorepo · 1 violation · 10 packages across 3 checked units

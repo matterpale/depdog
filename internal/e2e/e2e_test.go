@@ -814,6 +814,103 @@ func TestCheckWorkspaceGitHubPrefixesPaths(t *testing.T) {
 	}
 }
 
+// --- Polyglot monorepo mode (--all fan-out over the monorepo fixture) --------
+//
+// The monorepo fixture holds three units — web/ (ts, one violation),
+// services/api/ (go, clean), ml/ (py, clean) — plus legacy/ (a Gemfile with no
+// depdog.yaml → advisory skip) and decoys that must stay invisible to the walk
+// (web/node_modules/x/depdog.yaml, .hidden/depdog.yaml, the root scaffolding
+// package.json). run() pins GOWORK=off; the walk ignores GOWORK regardless.
+
+func TestCheckMonorepoText(t *testing.T) {
+	// --all fans out over every discovered unit, one aggregate report, one exit
+	// code (1: web violates). Units render in lexicographic dir order; legacy is
+	// advisory-skipped; the decoys never appear.
+	out, stderr, exit := run(t, fixture("monorepo"), "check", "--all")
+	if exit != 1 {
+		t.Fatalf("exit %d, want 1\nstdout:\n%s\nstderr:\n%s", exit, out, stderr)
+	}
+	golden(t, "monorepo_text.golden", reTextDur.ReplaceAllString(out, "checked in X"))
+}
+
+func TestCheckMonorepoJSON(t *testing.T) {
+	// The renamed envelope (D6): root = walk-root basename, units[] each with
+	// dir + lang and the per-unit jsonReport, skipped[], rolled-up stats.
+	out, _, exit := run(t, fixture("monorepo"), "check", "--all", "--format", "json")
+	if exit != 1 {
+		t.Fatalf("exit %d, want 1\n%s", exit, out)
+	}
+	golden(t, "monorepo_json.golden", reJSONDur.ReplaceAllString(out, `"duration_ms": 0`))
+}
+
+func TestCheckMonorepoGitHub(t *testing.T) {
+	// Annotations across units, each file path prefixed with its walk-root-
+	// relative unit dir so they resolve from the repo root.
+	out, _, exit := run(t, fixture("monorepo"), "check", "--all", "--format", "github")
+	if exit != 1 {
+		t.Fatalf("exit %d, want 1\n%s", exit, out)
+	}
+	golden(t, "monorepo_github.golden", out)
+}
+
+func TestCheckMonorepoSARIF(t *testing.T) {
+	// One SARIF log, one run per analyzed unit, URIs prefixed with the unit dir.
+	out, _, exit := run(t, fixture("monorepo"), "check", "--all", "--format", "sarif")
+	if exit != 1 {
+		t.Fatalf("exit %d, want 1\n%s", exit, out)
+	}
+	golden(t, "monorepo_sarif.golden", out)
+}
+
+func TestCheckMonorepoUnitNarrowsToSingle(t *testing.T) {
+	// --unit narrows to exactly one unit. One analyzed unit + nothing skipped
+	// collapses to the plain single-project output (no envelope, no aggregate) —
+	// and it must be byte-identical to running `check` inside that unit directly.
+	narrowed, stderr, exit := run(t, fixture("monorepo"), "check", "--all", "--unit", "web")
+	if exit != 1 {
+		t.Fatalf("--unit web exit %d, want 1\nstdout:\n%s\nstderr:\n%s", exit, narrowed, stderr)
+	}
+	if strings.Contains(narrowed, "checked unit") || strings.Contains(narrowed, "▸ ./") {
+		t.Errorf("a single narrowed unit must not produce the aggregate envelope:\n%s", narrowed)
+	}
+	if !strings.HasPrefix(narrowed, "depdog check — web") {
+		t.Errorf("--unit web should render classic single-project output:\n%s", narrowed)
+	}
+	// Byte-identity against a standalone single-project run of the same unit.
+	direct, _, dexit := run(t, filepath.Join(fixture("monorepo"), "web"), "check")
+	if dexit != 1 {
+		t.Fatalf("direct web check exit %d, want 1", dexit)
+	}
+	norm := func(s string) string { return reTextDur.ReplaceAllString(s, "checked in X") }
+	if norm(narrowed) != norm(direct) {
+		t.Errorf("--all --unit web must be byte-identical to a standalone web check\n--- --unit web ---\n%s\n--- direct ---\n%s", narrowed, direct)
+	}
+}
+
+func TestCheckMonorepoFallback(t *testing.T) {
+	// The D1 fallback: a bare `depdog check` at a root that is not itself a
+	// project (no go.mod/depdog.yaml here) errors in single-project resolution,
+	// then discovers units and fans out. Identical to the explicit --all output.
+	out, stderr, exit := run(t, fixture("monorepo"), "check")
+	if exit != 1 {
+		t.Fatalf("exit %d, want 1\nstdout:\n%s\nstderr:\n%s", exit, out, stderr)
+	}
+	golden(t, "monorepo_text.golden", reTextDur.ReplaceAllString(out, "checked in X"))
+}
+
+func TestCheckAllInWorkspace(t *testing.T) {
+	// Composition (D3): --all inside the go.work fixture. The walk is the single
+	// source of units — go.work is not parsed — so app/ and libs/ are Go units
+	// and tools/ (go.mod, no depdog.yaml) is advisory-skipped. runWS leaves
+	// GOWORK active: the go.work member app still classifies its cross-module
+	// import to libs as external. Same renamed envelope/wording as monorepo.
+	out, stderr, exit := runWS(t, fixture("workspace"), "check", "--all")
+	if exit != 1 {
+		t.Fatalf("exit %d, want 1\nstdout:\n%s\nstderr:\n%s", exit, out, stderr)
+	}
+	golden(t, "all_in_workspace_text.golden", reTextDur.ReplaceAllString(out, "checked in X"))
+}
+
 // initModule lays down a fixed module tree for the init wizard to scan. The
 // layout matches the ddd preset (cmd + domain/handler/service/repository) plus
 // two extras (internal/telemetry, pkg/util) that exercise the "propose a

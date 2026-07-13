@@ -1,0 +1,9 @@
+version: 2
+
+components:
+  main:    { path: "cmd/**",               allow: ["*"] }
+  domain:  { path: "internal/domain/**",   allow: [std] }
+  service: { path: "internal/service/**",  allow: [domain, std] }
+  handler: { path: "internal/handler/**",  allow: [service, domain, std] }
+
+default: deny

@@ -25,6 +25,7 @@ var reserved = map[string]bool{"std": true, "external": true, "unassigned": true
 type file struct {
 	Version    int                      `yaml:"version"`
 	Module     string                   `yaml:"module"`
+	Lang       string                   `yaml:"lang"`
 	Components map[string]componentYAML `yaml:"components"`
 	Groups     map[string]stringList    `yaml:"groups"`
 	Boundaries map[string]boundaryYAML  `yaml:"boundaries"`
@@ -140,6 +141,26 @@ func Load(path string) (*core.RuleSet, error) {
 	return rs, nil
 }
 
+// PeekLang reads only the optional `lang:` key from the config at path, without
+// validating the rest of the file. It exists so the CLI can resolve a unit's
+// adapter (which it needs to find the project root) before the full Load — which
+// would otherwise be a chicken-and-egg between adapter selection and config
+// parsing. A missing file, a non-scalar `lang:`, or any other decode problem
+// yields "" and no error; the authoritative Load reports real config errors.
+func PeekLang(path string) string {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return ""
+	}
+	var peek struct {
+		Lang string `yaml:"lang"`
+	}
+	if err := yaml.Unmarshal(data, &peek); err != nil {
+		return ""
+	}
+	return peek.Lang
+}
+
 // Parse compiles raw YAML into a validated rule set.
 func Parse(data []byte) (*core.RuleSet, error) {
 	// The v1 layout (separate components: and rules: blocks) gets a migration
@@ -170,6 +191,10 @@ func Parse(data []byte) (*core.RuleSet, error) {
 	}
 
 	rs := &core.RuleSet{Rules: make(map[string]core.Rule, len(f.Components))}
+	// lang pins the language adapter for this unit. config carries it opaquely;
+	// the CLI validates it against the adapter registry (config must not import
+	// the registry). Empty means auto-detect.
+	rs.Lang = f.Lang
 
 	names := make([]string, 0, len(f.Components))
 	for name := range f.Components {

@@ -16,6 +16,10 @@
       "type": "string",
       "description": "Module path; auto-detected from go.mod when omitted."
     },
+    "lang": {
+      "type": "string",
+      "description": "Language adapter for this unit (e.g. go, ts, py). Pins the adapter when auto-detection would be ambiguous (a directory holding markers for two languages). Optional; omitted means auto-detect from marker files."
+    },
     "components": {
       "type": "object",
       "description": "Named layers. Each entry carries its package-directory glob path(s) and, inline, the rule for who it may (allow) or must not (deny) import. An allow list makes the component a whitelist; a deny-only rule a blacklist; deny always wins.",

@@ -17,6 +17,10 @@ func FuzzParse(f *testing.F) {
 		"version: 2\ncomponents: {a: {path: \"x/[bad/**\"}}\ndefault: deny",
 		"not: yaml: at: all",
 		"version: 2\ncomponents: {a: {path: \"x/**\"}}\nrulez: {}",
+		"version: 2\nlang: go\ncomponents: {a: {path: \"x/**\"}}\ndefault: deny",       // lang: valid adapter name
+		"version: 2\nlang: klingon\ncomponents: {a: {path: \"x/**\"}}\ndefault: deny",  // lang: unknown adapter (config carries it; CLI rejects)
+		"version: 2\nlang: [go, ts]\ncomponents: {a: {path: \"x/**\"}}\ndefault: deny", // lang: non-scalar (must not panic)
+		"version: 2\nlang: \"\"\ncomponents: {a: {path: \"x/**\"}}\ndefault: deny",     // lang: empty scalar
 	}
 	for _, s := range seeds {
 		f.Add([]byte(s))

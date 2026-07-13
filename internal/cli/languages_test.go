@@ -175,3 +175,51 @@ func TestResolveProjectTSMissingConfig(t *testing.T) {
 		t.Errorf("error should point at depdog init:\n%v", err)
 	}
 }
+
+// TestResolveProjectMultiUnitHint proves the single-unit commands' shared
+// error path (resolveProject) teaches --all: when the resolution fails at a
+// tree that holds depdog.yaml units below it, the error gains the discovery
+// hint naming a couple of the units; when no units exist below, the error is
+// left exactly as-is.
+func TestResolveProjectMultiUnitHint(t *testing.T) {
+	const cfg = "version: 2\ncomponents:\n  a: { path: \"**\", allow: [\"*\"] }\ndefault: deny\n"
+
+	t.Run("hint appears at a multi-unit root", func(t *testing.T) {
+		root := t.TempDir()
+		// The root itself is scaffolding — no marker, so single-project
+		// resolution fails — but it holds two language units below it.
+		touch(t, root, "web/tsconfig.json", "{}\n")
+		touch(t, root, "web/"+config.DefaultName, cfg)
+		touch(t, root, "services/api/go.mod", "module x\n")
+		touch(t, root, "services/api/"+config.DefaultName, cfg)
+
+		_, _, _, err := resolveProject(root, "")
+		if err == nil {
+			t.Fatal("a scaffolding root with no project marker must error")
+		}
+		msg := err.Error()
+		if !strings.Contains(msg, "run `depdog check --all`") {
+			t.Errorf("hint should point at --all:\n%v", err)
+		}
+		if !strings.Contains(msg, "found 2 "+config.DefaultName) {
+			t.Errorf("hint should count the discovered units:\n%v", err)
+		}
+		// The two units are named (sorted by Rel: services/api before web).
+		if !strings.Contains(msg, "services/api/") || !strings.Contains(msg, "web/") {
+			t.Errorf("hint should name the discovered unit dirs:\n%v", err)
+		}
+	})
+
+	t.Run("no hint when no units exist below", func(t *testing.T) {
+		root := t.TempDir()
+		touch(t, root, "go.mod", "module x\n") // a marker, but no depdog.yaml anywhere
+
+		_, _, _, err := resolveProject(root, "")
+		if err == nil {
+			t.Fatal("a project without depdog.yaml must error")
+		}
+		if strings.Contains(err.Error(), "--all") {
+			t.Errorf("no units below ⇒ no --all hint:\n%v", err)
+		}
+	})
+}

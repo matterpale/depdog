@@ -1,6 +1,8 @@
 package config
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -49,6 +51,60 @@ func TestParseDefaultStance(t *testing.T) {
 	}
 	if ok, _ := rs.Decide("a", "external"); !ok {
 		t.Errorf("a rule-less component must import anything under the open default")
+	}
+}
+
+// TestParseLang checks the optional `lang:` key: it is carried verbatim onto
+// the RuleSet (config attaches no meaning — the CLI validates it), and is empty
+// when absent. Config does not reject an unknown value; that is the CLI's job.
+func TestParseLang(t *testing.T) {
+	rs, err := Parse([]byte("version: 2\nlang: go\ncomponents: {a: {path: \"x/**\"}}\ndefault: deny\n"))
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	if rs.Lang != "go" {
+		t.Errorf("Lang = %q, want go", rs.Lang)
+	}
+
+	rs, err = Parse([]byte(valid))
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	if rs.Lang != "" {
+		t.Errorf("absent lang = %q, want empty", rs.Lang)
+	}
+
+	// An unknown value parses fine — config only carries the string.
+	rs, err = Parse([]byte("version: 2\nlang: klingon\ncomponents: {a: {path: \"x/**\"}}\ndefault: deny\n"))
+	if err != nil {
+		t.Fatalf("unknown lang: must parse (CLI validates), got %v", err)
+	}
+	if rs.Lang != "klingon" {
+		t.Errorf("Lang = %q, want klingon (carried verbatim)", rs.Lang)
+	}
+}
+
+// TestPeekLang checks the lenient lang-only peek used by the CLI to resolve a
+// unit's adapter before the full Load.
+func TestPeekLang(t *testing.T) {
+	dir := t.TempDir()
+	p := filepath.Join(dir, DefaultName)
+	if err := os.WriteFile(p, []byte("version: 2\nlang: ts\ncomponents: {a: {path: \"x/**\"}}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if got := PeekLang(p); got != "ts" {
+		t.Errorf("PeekLang = %q, want ts", got)
+	}
+	// Missing file, non-scalar lang, and unrelated garbage all peek to "".
+	if got := PeekLang(filepath.Join(dir, "nope.yaml")); got != "" {
+		t.Errorf("PeekLang(missing) = %q, want empty", got)
+	}
+	nonScalar := filepath.Join(dir, "nonscalar.yaml")
+	if err := os.WriteFile(nonScalar, []byte("lang: [go, ts]\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if got := PeekLang(nonScalar); got != "" {
+		t.Errorf("PeekLang(non-scalar) = %q, want empty", got)
 	}
 }
 

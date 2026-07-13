@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -18,6 +19,13 @@ import (
 	"github.com/matterpale/depdog/internal/lang/scala"
 	"github.com/matterpale/depdog/internal/lang/typescript"
 )
+
+// errResolution marks the two project-resolution failures — no project root
+// found, or no depdog.yaml at a resolved root — so the polyglot fallback (D1)
+// can tell them apart from genuine evaluation errors (parse failures,
+// violations). A bare `depdog check` that fails to resolve a single project
+// falls back to unit discovery; a config that fails to *parse* does not.
+var errResolution = errors.New("project resolution failed")
 
 // languages is the registry of supported language adapters — the single place
 // multi-language support is wired. To add a language, implement lang.Loader in
@@ -148,21 +156,143 @@ func detectLanguage(startDir string) (lang.Adapter, string, error) {
 	return lang.Adapter{}, "", noProjectError(abs)
 }
 
-// resolveProject picks the adapter (honoring --lang, else auto-detect), resolves
-// the project root, and locates the sibling depdog.yaml. It is the discovery
-// path for check/config/tui when no explicit --config is given.
+// resolveProject picks the adapter (honoring --lang, then the config's optional
+// `lang:` key, else auto-detect), resolves the project root, and locates the
+// sibling depdog.yaml. It is the discovery path for check/config/tui when no
+// explicit --config is given.
+//
+// The `lang:` key resolves the shared-marker ambiguity (e.g. a Java/Kotlin
+// project rooted only on build.gradle) without --lang on every invocation: the
+// nearest depdog.yaml walking up from startDir is peeked for its `lang:` value,
+// which — when set and no --lang overrides it — pins the adapter before
+// auto-detection could error on the ambiguity.
 func resolveProject(startDir, langFlag string) (a lang.Adapter, root, cfgPath string, err error) {
-	if a, err = pickAdapter(startDir, langFlag); err != nil {
-		return lang.Adapter{}, "", "", err
+	effLang := langFlag
+	if effLang == "" {
+		effLang = nearestConfigLang(startDir)
+	}
+	if a, err = pickAdapter(startDir, effLang); err != nil {
+		return lang.Adapter{}, "", "", withUnitHint(startDir, err)
 	}
 	if root, err = adapterRoot(a, startDir); err != nil {
-		return lang.Adapter{}, "", "", err
+		return lang.Adapter{}, "", "", withUnitHint(startDir, err)
 	}
 	cfgPath = filepath.Join(root, config.DefaultName)
 	if !fileExists(cfgPath) {
-		return lang.Adapter{}, "", "", fmt.Errorf("no %s in %s — run `depdog init` to create one", config.DefaultName, root)
+		return lang.Adapter{}, "", "", withUnitHint(startDir, fmt.Errorf("%w: no %s in %s — run `depdog init` to create one",
+			errResolution, config.DefaultName, root))
 	}
 	return a, root, cfgPath, nil
+}
+
+// withUnitHint appends a one-line hint to a single-project resolution failure
+// when depdog.yaml units exist below startDir, so the single-unit commands
+// (explain/graph/config/baseline/tui) teach `--all` at the moment of confusion.
+// It only augments errResolution errors — the two "no project" shapes the
+// single-project path can hit — leaving ambiguity and other errors untouched,
+// and never changes the exit code (still 2). The hint is a no-op when discovery
+// finds nothing, and for `check` the errResolution fallback fans out over the
+// same units before this error is ever surfaced, so the hint is seen only by
+// the commands that stay single-unit.
+func withUnitHint(startDir string, err error) error {
+	if !errors.Is(err, errResolution) {
+		return err
+	}
+	units, _, derr := config.DiscoverUnits(startDir, registryMarkers())
+	if derr != nil || len(units) == 0 {
+		return err
+	}
+	return fmt.Errorf("%w\n\nfound %d %s under this tree — cd into a unit (%s) or run `depdog check --all`",
+		err, len(units), config.DefaultName, unitHintDirs(units))
+}
+
+// unitHintDirs renders a couple of discovered unit directories for the hint,
+// eliding the rest with an ellipsis so the line stays short regardless of how
+// many units the tree holds.
+func unitHintDirs(units []config.Unit) string {
+	const show = 2
+	names := make([]string, 0, show+1)
+	for i, u := range units {
+		if i >= show {
+			names = append(names, "…")
+			break
+		}
+		rel := u.Rel
+		if rel == "." {
+			rel = "the repo root"
+		} else {
+			rel += "/"
+		}
+		names = append(names, rel)
+	}
+	return strings.Join(names, ", ")
+}
+
+// nearestConfigLang walks up from startDir to the nearest depdog.yaml and
+// returns its `lang:` value (or "" if none is found or none is set). The value
+// is not validated here — pickAdapter rejects an unknown name.
+func nearestConfigLang(startDir string) string {
+	abs, err := filepath.Abs(startDir)
+	if err != nil {
+		return ""
+	}
+	for d := abs; ; {
+		cfg := filepath.Join(d, config.DefaultName)
+		if fileExists(cfg) {
+			return config.PeekLang(cfg)
+		}
+		parent := filepath.Dir(d)
+		if parent == d {
+			return ""
+		}
+		d = parent
+	}
+}
+
+// adapterForUnit resolves the adapter for a discovered unit rooted at dir,
+// following the D7 order: an explicit `lang:` config value (validated against
+// the registry), else auto-detection walking up from dir. Polyglot fan-out
+// never forwards a --lang flag (--lang with --all is a usage error), so the
+// resolution is exactly the config key or auto-detect.
+func adapterForUnit(dir, cfgLang string) (lang.Adapter, error) {
+	if cfgLang != "" {
+		a, ok := adapterByName(cfgLang)
+		if !ok {
+			return lang.Adapter{}, fmt.Errorf("%s: %w", dir, unknownLangError(cfgLang))
+		}
+		return a, nil
+	}
+	a, _, err := detectLanguage(dir)
+	if err != nil {
+		// Under --all, --lang is a usage error, so the single-project
+		// "pass --lang" guidance would point at a forbidden action. Redirect
+		// an ambiguous unit to the `lang:` config key (D7) instead.
+		var amb *ambiguousLangError
+		if errors.As(err, &amb) {
+			return lang.Adapter{}, fmt.Errorf("ambiguous project language: %s matches %s — add `lang: <one of: %s>` to this unit's depdog.yaml (--lang is not available under --all)",
+				amb.dir, strings.Join(amb.names, " and "), strings.Join(amb.names, ", "))
+		}
+		return lang.Adapter{}, err
+	}
+	return a, nil
+}
+
+// registryMarkers returns the distinct marker file names across every adapter,
+// for the discovery walk (DiscoverUnits takes markers as data so internal/config
+// need not depend on this registry). Order is unspecified; DiscoverUnits builds
+// a set.
+func registryMarkers() []string {
+	seen := make(map[string]bool)
+	var out []string
+	for _, a := range languages {
+		for _, m := range a.Markers {
+			if !seen[m] {
+				seen[m] = true
+				out = append(out, m)
+			}
+		}
+	}
+	return out
 }
 
 // adapterRoot resolves an adapter's project root: its custom Root when set (e.g.
@@ -221,13 +351,26 @@ func unknownLangError(name string) error {
 	return fmt.Errorf("unknown --lang %q (one of: %s)", name, strings.Join(languageNames(), ", "))
 }
 
+// ambiguousLangError reports a directory whose markers match more than one
+// adapter. It carries the matched names so callers can tailor the remediation:
+// single-project runs suggest --lang, whereas a --all fan-out unit suggests the
+// `lang:` config key (since --lang is a usage error under --all).
+type ambiguousLangError struct {
+	dir   string
+	names []string
+}
+
+func (e *ambiguousLangError) Error() string {
+	return fmt.Sprintf("ambiguous project language: %s matches %s — pass --lang (one of: %s) to choose the adapter",
+		e.dir, strings.Join(e.names, " and "), strings.Join(languageNames(), ", "))
+}
+
 func ambiguityError(dir string, matched []lang.Adapter) error {
 	names := make([]string, len(matched))
 	for i, a := range matched {
 		names[i] = a.Name
 	}
-	return fmt.Errorf("ambiguous project language: %s matches %s — pass --lang (one of: %s) to choose the adapter",
-		dir, strings.Join(names, " and "), strings.Join(languageNames(), ", "))
+	return &ambiguousLangError{dir: dir, names: names}
 }
 
 func noProjectError(startDir string) error {
@@ -235,6 +378,6 @@ func noProjectError(startDir string) error {
 	for i, a := range languages {
 		kinds[i] = fmt.Sprintf("%s (%s)", a.Name, strings.Join(a.Markers, "/"))
 	}
-	return fmt.Errorf("no project root found from %s upward — depdog runs inside one of: %s",
-		startDir, strings.Join(kinds, ", "))
+	return fmt.Errorf("%w: no project root found from %s upward — depdog runs inside one of: %s",
+		errResolution, startDir, strings.Join(kinds, ", "))
 }

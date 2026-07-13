@@ -1,0 +1,9 @@
+# DECOY: this lives under a dot-prefixed directory and MUST be invisible to
+# discovery. If the walk ever reports a unit here, the dot-prefix skip rule
+# has regressed.
+version: 2
+
+components:
+  hidden: { path: "**", allow: ["*"] }
+
+default: allow

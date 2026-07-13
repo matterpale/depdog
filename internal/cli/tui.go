@@ -134,9 +134,10 @@ func configRelPath(root, configPath string) string {
 //
 // A first-time user in a directory with no depdog project is pointed at `init`
 // rather than shown a config error — but only when they named no explicit target
-// (a package arg or --config); an explicit target always runs the check.
+// (a package arg, --config, or --all/--unit); an explicit target always runs the
+// check. In particular `depdog --all` must fan out, never show the hint.
 func runBare(cmd *cobra.Command, args []string, o checkOptions) error {
-	if len(args) == 0 && o.configPath == "" && !projectResolves(cmd) {
+	if len(args) == 0 && o.configPath == "" && !o.all && len(o.units) == 0 && !projectResolves(cmd) {
 		out := cmd.OutOrStdout()
 		fmt.Fprintln(out, "depdog keeps a project's internal imports pointing the right way.")
 		fmt.Fprintln(out, "Run `depdog init` to create a depdog.yaml, `depdog check` to verify import rules,")

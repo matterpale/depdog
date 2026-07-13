@@ -1,16 +1,17 @@
-default:    allow
-test_files: hybrid
+default     allow  (rule-less components import anything)
+test_files  hybrid
 
-components:
-  service-a  cmd/service-a/**
-             stance: whitelist (only allowed pass)
-             allow:  [*]
-  service-b  cmd/service-b/**
-             stance: whitelist (only allowed pass)
-             allow:  [*]
-  shared     internal/**
-             stance: whitelist (only allowed pass)
-             allow:  [*]
+components
+  service-a   whitelist
+      cmd/service-a/**
+      allow  *
+  service-b   whitelist
+      cmd/service-b/**
+      allow  *
+  shared      whitelist
+      internal/**
+      allow  *
 
-boundaries:
-  cmd-services (sealed)  service-a, service-b
+boundaries
+  cmd-services  sealed
+      service-a, service-b

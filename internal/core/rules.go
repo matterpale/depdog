@@ -85,6 +85,11 @@ type RuleSet struct {
 	TestFiles  TestFileMode
 	Skip       []string   // package-dir patterns excluded from analysis
 	Boundaries []Boundary // mutual-exclusion groups, orthogonal to components; sorted by name
+	// Lang, when non-empty, is the language adapter pinned by the config's
+	// optional `lang:` key. It is carried opaquely — core attaches no meaning to
+	// the string; the CLI (which owns the adapter registry) validates and
+	// resolves it. Empty means "auto-detect the adapter".
+	Lang string
 }
 
 // AmbiguityError reports a package matched by equally specific patterns of

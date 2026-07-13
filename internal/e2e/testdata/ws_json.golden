@@ -1,7 +1,9 @@
 {
-  "workspace": "workspace",
-  "modules": [
+  "root": "workspace",
+  "units": [
     {
+      "dir": "app",
+      "lang": "go",
       "module": "example.test/app",
       "default": "deny",
       "violations": [
@@ -52,6 +54,8 @@
       }
     },
     {
+      "dir": "libs",
+      "lang": "go",
       "module": "example.test/libs",
       "default": "deny",
       "violations": [],

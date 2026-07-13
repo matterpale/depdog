@@ -20,6 +20,8 @@ type checkOptions struct {
 	failOn     string
 	color      string
 	modules    []string
+	all        bool
+	units      []string
 }
 
 // bind registers the check flags on cmd, writing into o.
@@ -29,6 +31,8 @@ func (o *checkOptions) bind(cmd *cobra.Command) {
 	cmd.Flags().StringVar(&o.failOn, "fail-on", "any", "which violations fail the run: any or new (honors depdog.baseline.yaml)")
 	cmd.Flags().StringVar(&o.color, "color", "auto", "colorize text output: auto, always or never")
 	cmd.Flags().StringArrayVar(&o.modules, "module", nil, "in a Go workspace, restrict the check to these members (module path or directory; repeatable)")
+	cmd.Flags().BoolVar(&o.all, "all", false, "discover and check every depdog.yaml under the cwd (polyglot monorepo mode)")
+	cmd.Flags().StringArrayVar(&o.units, "unit", nil, "with --all, restrict the check to these units (config directory; repeatable)")
 }
 
 func checkCmd() *cobra.Command {
@@ -64,7 +68,7 @@ func runCheck(cmd *cobra.Command, args []string, o checkOptions) error {
 	}
 	start := time.Now()
 
-	run, err := evaluateCheckTargets(cmd, o.configPath, o.modules, args)
+	run, err := evaluateCheckTargets(cmd, o, args)
 	if err != nil {
 		return err
 	}

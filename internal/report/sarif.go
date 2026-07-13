@@ -17,10 +17,10 @@ func SARIF(w io.Writer, res *core.Result, version string) error {
 	return encodeSARIF(w, []sarifRun{sarifRunFor(res, version, "")})
 }
 
-// SARIFWorkspace merges the workspace's members into one SARIF log with one run
-// per member (SARIF's runs array is built for exactly this). Each member's file
-// URIs are prefixed with its workspace-relative directory so code-scanning
-// resolves them from the repo root.
+// SARIFWorkspace merges the analyzed units into one SARIF log with one run per
+// unit (SARIF's runs array is built for exactly this). Each unit's file URIs are
+// prefixed with its walk-root-relative directory so code-scanning resolves them
+// from the repo root.
 func SARIFWorkspace(w io.Writer, mods []Module, version string) error {
 	runs := make([]sarifRun, 0, len(mods))
 	for _, m := range mods {
@@ -29,8 +29,8 @@ func SARIFWorkspace(w io.Writer, mods []Module, version string) error {
 	return encodeSARIF(w, runs)
 }
 
-// sarifRunFor builds one SARIF run for a result. prefix (a member's workspace-
-// relative dir, "" for a single module) is joined onto every file URI.
+// sarifRunFor builds one SARIF run for a result. prefix (a unit's walk-root-
+// relative dir, "" for a single unit) is joined onto every file URI.
 func sarifRunFor(res *core.Result, version, prefix string) sarifRun {
 	const unassignedRule = "unassigned-package"
 

@@ -1,0 +1,8 @@
+{
+  "name": "monorepo",
+  "private": true,
+  "//": "Root workspace scaffolding only. It has units below it (web/, etc.), so under D5 it is NOT reported as an advisory skip.",
+  "workspaces": [
+    "web"
+  ]
+}
