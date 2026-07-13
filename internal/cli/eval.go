@@ -38,13 +38,18 @@ func evaluateModule(cmd *cobra.Command, configPath string, args []string) (*eval
 		cfgPath string
 	)
 	if configPath != "" {
-		// An explicit --config skips discovery; --lang (or, absent it,
-		// auto-detect from the config's directory) still picks the adapter.
+		// An explicit --config skips discovery. The adapter follows the D7
+		// order: --lang, else the config's `lang:` key, else auto-detect from
+		// the config's directory.
 		if cfgPath, err = filepath.Abs(configPath); err != nil {
 			return nil, err
 		}
 		root = filepath.Dir(cfgPath)
-		if adapter, err = pickAdapter(root, language); err != nil {
+		effLang := language
+		if effLang == "" {
+			effLang = config.PeekLang(cfgPath)
+		}
+		if adapter, err = pickAdapter(root, effLang); err != nil {
 			return nil, err
 		}
 	} else {
@@ -85,7 +90,14 @@ func evaluateAt(cmd *cobra.Command, adapter lang.Adapter, root, cfgPath string, 
 	if err != nil {
 		return nil, err
 	}
+	return evaluateWith(cmd, adapter, root, cfgPath, rs, args)
+}
 
+// evaluateWith evaluates one module whose config is already loaded — the shared
+// tail of evaluateAt. Polyglot fan-out loads each unit's config first (to read
+// its `lang:` key for adapter selection) and hands the result here so it is not
+// re-parsed.
+func evaluateWith(cmd *cobra.Command, adapter lang.Adapter, root, cfgPath string, rs *core.RuleSet, args []string) (*evaluation, error) {
 	graph, err := adapter.New(root).Load(cmd.Context(), args...)
 	if err != nil {
 		return nil, err

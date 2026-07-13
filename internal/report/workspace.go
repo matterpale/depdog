@@ -9,11 +9,12 @@ import (
 	"github.com/matterpale/depdog/internal/core"
 )
 
-// Module is one analyzed workspace member handed to the aggregate reporters
-// (TextWorkspace, JSONWorkspace, GitHubWorkspace, SARIFWorkspace).
+// Module is one analyzed workspace member (a "unit") handed to the aggregate
+// reporters (TextWorkspace, JSONWorkspace, GitHubWorkspace, SARIFWorkspace).
 type Module struct {
 	Path   string // module path, e.g. "example.test/app"
 	Rel    string // workspace-relative dir, slash-separated, e.g. "app"
+	Lang   string // the adapter that checked this unit, e.g. "go" (P3 surfaces it in output)
 	Result *core.Result
 	Rules  *core.RuleSet
 }
