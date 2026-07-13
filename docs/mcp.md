@@ -86,9 +86,11 @@ Single-project shape (trimmed):
 Inputs `{ "from": string, "to": string }` (both required). Mirrors `depdog
 explain`: the verdict, the deciding rule or boundary, and — because `explain`
 **loads the graph** — the `file:line` positions of any offending edge that
-already exists in the tree. `from`/`to` are package dirs (module-relative) or a
-component/group/`std`/`external`/module ref, resolved the same way `depdog
-explain` resolves its args.
+already exists in the tree. `from` must be a **package** (a module-relative dir
+or its trailing path segment), exactly as `depdog explain` requires — a bare
+component name is not accepted here (use `can_import` for a component-level
+question). `to` may be a package, component, group, `std`, `external`, or a
+module ref.
 
 ```json
 {
@@ -113,10 +115,13 @@ explain` resolves its args.
 
 Inputs `{ "from": string, "to": string }` (both required). Answers "may `from`
 import `to`?" from the **compiled rule set only — no graph scan**, so it is the
-cheap pre-check an agent can call before writing an import. The deliberate
-distinction from `explain`: because no graph is loaded, `can_import` returns
-**no `positions`** — it is the rule-set verdict, not a scan of what is actually
-imported today.
+cheap pre-check an agent can call before writing an import. Unlike `explain`,
+`from` may be either a package (module-relative dir) **or a component name** —
+a component name is classified into its boundary membership from its pattern, so
+a sealed/mutual-exclusion boundary is honored for component-level questions too.
+The deliberate distinction from `explain`: because no graph is loaded,
+`can_import` returns **no `positions`** — it is the rule-set verdict, not a scan
+of what is actually imported today.
 
 ```json
 {

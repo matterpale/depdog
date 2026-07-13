@@ -268,3 +268,39 @@ func TestMCPPipedSession(t *testing.T) {
 		t.Errorf("config default = %q, want deny", cfg.Default)
 	}
 }
+
+// TestMCPBoundaryVerdict guards that can_import honors a sealed boundary for
+// BOTH package-dir and component-name endpoint spellings. A component-named
+// endpoint must not silently bypass the boundary (regression for the
+// boundary-skip bug where component names resolved to an empty dir and skipped
+// the check). Uses the boundaries fixture: sealed cmd-services = {service-a,
+// service-b}, each service isolated from the other.
+func TestMCPBoundaryVerdict(t *testing.T) {
+	init := []string{
+		`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{}}}`,
+		`{"jsonrpc":"2.0","method":"notifications/initialized"}`,
+	}
+	msgs := mcpSession(t, fixture("boundaries"), append(init,
+		// same sealed-boundary edge, three spellings: dir/dir, component/component, mixed.
+		`{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"can_import","arguments":{"from":"cmd/service-a","to":"cmd/service-b"}}}`,
+		`{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"can_import","arguments":{"from":"service-a","to":"service-b"}}}`,
+		`{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"can_import","arguments":{"from":"service-a","to":"cmd/service-b"}}}`,
+	)...)
+
+	for _, id := range []int{2, 3, 4} {
+		txt := mcpToolText(t, byMCPID(t, msgs, id))
+		var v struct {
+			Allowed   bool   `json:"allowed"`
+			DecidedBy string `json:"decided_by"`
+		}
+		if err := json.Unmarshal([]byte(txt), &v); err != nil {
+			t.Fatalf("id %d: can_import payload not JSON: %v\n%s", id, err, txt)
+		}
+		if v.Allowed {
+			t.Errorf("id %d: sealed-boundary edge must be denied, got allowed\n%s", id, txt)
+		}
+		if v.DecidedBy != "boundary" {
+			t.Errorf("id %d: decided_by = %q, want boundary\n%s", id, v.DecidedBy, txt)
+		}
+	}
+}

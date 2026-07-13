@@ -416,12 +416,14 @@ func buildConfigView(rs *core.RuleSet) configView {
 	return out
 }
 
-// resolveSource maps a can_import `from` to a component name and, when it is a
-// module-relative package dir, that dir (for the boundary check). A bare
-// component name resolves to itself with no dir.
+// resolveSource maps a can_import `from` to a component name and a module-
+// relative dir for the boundary check. A package-dir `from` is its own dir; a
+// bare component name resolves to a representative dir derived from the
+// component's pattern, so a component-named endpoint is classified into the
+// same boundary member its packages would be (without loading the graph).
 func resolveSource(rs *core.RuleSet, from string) (component, relDir string, err error) {
 	if isComponentName(rs, from) {
-		return from, "", nil
+		return from, componentRepDir(rs, from), nil
 	}
 	comp, err := rs.AssignComponent(from)
 	if err != nil {
@@ -440,7 +442,7 @@ func resolveDestination(rs *core.RuleSet, to string) (target string, isModule bo
 		return to, false, ""
 	}
 	if isComponentName(rs, to) {
-		return to, false, ""
+		return to, false, componentRepDir(rs, to)
 	}
 	// A path-shaped ref that matches no component pattern is treated as an
 	// external module (a bare word cannot be a module and is left unassigned).
@@ -460,6 +462,45 @@ func isComponentName(rs *core.RuleSet, name string) bool {
 		}
 	}
 	return false
+}
+
+// componentRepDir returns a representative module-relative dir for a component:
+// the concrete prefix of its first pattern with the glob tail trimmed (e.g.
+// "cmd/service-a/**" -> "cmd/service-a", "internal/**" -> "internal"). This lets
+// a component-named can_import endpoint be classified for the boundary check
+// exactly as its packages would be, without loading the graph. Returns "" when
+// no concrete prefix can be derived (a bare or interior glob), in which case the
+// boundary check is skipped for that endpoint (same as before).
+func componentRepDir(rs *core.RuleSet, name string) string {
+	for _, c := range rs.Components {
+		if c.Name != name {
+			continue
+		}
+		for _, p := range c.Patterns {
+			if d := trimGlobTail(p); d != "" {
+				return d
+			}
+		}
+		return ""
+	}
+	return ""
+}
+
+// trimGlobTail drops a trailing "/**" or "/*" from a dir-glob pattern and
+// returns the concrete prefix, or "" if what remains is empty or still contains
+// glob metacharacters (an interior or bare glob has no single representative
+// dir).
+func trimGlobTail(pattern string) string {
+	p := pattern
+	if strings.HasSuffix(p, "/**") {
+		p = strings.TrimSuffix(p, "/**")
+	} else if strings.HasSuffix(p, "/*") {
+		p = strings.TrimSuffix(p, "/*")
+	}
+	if p == "" || strings.ContainsAny(p, "*?[") {
+		return ""
+	}
+	return p
 }
 
 // resolveExplainTarget mirrors report's resolveTarget: it maps explain's `to`

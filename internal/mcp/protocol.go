@@ -128,13 +128,13 @@ var serverTools = []tool{
 	},
 	{
 		Name:        "explain",
-		Description: "Explain the verdict for one import edge (from -> to): whether it is allowed, the deciding rule or boundary, and the file:line when the edge exists in the graph. Mirrors `depdog explain`.",
-		InputSchema: json.RawMessage(`{"type":"object","properties":{"from":{"type":"string","description":"the importing package/component/ref"},"to":{"type":"string","description":"the imported package/component/ref"}},"required":["from","to"],"additionalProperties":false}`),
+		Description: "Explain the verdict for one import edge (from -> to): whether it is allowed, the deciding rule or boundary, and the file:line when the edge exists in the graph. Mirrors `depdog explain`; from must be a package.",
+		InputSchema: json.RawMessage(`{"type":"object","properties":{"from":{"type":"string","description":"the importing package: a module-relative dir or its trailing path segment (a component name is not accepted here — use can_import for that)"},"to":{"type":"string","description":"the imported package, component, group, std, external, or module ref"}},"required":["from","to"],"additionalProperties":false}`),
 	},
 	{
 		Name:        "can_import",
 		Description: "Cheap in-loop pre-check: may `from` import `to`? Answered from the compiled rule set only (no graph scan), returning the verdict and the deciding rule/boundary.",
-		InputSchema: json.RawMessage(`{"type":"object","properties":{"from":{"type":"string","description":"the importing package/component/ref"},"to":{"type":"string","description":"the imported package/component/ref"}},"required":["from","to"],"additionalProperties":false}`),
+		InputSchema: json.RawMessage(`{"type":"object","properties":{"from":{"type":"string","description":"the importing package (module-relative dir) or a component name"},"to":{"type":"string","description":"the imported package, component, group, std, external, or module ref"}},"required":["from","to"],"additionalProperties":false}`),
 	},
 }
 
