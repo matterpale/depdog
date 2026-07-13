@@ -310,6 +310,19 @@ per-editor snippets in [docs/editors.md](docs/editors.md).
   edges *between* units — cross-unit governance is designed future work, not
   part of this release. Full guide: [docs/monorepo.md](docs/monorepo.md).
 
+## Compatibility
+
+depdog 1.0 follows semver. The **machine-readable contract is stable** — broken
+only by a major bump, additive within a major line: the config v2 `depdog.yaml`
+schema, both `--format json` shapes (the single-unit report **and** the
+`--all`/`go.work` aggregate envelope, `root`/`units[]`/`skipped[]`/`stats`), the
+exit codes (`0` clean · `1` violations · `2` config/usage error), and documented
+CLI flag semantics. The **human-readable presentation is not** — text and TUI
+rendering, log/stderr wording, Go internals (all `internal/`, no exported API),
+and SARIF/GitHub detail beyond path + rule identity may change any release. The
+JSON goldens, the schema-reflection test, and the single-unit byte-identity
+guard hold this line in CI. Full policy: [docs/compatibility.md](docs/compatibility.md).
+
 ## License
 
 [MIT](LICENSE)
