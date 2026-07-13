@@ -9,6 +9,7 @@
       "target": "service",
       "rule": "domain: allow [std]",
       "test_only": false,
+      "explanation": "`pydirty/domain` (component `domain`) may import only `std`; `service.notify` (component `service`) is not among them. Fix: add `service` to `domain`'s allow list, or depend only on what `domain` already allows.",
       "positions": [
         {
           "file": "domain/order.py",
@@ -23,6 +24,7 @@
       "target": "domain",
       "rule": "handler: allow [service, std, external]",
       "test_only": false,
+      "explanation": "`pydirty/handler` (component `handler`) may import only `service`, `std`, `external`; `domain.order` (component `domain`) is not among them. Fix: add `domain` to `handler`'s allow list, or depend only on what `handler` already allows.",
       "positions": [
         {
           "file": "handler/api.py",

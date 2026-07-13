@@ -101,6 +101,7 @@ module ref.
   "allowed": false,
   "decided_by": "rule",
   "reason": "domain: allow [std]",
+  "explanation": "`example.test/dirty/internal/domain/pricing` (component `domain`) may import only `std`; `repository` (component `repository`) is not among them. Fix: add `repository` to `domain`'s allow list, or depend only on what `domain` already allows.",
   "positions": [
     { "file": "internal/domain/pricing/discount.go", "line": 3 },
     { "file": "internal/domain/pricing/pricing.go", "line": 5 }
@@ -109,7 +110,10 @@ module ref.
 ```
 
 `boundary` and `sealed` fields appear when a boundary decides the edge;
-`positions` is omitted when the edge is not present in the graph.
+`positions` is omitted when the edge is not present in the graph. `explanation`
+is a plain-English WHY-plus-fix for a **denied** edge (omitted when the edge is
+allowed); the machine-readable `reason`/`decided_by` stay the fields to branch
+on.
 
 ### `can_import` — cheap in-loop pre-check
 
@@ -129,13 +133,15 @@ of what is actually imported today.
   "to": "internal/repository",
   "allowed": false,
   "decided_by": "rule",
-  "reason": "domain: allow [std]"
+  "reason": "domain: allow [std]",
+  "explanation": "`internal/domain/pricing` (component `domain`) may import only `std`; `repository` (component `repository`) is not among them. Fix: add `repository` to `domain`'s allow list, or depend only on what `domain` already allows."
 }
 ```
 
 `decided_by` is one of `rule`, `boundary` or `policy` (an unassigned `from` that
-no component governs is allowed by policy). An allowed edge looks the same with
-`"allowed": true`.
+no component governs is allowed by policy). A denied edge also carries an
+`explanation` (the same plain-English WHY-plus-fix `explain` returns); an allowed
+edge looks the same with `"allowed": true` and no `explanation`.
 
 ## Resources
 

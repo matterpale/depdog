@@ -203,12 +203,14 @@ func TestMCPPipedSession(t *testing.T) {
 		t.Errorf("check JSON missing the dirty fixture's domain → repository violation\n%s", checkJSON)
 	}
 
-	// tools/call explain — the deciding rule.
+	// tools/call explain — the deciding rule, plus the additive plain-English
+	// explanation (the machine-readable reason/decided_by stay unchanged above).
 	explainJSON := mcpToolText(t, byMCPID(t, msgs, 4))
 	var explain struct {
-		Allowed   bool   `json:"allowed"`
-		DecidedBy string `json:"decided_by"`
-		Reason    string `json:"reason"`
+		Allowed     bool   `json:"allowed"`
+		DecidedBy   string `json:"decided_by"`
+		Reason      string `json:"reason"`
+		Explanation string `json:"explanation"`
 	}
 	if err := json.Unmarshal([]byte(explainJSON), &explain); err != nil {
 		t.Fatalf("explain payload not JSON: %v\n%s", err, explainJSON)
@@ -219,12 +221,16 @@ func TestMCPPipedSession(t *testing.T) {
 	if explain.Reason != "handler: allow [domain, std]" {
 		t.Errorf("explain reason = %q, want handler: allow [domain, std]", explain.Reason)
 	}
+	if explain.Explanation == "" {
+		t.Errorf("explain: a denied verdict must carry a non-empty explanation\n%s", explainJSON)
+	}
 
-	// tools/call can_import — a boolean verdict.
+	// tools/call can_import — a boolean verdict plus the same additive explanation.
 	canJSON := mcpToolText(t, byMCPID(t, msgs, 5))
 	var can struct {
-		Allowed   bool   `json:"allowed"`
-		DecidedBy string `json:"decided_by"`
+		Allowed     bool   `json:"allowed"`
+		DecidedBy   string `json:"decided_by"`
+		Explanation string `json:"explanation"`
 	}
 	if err := json.Unmarshal([]byte(canJSON), &can); err != nil {
 		t.Fatalf("can_import payload not JSON: %v\n%s", err, canJSON)
@@ -234,6 +240,9 @@ func TestMCPPipedSession(t *testing.T) {
 	}
 	if can.DecidedBy != "rule" {
 		t.Errorf("can_import decided_by = %q, want rule", can.DecidedBy)
+	}
+	if can.Explanation == "" {
+		t.Errorf("can_import: a denied verdict must carry a non-empty explanation\n%s", canJSON)
 	}
 
 	// resources/read depdog://config — the compiled rule set as JSON.
@@ -290,8 +299,9 @@ func TestMCPBoundaryVerdict(t *testing.T) {
 	for _, id := range []int{2, 3, 4} {
 		txt := mcpToolText(t, byMCPID(t, msgs, id))
 		var v struct {
-			Allowed   bool   `json:"allowed"`
-			DecidedBy string `json:"decided_by"`
+			Allowed     bool   `json:"allowed"`
+			DecidedBy   string `json:"decided_by"`
+			Explanation string `json:"explanation"`
 		}
 		if err := json.Unmarshal([]byte(txt), &v); err != nil {
 			t.Fatalf("id %d: can_import payload not JSON: %v\n%s", id, err, txt)
@@ -301,6 +311,9 @@ func TestMCPBoundaryVerdict(t *testing.T) {
 		}
 		if v.DecidedBy != "boundary" {
 			t.Errorf("id %d: decided_by = %q, want boundary\n%s", id, v.DecidedBy, txt)
+		}
+		if v.Explanation == "" {
+			t.Errorf("id %d: a denied boundary verdict must carry a non-empty explanation\n%s", id, txt)
 		}
 	}
 }

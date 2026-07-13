@@ -9,6 +9,7 @@
       "target": "domain",
       "rule": "api: allow [service, std, external]",
       "test_only": false,
+      "explanation": "`tsdirty/src/api` (component `api`) may import only `service`, `std`, `external`; `../domain/order` (component `domain`) is not among them. Fix: add `domain` to `api`'s allow list, or depend only on what `api` already allows.",
       "positions": [
         {
           "file": "src/api/server.ts",
@@ -23,6 +24,7 @@
       "target": "service",
       "rule": "domain: allow [std]",
       "test_only": false,
+      "explanation": "`tsdirty/src/domain` (component `domain`) may import only `std`; `../service/notify` (component `service`) is not among them. Fix: add `service` to `domain`'s allow list, or depend only on what `domain` already allows.",
       "positions": [
         {
           "file": "src/domain/order.ts",

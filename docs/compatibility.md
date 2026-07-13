@@ -26,7 +26,12 @@ release, but existing ones never change name or meaning.
   `violations`, `warnings`, `components`, `boundaries`, `cycles`, `stats`, with
   their `snake_case` field names (`from_package`, `test_only`, `duration_ms`, …).
   Absent collections encode as `[]`, never `null`. Fields are added, never
-  renamed or removed.
+  renamed or removed. Each violation also carries an `explanation` — a
+  plain-English WHY-plus-fix for the denied edge, added additively; the
+  machine-readable `reason`/`kind` classification alongside it (empty for an
+  ordinary rule violation, `boundary`/`boundary-sealed` for a boundary crossing)
+  is unchanged and remains the field to branch on. The wording of `explanation`
+  itself is human-facing prose and may be refined within a major.
 - **`--format json` — the aggregate (multi-unit) envelope.** A `go.work`
   fan-out or a `depdog check --all` run emits the envelope:
   `root` (the walk-root's basename), `units[]` (each carries `dir` + `lang`

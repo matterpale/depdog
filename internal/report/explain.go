@@ -58,10 +58,17 @@ func ExplainEdge(w io.Writer, from, to string, rs *core.RuleSet, views []core.Pa
 		}
 		if !ok {
 			suffix := ""
+			kind := core.ReasonBoundary
 			if sealed {
 				suffix = " (sealed)"
+				kind = core.ReasonBoundarySealed
 			}
 			fmt.Fprintf(&b, "  denied by boundary %q%s\n", boundary, suffix)
+			b.WriteString("  " + explainEdgeProse(rs, core.Violation{
+				FromPackage: pv.ImportPath, FromComponent: pv.Component,
+				ImportPath: tpv.ImportPath, Target: orUnassigned(tpv.Component),
+				Reason: kind, Boundary: boundary,
+			}) + "\n")
 			_, werr := io.WriteString(w, b.String())
 			return werr
 		}
@@ -81,8 +88,29 @@ func ExplainEdge(w io.Writer, from, to string, rs *core.RuleSet, views []core.Pa
 		verdict = "allowed"
 	}
 	fmt.Fprintf(&b, "  %s by %s\n", verdict, reason)
+	// A denied component rule gets the same plain-English WHY + fix every other
+	// surface carries (one source of wording: core.Explanation). An allowed edge
+	// needs no explanation — the verdict already says it passes.
+	if !allowed {
+		imp := target
+		if isModule {
+			imp = to
+		}
+		b.WriteString("  " + explainEdgeProse(rs, core.Violation{
+			FromPackage: pv.ImportPath, FromComponent: pv.Component,
+			ImportPath: imp, Target: target,
+		}) + "\n")
+	}
 	_, werr := io.WriteString(w, b.String())
 	return werr
+}
+
+// explainEdgeProse renders the shared plain-English explanation for a denied
+// edge, given a synthetic Violation carrying the endpoints, component, target
+// and (for a boundary deny) the boundary kind/name. It is the single wording
+// source — core.Explanation — that JSON/github/SARIF/hover/MCP also use.
+func explainEdgeProse(rs *core.RuleSet, v core.Violation) string {
+	return core.Explanation(core.ExplainViolation(v, rs))
 }
 
 // relDir maps a package import path back to its module-relative directory, the

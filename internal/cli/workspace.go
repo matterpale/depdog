@@ -402,9 +402,9 @@ func renderSingle(out io.Writer, format string, res *core.Result, rules *core.Ru
 	case "json":
 		return report.JSON(out, res, rules, elapsed)
 	case "github":
-		return report.GitHub(out, res)
+		return report.GitHub(out, res, rules)
 	case "sarif":
-		return report.SARIF(out, res, Version)
+		return report.SARIF(out, res, rules, Version)
 	default:
 		return fmt.Errorf("unknown --format %q (text, json, github or sarif)", format)
 	}

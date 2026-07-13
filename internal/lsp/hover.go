@@ -204,8 +204,20 @@ func hoverMarkdown(rs *core.RuleSet, edges []edgeRef, configURI string) (string,
 		if e.imp.TestOnly {
 			verdict += " [test]"
 		}
-		blocks = append(blocks, fmt.Sprintf("**depdog** — `%s` (%s) → `%s` (%s)\n\n%s",
-			e.fromImportPath, comp, e.imp.Path, v.Target, verdict))
+		block := fmt.Sprintf("**depdog** — `%s` (%s) → `%s` (%s)\n\n%s",
+			e.fromImportPath, comp, e.imp.Path, v.Target, verdict)
+		// A denied edge gains the same plain-English WHY + fix every other
+		// surface carries (one source of wording: core.Explanation), rendered as
+		// a trailing paragraph. Allowed and unassigned edges need none.
+		if !v.Allowed && v.Reason != "" {
+			prose := core.Explanation(core.ExplainViolation(core.Violation{
+				FromPackage: e.fromImportPath, FromComponent: v.Component,
+				ImportPath: e.imp.Path, Target: v.Target,
+				Reason: v.Kind, Boundary: v.Boundary,
+			}, rs))
+			block += "\n\n" + prose
+		}
+		blocks = append(blocks, block)
 	}
 	if configURI != "" {
 		blocks = append(blocks, fmt.Sprintf("[depdog.yaml](%s)", configURI))
@@ -225,6 +237,12 @@ type edgeVerdict struct {
 	Target    string
 	Allowed   bool
 	Reason    string
+	// Kind and Boundary carry the machine-readable classification a denied edge
+	// needs to phrase its prose explanation: ReasonRule for an ordinary
+	// allow/deny/stance deny, a boundary kind (with Boundary set) for a boundary
+	// crossing. They let hoverMarkdown reuse core.Explanation without re-deciding.
+	Kind     core.ReasonKind
+	Boundary string
 }
 
 // verdictFor mirrors report.ExplainEdge for one concrete import edge, calling
@@ -265,9 +283,12 @@ func verdictFor(rs *core.RuleSet, fromRelDir string, imp core.Import) (edgeVerdi
 		}
 		if !ok {
 			suffix := ""
+			v.Kind = core.ReasonBoundary
 			if sealed {
 				suffix = " (sealed)"
+				v.Kind = core.ReasonBoundarySealed
 			}
+			v.Boundary = boundary
 			v.Reason = fmt.Sprintf("boundary %q%s", boundary, suffix)
 			return v, nil
 		}

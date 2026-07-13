@@ -12,9 +12,9 @@ import (
 // annotations on a pull request: one ::error:: per source position of each
 // violation, and a ::warning:: for every unassigned package. A plain summary
 // line closes the run log. Output is deterministic given a sorted Result.
-func GitHub(w io.Writer, res *core.Result) error {
+func GitHub(w io.Writer, res *core.Result, rs *core.RuleSet) error {
 	var b strings.Builder
-	githubAnnotations(&b, res, "")
+	githubAnnotations(&b, res, rs, "")
 	fmt.Fprintf(&b, "depdog check — %s · %s · %s\n",
 		res.ModulePath, plural(len(res.Violations), "violation"), plural(res.Stats.Packages, "package"))
 	_, err := io.WriteString(w, b.String())
@@ -28,7 +28,7 @@ func GitHubWorkspace(w io.Writer, mods []Module) error {
 	var b strings.Builder
 	var totalV, totalP int
 	for _, m := range mods {
-		githubAnnotations(&b, m.Result, m.Rel)
+		githubAnnotations(&b, m.Result, m.Rules, m.Rel)
 		totalV += len(m.Result.Violations)
 		totalP += m.Result.Stats.Packages
 	}
@@ -41,12 +41,16 @@ func GitHubWorkspace(w io.Writer, mods []Module) error {
 // githubAnnotations writes the ::error::/::warning:: lines for one result.
 // prefix (a unit's walk-root-relative dir, "" for a single unit) is joined
 // onto each file location.
-func githubAnnotations(b *strings.Builder, res *core.Result, prefix string) {
+func githubAnnotations(b *strings.Builder, res *core.Result, rs *core.RuleSet, prefix string) {
 	for _, v := range res.Violations {
 		msg := fmt.Sprintf("%s imports %s (%s)", v.FromComponent, v.ImportPath, v.Rule)
 		if v.TestOnly {
 			msg += " [test]"
 		}
+		// Append the same plain-English explanation the JSON/text/SARIF surfaces
+		// carry, so the terse annotation gains the WHY + fix (one source of
+		// wording: core.Explanation). LF in it is escaped by ghData below.
+		msg += " — " + core.Explanation(core.ExplainViolation(v, rs))
 		if len(v.Positions) == 0 {
 			fmt.Fprintf(b, "::error::%s\n", ghData(msg))
 			continue

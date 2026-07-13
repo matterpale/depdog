@@ -1,2 +1,3 @@
 example.test/dirty/internal/domain/pricing (domain) → internal/repository (repository)
   denied by domain: allow [std]
+  `example.test/dirty/internal/domain/pricing` (component `domain`) may import only `std`; `repository` (component `repository`) is not among them. Fix: add `repository` to `domain`'s allow list, or depend only on what `domain` already allows.

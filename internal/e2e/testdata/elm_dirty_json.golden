@@ -9,6 +9,7 @@
       "target": "service",
       "rule": "domain: allow [std]",
       "test_only": false,
+      "explanation": "`elm-dirty/src/Domain` (component `domain`) may import only `std`; `Service.Orders` (component `service`) is not among them. Fix: add `service` to `domain`'s allow list, or depend only on what `domain` already allows.",
       "positions": [
         {
           "file": "src/Domain/Order.elm",

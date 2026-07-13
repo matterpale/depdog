@@ -1,2 +1,3 @@
 boundaryfix/internal/badshared (shared) → cmd/service-a (service-a)
   denied by boundary "cmd-services" (sealed)
+  the `cmd-services` boundary is sealed — only its members may import inward. `boundaryfix/internal/badshared` is outside `cmd-services`, so it may not import `boundaryfix/cmd/service-a` (a member). Fix: add `boundaryfix/internal/badshared` to `cmd-services`, or route through an allowed component.

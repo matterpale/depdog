@@ -1,2 +1,3 @@
 boundaryfix/cmd/service-b (service-b) → cmd/service-a (service-a)
   denied by boundary "cmd-services"
+  `boundaryfix/cmd/service-b` and `boundaryfix/cmd/service-a` are peers in the `cmd-services` boundary (its members include `service-a` and `service-b`), which is mutually exclusive, so neither may import the other. Fix: move the shared code into a component outside `cmd-services`, or remove one member from the boundary.

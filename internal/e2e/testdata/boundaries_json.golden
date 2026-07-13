@@ -11,6 +11,7 @@
       "test_only": false,
       "boundary": "cmd-services",
       "reason": "boundary",
+      "explanation": "`boundaryfix/cmd/service-b` and `boundaryfix/cmd/service-a` are peers in the `cmd-services` boundary (its members include `service-a` and `service-b`), which is mutually exclusive, so neither may import the other. Fix: move the shared code into a component outside `cmd-services`, or remove one member from the boundary.",
       "positions": [
         {
           "file": "cmd/service-b/service.go",
@@ -27,6 +28,7 @@
       "test_only": false,
       "boundary": "cmd-services",
       "reason": "boundary-sealed",
+      "explanation": "the `cmd-services` boundary is sealed — only its members may import inward. `boundaryfix/internal/badshared` is outside `cmd-services`, so it may not import `boundaryfix/cmd/service-a` (a member). Fix: add `boundaryfix/internal/badshared` to `cmd-services`, or route through an allowed component.",
       "positions": [
         {
           "file": "internal/badshared/lib.go",
