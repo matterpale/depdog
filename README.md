@@ -127,9 +127,9 @@ options:
   skip: [ "internal/legacy/**" ]    # package dirs excluded from analysis
 ```
 
-Here `domain` is a **whitelist** (an `allow` list — only what's listed passes) and the
-three peers are **blacklists** (a `deny` list — everything except what's listed); the
-stance is read per component from which word you use. `main` has no rule at all, so it
+Here `domain` is a **whitelist** (an `allow` list — only what's listed passes); the
+three peers instead use `deny` lists to forbid their siblings, and the stance is read
+per component from which word you use. `main` has no rule at all, so it
 falls back to the top-level `default` — which is `allow`, so it may import anything
 (an explicit `allow: ["*"]` would be equivalent, just noisier). `path` takes a single
 glob or a list (`path: ["internal/api/**", "internal/rpc/**"]`).
