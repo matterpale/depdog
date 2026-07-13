@@ -100,13 +100,16 @@ func runDiff(cmd *cobra.Command, args []string, configPath, since, format string
 // assigned components under one architecture definition (D1). The worktree is
 // always removed, even on error.
 func beforeGraph(cmd *cobra.Command, adapter lang.Adapter, root, cfgPath string, rs *core.RuleSet, since string, args []string) (*evaluation, error) {
-	repoRoot, err := gitRepoRoot(root)
+	// Ask git for the module root's path relative to the repo root directly
+	// (forward slashes, no leading slash, "" at the repo root). This avoids
+	// comparing two independently-obtained absolute paths: git's --show-toplevel
+	// is forward-slash and, on Windows runners where TEMP is an 8.3 short name
+	// (C:\Users\RUNNER~1\...), disagrees in form with Go's native path, so
+	// filepath.Rel produced an up-and-over path that pointed the scan back at the
+	// current tree. git's own relative prefix sidesteps that entirely.
+	prefix, err := gitModulePrefix(root)
 	if err != nil {
 		return nil, err
-	}
-	moduleRel, err := filepath.Rel(repoRoot, root)
-	if err != nil {
-		return nil, fmt.Errorf("locating module inside the repo: %w", err)
 	}
 
 	tmp, err := os.MkdirTemp("", "depdog-diff-*")
@@ -115,13 +118,13 @@ func beforeGraph(cmd *cobra.Command, adapter lang.Adapter, root, cfgPath string,
 	}
 	defer os.RemoveAll(tmp)
 
-	if err := gitWorktreeAdd(repoRoot, tmp, since); err != nil {
+	if err := gitWorktreeAdd(root, tmp, since); err != nil {
 		return nil, err
 	}
 	// Always tear the worktree down, even on scan error or panic.
-	defer gitWorktreeRemove(cmd, repoRoot, tmp)
+	defer gitWorktreeRemove(cmd, root, tmp)
 
-	beforeRoot := filepath.Join(tmp, filepath.FromSlash(moduleRel))
+	beforeRoot := filepath.Join(tmp, filepath.FromSlash(prefix))
 	return evaluateWith(cmd, adapter, beforeRoot, cfgPath, rs, args)
 }
 
@@ -155,17 +158,18 @@ func resolveModule(cmd *cobra.Command, configPath string) (adapter lang.Adapter,
 	return resolveProject(cwd, language)
 }
 
-// gitRepoRoot returns the repository top-level dir for the tree at dir, or an
-// actionable error when dir is not inside a git repo. git reports the path with
-// forward slashes even on Windows, so normalize it to the OS-native separator —
-// otherwise filepath.Rel against Go's native module path yields a broken
-// module-relative dir and the worktree scan can't find go.mod (Windows CI).
-func gitRepoRoot(dir string) (string, error) {
-	out, err := runGit(dir, "rev-parse", "--show-toplevel")
+// gitModulePrefix returns the path of dir relative to its repository root
+// (forward slashes, no leading slash, "" when dir is the repo root), or an
+// actionable error when dir is not inside a git repo. Using git's own relative
+// prefix — rather than filepath.Rel between git's --show-toplevel and Go's
+// absolute path — is robust when the two disagree in form (forward vs native
+// slash, or an 8.3 short name for TEMP on Windows).
+func gitModulePrefix(dir string) (string, error) {
+	out, err := runGit(dir, "rev-parse", "--show-prefix")
 	if err != nil {
 		return "", fmt.Errorf("not a git repository (%s) — `depdog diff` needs git to materialize the --since ref: %w", dir, err)
 	}
-	return filepath.FromSlash(strings.TrimSpace(out)), nil
+	return strings.TrimSpace(out), nil
 }
 
 func gitWorktreeAdd(repoRoot, tmp, ref string) error {
