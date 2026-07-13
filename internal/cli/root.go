@@ -40,6 +40,7 @@ Run bare, depdog evaluates the check (like ` + "`depdog check`" + `) and exits
 	root.AddCommand(baselineCmd())
 	root.AddCommand(graphCmd())
 	root.AddCommand(explainCmd())
+	root.AddCommand(diffCmd())
 	root.AddCommand(lspCmd())
 	root.AddCommand(mcpCmd())
 	root.AddCommand(tuiCmd())

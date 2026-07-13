@@ -110,6 +110,12 @@ func graphElements(module string, views []core.PackageView, violations []core.Vi
 		byPath[pv.ImportPath] = pv.Boundaries
 	}
 
+	// Nodes (and their boundary membership) are registered for every package at
+	// either level. Edges are the in-module, cross-node pairs; at component level
+	// the cross-node test collapses to the shared componentEdgeSet notion of a
+	// cross-component edge, so the graph and the diff never disagree on what an
+	// edge is. Violations are OR'd across the package edges backing each node
+	// edge.
 	for _, pv := range views {
 		src := node(pv.Component, pv.ImportPath)
 		ensure(src, pv.Boundaries)
