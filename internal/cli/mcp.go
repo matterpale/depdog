@@ -87,7 +87,16 @@ func (h *mcpHandler) Check(_ context.Context, path string, all bool) ([]byte, er
 
 	if all {
 		// --config and --all are mutually exclusive on the CLI; honour --all's
-		// polyglot fan-out over the resolved directory, ignoring --config.
+		// polyglot fan-out over the resolved directory, ignoring --config. A
+		// depdog.work.yaml at the root upgrades the fan-out to the cross-unit
+		// work mode, exactly as it does for `depdog check`.
+		if wp, ok := config.FindWorkFile(dir); ok {
+			run, err := evaluateWorkMode(h.cmd, wp, dir, checkOptions{}, nil)
+			if err != nil {
+				return nil, err
+			}
+			return renderCheckJSON(run)
+		}
 		run, err := evaluateUnits(h.cmd, dir, nil, nil, true)
 		if err != nil {
 			return nil, err
@@ -116,14 +125,18 @@ func (h *mcpHandler) Check(_ context.Context, path string, all bool) ([]byte, er
 func renderCheckJSON(run *checkRun) ([]byte, error) {
 	var buf bytes.Buffer
 	mods, skipped := run.split()
-	if len(mods) == 1 && len(skipped) == 0 {
+	if run.CrossResult == nil && len(mods) == 1 && len(skipped) == 0 {
 		m := mods[0]
 		if err := report.JSON(&buf, m.Result, m.Rules, 0); err != nil {
 			return nil, err
 		}
 		return buf.Bytes(), nil
 	}
-	if err := report.JSONWorkspace(&buf, run.Root, mods, skipped, 0); err != nil {
+	var cross *report.CrossUnit
+	if run.CrossResult != nil {
+		cross = &report.CrossUnit{Result: run.CrossResult, Work: run.Work}
+	}
+	if err := report.JSONWorkspace(&buf, run.Root, mods, skipped, cross, 0); err != nil {
 		return nil, err
 	}
 	return buf.Bytes(), nil

@@ -52,6 +52,13 @@ type Explain struct {
 	// cross-member deny involves); it may be empty when unavailable.
 	Boundary string
 	Peers    []string
+
+	// SurfaceExports / SurfaceInternal are the target unit's declared surface
+	// globs, and SurfaceInternalHit says whether the internal list (rather than
+	// the exports whitelist) denied the edge. Cross-unit-surface kind only.
+	SurfaceExports     []string
+	SurfaceInternal    []string
+	SurfaceInternalHit bool
 }
 
 // ExplainViolation builds the Explanation input for a decided Violation, drawn
@@ -115,6 +122,14 @@ func Explanation(e Explain) string {
 		return boundaryExplanation(e)
 	case ReasonBoundarySealed:
 		return boundarySealedExplanation(e)
+	case ReasonCrossUnit:
+		return crossUnitExplanation(e)
+	case ReasonCrossUnitBoundary:
+		return crossUnitBoundaryExplanation(e)
+	case ReasonCrossUnitBoundarySealed:
+		return crossUnitBoundarySealedExplanation(e)
+	case ReasonCrossUnitSurface:
+		return crossUnitSurfaceExplanation(e)
 	default:
 		return ruleExplanation(e)
 	}
@@ -175,6 +190,104 @@ func boundarySealedExplanation(e Explain) string {
 		"the `%s` boundary is sealed — only its members may import inward. `%s` is outside `%s`, "+
 			"so it may not import `%s` (a member). Fix: add `%s` to `%s`, or route through an allowed component.",
 		e.Boundary, e.From, e.Boundary, e.To, e.From, e.Boundary)
+}
+
+// ExplainWorkViolation builds the Explanation input for a cross-unit
+// violation, drawn from the violation and the work rules that judged it. The
+// unit-level kinds populate the same rule/boundary fields ExplainViolation
+// does (the work rule set's components are the units); the surface kind adds
+// the target unit's surface globs and which list fired — recovered from the
+// rule text EvaluateWork stamped, so verdict and explanation cannot drift.
+func ExplainWorkViolation(v Violation, w *WorkRules) Explain {
+	e := ExplainViolation(v, w.Rules)
+	if v.Reason == ReasonCrossUnitSurface {
+		s := w.Surfaces[v.Target]
+		e.SurfaceExports = s.Exports
+		e.SurfaceInternal = s.Internal
+		e.SurfaceInternalHit = strings.HasPrefix(v.Rule, v.Target+": internal")
+	}
+	if v.Reason == ReasonCrossUnitBoundary || v.Reason == ReasonCrossUnitBoundarySealed {
+		e.Peers = w.Rules.boundaryPeers(v.Boundary)
+	}
+	return e
+}
+
+// crossUnitExplanation phrases a unit-level rule/stance denial: the same three
+// branches as ruleExplanation, in unit vocabulary and pointing the fix at
+// depdog.work.yaml.
+func crossUnitExplanation(e Explain) string {
+	from, to := e.FromComponent, e.Target
+	if denyRef, ok := e.deniedBy(); ok {
+		return fmt.Sprintf(
+			"unit `%s` explicitly denies depending on `%s` (its deny list in depdog.work.yaml names `%s`). "+
+				"Fix: remove `%s` from `%s`'s deny list if the dependency is intended, or drop the reference to `%s`.",
+			from, to, denyRef, denyRef, from, e.To)
+	}
+	if e.Stance == PolicyDeny && len(e.Allow) > 0 {
+		return fmt.Sprintf(
+			"unit `%s` may depend only on %s; unit `%s` is not among them. "+
+				"Fix: add `%s` to `%s`'s allow list in depdog.work.yaml, or depend only on what `%s` already allows.",
+			from, refList(e.Allow), to, to, from, from)
+	}
+	return fmt.Sprintf(
+		"no rule permits unit `%s` to depend on unit `%s`, and the work file's default is to deny. "+
+			"Fix: add `%s` to `%s`'s allow list in depdog.work.yaml.",
+		from, to, to, from)
+}
+
+// crossUnitBoundaryExplanation phrases two units that are peers of the same
+// work-file boundary depending on each other.
+func crossUnitBoundaryExplanation(e Explain) string {
+	peers := ""
+	if names := formatPeers(e.Peers); names != "" {
+		peers = fmt.Sprintf(" (its members include %s)", names)
+	}
+	return fmt.Sprintf(
+		"units `%s` and `%s` are peers in the `%s` boundary%s, which is mutually exclusive, so neither may depend on the other. "+
+			"Fix: extract the shared code into a unit outside `%s`, or remove one member from the boundary.",
+		e.FromComponent, e.Target, e.Boundary, peers, e.Boundary)
+}
+
+// crossUnitBoundarySealedExplanation phrases a unit outside a sealed work-file
+// boundary depending inward on a member.
+func crossUnitBoundarySealedExplanation(e Explain) string {
+	return fmt.Sprintf(
+		"the `%s` boundary is sealed — only its member units may depend inward. `%s` is outside `%s`, "+
+			"so it may not depend on `%s` (a member). Fix: add `%s` to `%s`, or route through an allowed unit.",
+		e.Boundary, e.FromComponent, e.Boundary, e.Target, e.FromComponent, e.Boundary)
+}
+
+// crossUnitSurfaceExplanation phrases an edge that is allowed at unit level
+// but reaches a sub-path the target unit does not expose: either it matched
+// the internal list, or the exports whitelist does not cover it.
+func crossUnitSurfaceExplanation(e Explain) string {
+	if e.SurfaceInternalHit {
+		exported := ""
+		if len(e.SurfaceExports) > 0 {
+			exported = fmt.Sprintf(" through its exported surface (%s)", surfaceList(e.SurfaceExports))
+		}
+		return fmt.Sprintf(
+			"`%s` reaches into `%s`'s internal paths: `%s` matches %s, which `%s` declares internal. "+
+				"Fix: depend on `%s`%s, or widen `%s`'s surface in depdog.work.yaml.",
+			e.FromComponent, e.Target, e.To, surfaceList(e.SurfaceInternal), e.Target,
+			e.Target, exported, e.Target)
+	}
+	return fmt.Sprintf(
+		"`%s` may reach `%s` only through its exported surface (%s); `%s` is not exported. "+
+			"Fix: depend on an exported path of `%s`, or add this path to `%s`'s exports in depdog.work.yaml.",
+		e.FromComponent, e.Target, surfaceList(e.SurfaceExports), e.To, e.Target, e.Target)
+}
+
+// surfaceList renders surface globs as a backtick-quoted list for prose.
+func surfaceList(globs []string) string {
+	if len(globs) == 0 {
+		return "nothing"
+	}
+	parts := make([]string, len(globs))
+	for i, g := range globs {
+		parts[i] = "`" + g + "`"
+	}
+	return strings.Join(parts, ", ")
 }
 
 // deniedBy reports the ref token of a deny entry that covers the destination,

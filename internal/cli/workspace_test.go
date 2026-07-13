@@ -34,11 +34,12 @@ func cmdWithLang(t *testing.T, langFlag string) *cobra.Command {
 // combination must be rejected (exit 2), and every allowed one accepted.
 func TestCheckFlagConflicts(t *testing.T) {
 	cases := []struct {
-		name    string
-		lang    string
-		o       checkOptions
-		args    []string
-		wantErr string // substring; "" means no error
+		name     string
+		lang     string
+		o        checkOptions
+		args     []string
+		workMode bool
+		wantErr  string // substring; "" means no error
 	}{
 		{name: "plain", o: checkOptions{}},
 		{name: "all alone", o: checkOptions{all: true}},
@@ -52,14 +53,21 @@ func TestCheckFlagConflicts(t *testing.T) {
 
 		{name: "all + lang", lang: "go", o: checkOptions{all: true}, wantErr: "units auto-detect their language"},
 		{name: "all + module", o: checkOptions{all: true, modules: []string{"m"}}, wantErr: "--module cannot be combined with --all"},
-		{name: "all + positional", o: checkOptions{all: true}, args: []string{"./pkg"}, wantErr: "use --unit to narrow an --all run"},
+		{name: "all + positional", o: checkOptions{all: true}, args: []string{"./pkg"}, wantErr: "use --unit to narrow the run"},
 
 		{name: "unit without all", o: checkOptions{units: []string{"web"}}, wantErr: "--unit only applies with --all"},
+
+		// Work mode is a fan-out like --all: --unit becomes legal without
+		// --all, while --lang / --module / positional args stay outlawed.
+		{name: "work + unit", workMode: true, o: checkOptions{units: []string{"web"}}},
+		{name: "work + lang", workMode: true, lang: "go", o: checkOptions{}, wantErr: "units auto-detect their language"},
+		{name: "work + module", workMode: true, o: checkOptions{modules: []string{"m"}}, wantErr: "--module cannot be combined with a depdog.work.yaml run"},
+		{name: "work + positional", workMode: true, o: checkOptions{}, args: []string{"./pkg"}, wantErr: "no cross-unit meaning under a depdog.work.yaml run"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			cmd := cmdWithLang(t, tc.lang)
-			err := checkFlagConflicts(cmd, tc.o, tc.args)
+			err := checkFlagConflicts(cmd, tc.o, tc.args, tc.workMode)
 			if tc.wantErr == "" {
 				if err != nil {
 					t.Fatalf("unexpected error: %v", err)

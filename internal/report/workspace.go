@@ -31,9 +31,10 @@ type Skipped struct {
 }
 
 // TextWorkspace writes the aggregate human report: each analyzed unit as its own
-// section (the same body Text produces, under a `▸ ./<dir> (<lang>)` header), a
-// skipped-units advisory, and a rolled-up summary line counting checked units.
-func TextWorkspace(w io.Writer, mods []Module, skipped []Skipped, elapsed time.Duration, color string) error {
+// section (the same body Text produces, under a `▸ ./<dir> (<lang>)` header), the
+// cross-unit section on a work-file run (cross may be nil), a skipped-units
+// advisory, and a rolled-up summary line counting checked units.
+func TextWorkspace(w io.Writer, mods []Module, skipped []Skipped, cross *CrossUnit, elapsed time.Duration, color string) error {
 	st := newStyles(w, color)
 	var totalV, totalW, totalP, totalE int
 	for i, m := range mods {
@@ -49,19 +50,34 @@ func TextWorkspace(w io.Writer, mods []Module, skipped []Skipped, elapsed time.D
 		totalP += m.Result.Stats.Packages
 		totalE += m.Result.Stats.Edges
 	}
+	if cross != nil {
+		if len(mods) > 0 {
+			fmt.Fprintln(w)
+		}
+		textCrossUnit(w, st, cross)
+	}
 	if len(skipped) > 0 {
 		fmt.Fprintf(w, "\n%s %s skipped (no depdog.yaml):\n", st.warn.Render("!"), plural(len(skipped), "unit"))
 		for _, s := range skipped {
-			fmt.Fprintf(w, "    ./%s\n", s.Rel)
+			// The standard reason is implied by the header; only a richer one
+			// (a work unit scanned for cross-unit governance) earns a note.
+			if s.Reason != "" && s.Reason != "no depdog.yaml" {
+				fmt.Fprintf(w, "    ./%s  (%s)\n", s.Rel, s.Reason)
+			} else {
+				fmt.Fprintf(w, "    ./%s\n", s.Rel)
+			}
 		}
 	}
 	mark := st.good.Render("✓")
-	if totalV > 0 {
+	if totalV+cross.violationCount() > 0 {
 		mark = st.bad.Render("✗")
 	}
 	fmt.Fprintf(w, "\n%s %s across %s", mark, plural(totalV, "violation"), plural(len(mods), "checked unit"))
 	if len(skipped) > 0 {
 		fmt.Fprintf(w, " (%d skipped)", len(skipped))
+	}
+	if cross != nil {
+		fmt.Fprintf(w, " · %s", plural(cross.violationCount(), "cross-unit violation"))
 	}
 	if totalW > 0 {
 		fmt.Fprintf(w, " · %s", plural(totalW, "warning"))

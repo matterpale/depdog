@@ -117,7 +117,10 @@ type jsonWorkspaceReport struct {
 	Root    string     `json:"root"`
 	Units   []jsonUnit `json:"units"`
 	Skipped []jsonSkip `json:"skipped"`
-	Stats   jsonStats  `json:"stats"`
+	// CrossUnit carries the cross-unit governance pass of a depdog.work.yaml
+	// run; absent on every other run (purely additive to the envelope).
+	CrossUnit *jsonCrossUnit `json:"cross_unit,omitempty"`
+	Stats     jsonStats      `json:"stats"`
 }
 
 // jsonUnit is one analyzed unit in the envelope: its walk-root-relative
@@ -137,12 +140,16 @@ type jsonSkip struct {
 // JSONWorkspace encodes the aggregate envelope. Per-unit duration is left at 0
 // (only the aggregate carries elapsed); root is the walk-root's basename and
 // each unit self-identifies by its dir + module path, so no machine-specific
-// absolute path leaks into the output.
-func JSONWorkspace(w io.Writer, root string, mods []Module, skipped []Skipped, elapsed time.Duration) error {
+// absolute path leaks into the output. cross (nil outside work-file runs)
+// nests the cross-unit pass under "cross_unit".
+func JSONWorkspace(w io.Writer, root string, mods []Module, skipped []Skipped, cross *CrossUnit, elapsed time.Duration) error {
 	out := jsonWorkspaceReport{
 		Root:    root,
 		Units:   make([]jsonUnit, 0, len(mods)),
 		Skipped: make([]jsonSkip, 0, len(skipped)),
+	}
+	if cross != nil {
+		out.CrossUnit = buildCrossUnit(cross)
 	}
 	for _, m := range mods {
 		out.Units = append(out.Units, jsonUnit{

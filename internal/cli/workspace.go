@@ -37,6 +37,12 @@ type checkRun struct {
 	Workspace *config.Workspace
 	Root      string
 	Members   []memberEval
+	// Work and CrossResult carry the cross-unit governance pass of a
+	// depdog.work.yaml run: the compiled work rules and the unit-level
+	// verdicts. Both nil outside work mode (and under a --unit narrowing,
+	// which skips the cross pass).
+	Work        *core.WorkRules
+	CrossResult *core.Result
 }
 
 func (r *checkRun) hasAnalyzed() bool {
@@ -71,6 +77,7 @@ func (r *checkRun) split() (mods []report.Module, skipped []report.Skipped) {
 // order and adding the polyglot branch plus the discovery fallback:
 //
 //	[a] --config           → single module (unchanged).
+//	[w] depdog.work.yaml   → cross-unit work mode: polyglot fan-out + cross pass.
 //	[b] --all              → polyglot fan-out over discovered units (D1).
 //	[c] active go.work     → workspace fan-out (unchanged).
 //	[d] single module; and ONLY on a resolution error (no project root / no
@@ -78,7 +85,18 @@ func (r *checkRun) split() (mods []report.Module, skipped []report.Skipped) {
 //	    discovery under the cwd. ≥1 unit → polyglot fan-out; else the original
 //	    resolution error, unchanged (D1 fallback).
 func evaluateCheckTargets(cmd *cobra.Command, o checkOptions, args []string) (*checkRun, error) {
-	if err := checkFlagConflicts(cmd, o, args); err != nil {
+	cwd, err := os.Getwd()
+	if err != nil {
+		return nil, err
+	}
+	// A work file at the checked root turns the run into work mode — unless an
+	// explicit --config pins a single module, which always wins.
+	workPath, workMode := "", false
+	if o.configPath == "" {
+		workPath, workMode = config.FindWorkFile(cwd)
+	}
+
+	if err := checkFlagConflicts(cmd, o, args, workMode); err != nil {
 		return nil, err
 	}
 
@@ -87,9 +105,10 @@ func evaluateCheckTargets(cmd *cobra.Command, o checkOptions, args []string) (*c
 		return singleRun(cmd, o.configPath, args)
 	}
 
-	cwd, err := os.Getwd()
-	if err != nil {
-		return nil, err
+	// [w] work mode: fan-out plus the cross-unit pass. It outranks the go.work
+	// fan-out — the work file is the more explicit statement of intent.
+	if workMode {
+		return evaluateWorkMode(cmd, workPath, cwd, o, args)
 	}
 
 	// [b] --all → explicit polyglot fan-out.
@@ -123,8 +142,10 @@ func evaluateCheckTargets(cmd *cobra.Command, o checkOptions, args []string) (*c
 }
 
 // checkFlagConflicts rejects the flag combinations the polyglot mode outlaws
-// (D7/D8), each an exit-2 usage error.
-func checkFlagConflicts(cmd *cobra.Command, o checkOptions, args []string) error {
+// (D7/D8), each an exit-2 usage error. workMode (a depdog.work.yaml at the
+// checked root) is a fan-out like --all, so the same combinations are outlawed
+// and --unit becomes legal without --all.
+func checkFlagConflicts(cmd *cobra.Command, o checkOptions, args []string, workMode bool) error {
 	if o.configPath != "" {
 		if len(o.modules) > 0 {
 			return fmt.Errorf("--module cannot be combined with --config")
@@ -133,22 +154,26 @@ func checkFlagConflicts(cmd *cobra.Command, o checkOptions, args []string) error
 			return fmt.Errorf("--config cannot be combined with --all or --unit")
 		}
 	}
-	if o.all {
+	if o.all || workMode {
+		mode := "--all"
+		if !o.all {
+			mode = "a " + config.WorkFileName + " run"
+		}
 		if lang, _ := cmd.Flags().GetString("lang"); lang != "" {
 			// Phrased so the flag name is not the first word: fang
 			// title-cases the first letter of the error banner, which would
 			// otherwise render "--lang" as "--Lang".
-			return fmt.Errorf("combining --lang with --all is not allowed: units auto-detect their language; pin one unit with `lang:` in its depdog.yaml")
+			return fmt.Errorf("combining --lang with %s is not allowed: units auto-detect their language; pin one unit with `lang:` in its depdog.yaml or the work file", mode)
 		}
 		if len(o.modules) > 0 {
-			return fmt.Errorf("--module cannot be combined with --all (--module is go.work-only; use --unit to narrow an --all run)")
+			return fmt.Errorf("--module cannot be combined with %s (--module is go.work-only; use --unit to narrow the run)", mode)
 		}
 		if len(args) > 0 {
-			return fmt.Errorf("a [packages] filter has no cross-unit meaning under --all: use --unit to narrow an --all run")
+			return fmt.Errorf("a [packages] filter has no cross-unit meaning under %s: use --unit to narrow the run", mode)
 		}
 	}
-	if !o.all && len(o.units) > 0 {
-		return fmt.Errorf("--unit only applies with --all")
+	if !o.all && !workMode && len(o.units) > 0 {
+		return fmt.Errorf("--unit only applies with --all or a %s run", config.WorkFileName)
 	}
 	return nil
 }
@@ -166,7 +191,7 @@ func fallbackUnits(cmd *cobra.Command, cwd string, args []string) (*checkRun, bo
 	if len(units) == 0 {
 		return nil, false, nil
 	}
-	run, err := runUnits(cmd, cwd, units, ungoverned, nil, args)
+	run, err := runUnits(cmd, cwd, units, ungoverned, nil, args, true)
 	if err != nil {
 		return nil, false, err
 	}
@@ -228,14 +253,16 @@ func evaluateUnits(cmd *cobra.Command, cwd string, unitSelectors, args []string,
 		return nil, fmt.Errorf("no %s found under %s — run `depdog init` in each subtree you want governed",
 			config.DefaultName, cwd)
 	}
-	return runUnits(cmd, cwd, units, ungoverned, unitSelectors, args)
+	return runUnits(cmd, cwd, units, ungoverned, unitSelectors, args, true)
 }
 
 // runUnits evaluates already-discovered units (optionally narrowed by
 // selectors) against their per-unit adapters, advisory-skipping the ungoverned
 // marker directories. It fails fast (exit 2) on the first unit config/load
-// error, matching evaluateWorkspace's contract.
-func runUnits(cmd *cobra.Command, cwd string, units []config.Unit, ungoverned, selectors, args []string) (*checkRun, error) {
+// error, matching evaluateWorkspace's contract. requireAnalyzed keeps the
+// zero-governed-units usage error for the --all/fallback paths; work mode
+// passes false — a work file alone still governs the unit-level edges.
+func runUnits(cmd *cobra.Command, cwd string, units []config.Unit, ungoverned, selectors, args []string, requireAnalyzed bool) (*checkRun, error) {
 	selected, err := selectUnits(cwd, units, selectors)
 	if err != nil {
 		return nil, err
@@ -265,7 +292,7 @@ func runUnits(cmd *cobra.Command, cwd string, units []config.Unit, ungoverned, s
 			run.Members = append(run.Members, memberEval{Rel: dir, SkipReason: "no " + config.DefaultName})
 		}
 	}
-	if !run.hasAnalyzed() {
+	if requireAnalyzed && !run.hasAnalyzed() {
 		return nil, fmt.Errorf("no %s found under %s — run `depdog init` in each subtree you want governed",
 			config.DefaultName, cwd)
 	}
@@ -369,7 +396,9 @@ func reportCheck(cmd *cobra.Command, run *checkRun, format, color string, elapse
 	out := cmd.OutOrStdout()
 	mods, skipped := run.split()
 
-	if len(mods) == 1 && len(skipped) == 0 {
+	// A work-file run always uses the aggregate reporters — the cross-unit
+	// section has no place in the single-module layout.
+	if run.CrossResult == nil && len(mods) == 1 && len(skipped) == 0 {
 		m := mods[0]
 		if err := renderSingle(out, format, m.Result, m.Rules, elapsed, color); err != nil {
 			return 0, err
@@ -381,15 +410,20 @@ func reportCheck(cmd *cobra.Command, run *checkRun, format, color string, elapse
 	for _, m := range mods {
 		total += len(m.Result.Violations)
 	}
+	var cross *report.CrossUnit
+	if run.CrossResult != nil {
+		cross = &report.CrossUnit{Result: run.CrossResult, Work: run.Work}
+		total += len(run.CrossResult.Violations)
+	}
 	switch format {
 	case "text":
-		return total, report.TextWorkspace(out, mods, skipped, elapsed, color)
+		return total, report.TextWorkspace(out, mods, skipped, cross, elapsed, color)
 	case "json":
-		return total, report.JSONWorkspace(out, run.Root, mods, skipped, elapsed)
+		return total, report.JSONWorkspace(out, run.Root, mods, skipped, cross, elapsed)
 	case "github":
-		return total, report.GitHubWorkspace(out, mods)
+		return total, report.GitHubWorkspace(out, mods, cross)
 	case "sarif":
-		return total, report.SARIFWorkspace(out, mods, Version)
+		return total, report.SARIFWorkspace(out, mods, cross, Version)
 	default:
 		return 0, fmt.Errorf("unknown --format %q (text, json, github or sarif)", format)
 	}

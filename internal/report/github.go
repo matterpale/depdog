@@ -23,8 +23,9 @@ func GitHub(w io.Writer, res *core.Result, rs *core.RuleSet) error {
 
 // GitHubWorkspace emits annotations for every analyzed unit, each file path
 // prefixed with the unit's walk-root-relative directory so annotations land
-// on the right file from the repo root, then one aggregate summary line.
-func GitHubWorkspace(w io.Writer, mods []Module) error {
+// on the right file from the repo root, the cross-unit annotations of a
+// work-file run (cross may be nil), then one aggregate summary line.
+func GitHubWorkspace(w io.Writer, mods []Module, cross *CrossUnit) error {
 	var b strings.Builder
 	var totalV, totalP int
 	for _, m := range mods {
@@ -32,8 +33,15 @@ func GitHubWorkspace(w io.Writer, mods []Module) error {
 		totalV += len(m.Result.Violations)
 		totalP += m.Result.Stats.Packages
 	}
-	fmt.Fprintf(&b, "depdog check — monorepo · %s · %s across %s\n",
+	if cross != nil {
+		githubCrossUnit(&b, cross)
+	}
+	fmt.Fprintf(&b, "depdog check — monorepo · %s · %s across %s",
 		plural(totalV, "violation"), plural(totalP, "package"), plural(len(mods), "checked unit"))
+	if cross != nil {
+		fmt.Fprintf(&b, " · %s", plural(cross.violationCount(), "cross-unit violation"))
+	}
+	b.WriteString("\n")
 	_, err := io.WriteString(w, b.String())
 	return err
 }

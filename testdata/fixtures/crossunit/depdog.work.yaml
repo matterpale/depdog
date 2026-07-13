@@ -1,0 +1,22 @@
+# Cross-unit governance for the whole monorepo: units are subtrees, the rules
+# below govern the dependency edges BETWEEN them (each unit's own depdog.yaml,
+# where present, still governs its internals).
+version: 1
+
+units:
+  web:     { path: web, lang: ts }
+  shared:  { path: shared, lang: ts }
+  api:     { path: services/api }
+  billing: { path: services/billing }
+
+rules:
+  web:    { allow: [shared] } # the frontend may depend only on the shared lib
+  shared: { deny: ["*"] }     # the shared lib depends on nobody
+
+boundaries:
+  # Services are isolated peers: no service may depend on another.
+  services: [api, billing]
+
+surfaces:
+  # Other units may reach shared's src/** only; internal/** is off limits.
+  shared: { exports: ["src/**"], internal: ["internal/**"] }

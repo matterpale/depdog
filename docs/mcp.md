@@ -51,7 +51,9 @@ project resolved from the server's working directory (or `--config`); `all: true
 fans out across every discovered language project. The output is the exact
 `--format json` payload — the single-module report, or the workspace envelope
 when the run spans multiple members (identical to `depdog check --format json` /
-`--all --format json`).
+`--all --format json`). At a root holding a
+[`depdog.work.yaml`](cross-language.md), `all: true` runs the cross-unit pass
+too and the envelope carries the additive `cross_unit` block.
 
 Single-project shape (trimmed):
 

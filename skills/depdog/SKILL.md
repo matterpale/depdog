@@ -61,6 +61,16 @@ TS app, a `services/api` Go module, an `ml/` Python package, each with its own
 adapter, and aggregates into one report with a single exit code. Narrow it with
 `--unit <dir>` (repeatable). Full guide: [docs/monorepo.md](../../docs/monorepo.md).
 
+**Cross-unit rules:** to govern the edges *between* those units ("web may
+depend only on shared", "no service imports another", "nothing reaches
+`shared/internal/**`"), author a repo-root `depdog.work.yaml` — units as
+members, the same allow/deny + boundaries vocabulary, plus per-unit
+`surfaces`. At that root a plain `depdog check` then runs the fan-out *plus*
+the cross-unit pass; `--format json` adds a `cross_unit` block with
+machine-readable reasons and explanations. Schema:
+[schema/depdog.work.schema.json](../../schema/depdog.work.schema.json); guide:
+[docs/cross-language.md](../../docs/cross-language.md).
+
 ## The main task: author & maintain depdog.yaml
 
 ### 1. Understand the codebase before writing rules
