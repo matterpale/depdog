@@ -13,8 +13,8 @@ import (
 // the component whose rule fired; unassigned packages are note-level results.
 // version stamps the tool driver. Output is deterministic given a sorted
 // Result.
-func SARIF(w io.Writer, res *core.Result, version string) error {
-	return encodeSARIF(w, []sarifRun{sarifRunFor(res, version, "")})
+func SARIF(w io.Writer, res *core.Result, rs *core.RuleSet, version string) error {
+	return encodeSARIF(w, []sarifRun{sarifRunFor(res, rs, version, "")})
 }
 
 // SARIFWorkspace merges the analyzed units into one SARIF log with one run per
@@ -24,14 +24,15 @@ func SARIF(w io.Writer, res *core.Result, version string) error {
 func SARIFWorkspace(w io.Writer, mods []Module, version string) error {
 	runs := make([]sarifRun, 0, len(mods))
 	for _, m := range mods {
-		runs = append(runs, sarifRunFor(m.Result, version, m.Rel))
+		runs = append(runs, sarifRunFor(m.Result, m.Rules, version, m.Rel))
 	}
 	return encodeSARIF(w, runs)
 }
 
 // sarifRunFor builds one SARIF run for a result. prefix (a unit's walk-root-
-// relative dir, "" for a single unit) is joined onto every file URI.
-func sarifRunFor(res *core.Result, version, prefix string) sarifRun {
+// relative dir, "" for a single unit) is joined onto every file URI. rs judges
+// the result and supplies the prose explanation appended to each message.
+func sarifRunFor(res *core.Result, rs *core.RuleSet, version, prefix string) sarifRun {
 	const unassignedRule = "unassigned-package"
 
 	descriptions := map[string]string{}
@@ -63,9 +64,13 @@ func sarifRunFor(res *core.Result, version, prefix string) sarifRun {
 			}})
 		}
 		results = append(results, sarifResult{
-			RuleID:    v.FromComponent,
-			Level:     "error",
-			Message:   sarifText{Text: v.FromComponent + " imports " + v.ImportPath + " (" + v.Rule + ")"},
+			RuleID: v.FromComponent,
+			Level:  "error",
+			// The terse "<C> imports <import> (<rule>)" line, enriched with the
+			// same plain-English WHY + fix every other surface carries (one
+			// source of wording: core.Explanation).
+			Message: sarifText{Text: v.FromComponent + " imports " + v.ImportPath + " (" + v.Rule + ") — " +
+				core.Explanation(core.ExplainViolation(v, rs))},
 			Locations: locs,
 		})
 	}

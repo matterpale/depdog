@@ -14,6 +14,7 @@
           "target": "external",
           "rule": "handler: allow [std]",
           "test_only": false,
+          "explanation": "`example.test/app/internal/handler` (component `handler`) may import only `std`; `example.test/libs/store` (an external dependency) is not among them. Fix: add `example.test/libs/store` to `handler`'s allow list, or depend only on what `handler` already allows.",
           "positions": [
             {
               "file": "internal/handler/handler.go",

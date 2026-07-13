@@ -45,7 +45,7 @@
           "ruleId": "api",
           "level": "error",
           "message": {
-            "text": "api imports ../domain/order (api: allow [service, std, external])"
+            "text": "api imports ../domain/order (api: allow [service, std, external]) — `web/src/api` (component `api`) may import only `service`, `std`, `external`; `../domain/order` (component `domain`) is not among them. Fix: add `domain` to `api`'s allow list, or depend only on what `api` already allows."
           },
           "locations": [
             {

@@ -35,7 +35,7 @@
           "ruleId": "domain",
           "level": "error",
           "message": {
-            "text": "domain imports example.test/dirty/internal/repository (domain: allow [std])"
+            "text": "domain imports example.test/dirty/internal/repository (domain: allow [std]) — `example.test/dirty/internal/domain/pricing` (component `domain`) may import only `std`; `example.test/dirty/internal/repository` (component `repository`) is not among them. Fix: add `repository` to `domain`'s allow list, or depend only on what `domain` already allows."
           },
           "locations": [
             {
@@ -64,7 +64,7 @@
           "ruleId": "domain",
           "level": "error",
           "message": {
-            "text": "domain imports example.test/extlib (domain: allow [std])"
+            "text": "domain imports example.test/extlib (domain: allow [std]) — `example.test/dirty/internal/domain/pricing` (component `domain`) may import only `std`; `example.test/extlib` (an external dependency) is not among them. Fix: add `example.test/extlib` to `domain`'s allow list, or depend only on what `domain` already allows."
           },
           "locations": [
             {
@@ -83,7 +83,7 @@
           "ruleId": "handler",
           "level": "error",
           "message": {
-            "text": "handler imports example.test/dirty/internal/repository (handler: allow [domain, std])"
+            "text": "handler imports example.test/dirty/internal/repository (handler: allow [domain, std]) — `example.test/dirty/internal/handler/checkout` (component `handler`) may import only `domain`, `std`; `example.test/dirty/internal/repository` (component `repository`) is not among them. Fix: add `repository` to `handler`'s allow list, or depend only on what `handler` already allows."
           },
           "locations": [
             {
@@ -102,7 +102,7 @@
           "ruleId": "handler",
           "level": "error",
           "message": {
-            "text": "handler imports example.test/dirty/internal/service (handler: allow [domain, std])"
+            "text": "handler imports example.test/dirty/internal/service (handler: allow [domain, std]) — `example.test/dirty/internal/handler/checkout` (component `handler`) may import only `domain`, `std`; `example.test/dirty/internal/service` (component `service`) is not among them. Fix: add `service` to `handler`'s allow list, or depend only on what `handler` already allows."
           },
           "locations": [
             {

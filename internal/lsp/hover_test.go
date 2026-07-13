@@ -170,6 +170,9 @@ func TestHoverVerdicts(t *testing.T) {
 			uri:  uri("api/handler.go"), line: 4,
 			want: "**depdog** — `example.com/stub/api` (api) → `example.com/stub/domain` (domain)\n\n" +
 				"denied by `boundary \"walls\"`\n\n" +
+				"`example.com/stub/api` and `example.com/stub/domain` are peers in the `walls` boundary " +
+				"(its members include `api` and `domain`), which is mutually exclusive, so neither may import the other. " +
+				"Fix: move the shared code into a component outside `walls`, or remove one member from the boundary.\n\n" +
 				"[depdog.yaml](file:///work/proj/depdog.yaml)",
 		},
 		{
@@ -184,6 +187,9 @@ func TestHoverVerdicts(t *testing.T) {
 			uri:  uri("service/svc.go"), line: 6,
 			want: "**depdog** — `example.com/stub/service` (service) → `example.com/stub/secret` (unassigned)\n\n" +
 				"denied by `boundary \"sealedbox\" (sealed)`\n\n" +
+				"the `sealedbox` boundary is sealed — only its members may import inward. " +
+				"`example.com/stub/service` is outside `sealedbox`, so it may not import `example.com/stub/secret` (a member). " +
+				"Fix: add `example.com/stub/service` to `sealedbox`, or route through an allowed component.\n\n" +
 				"[depdog.yaml](file:///work/proj/depdog.yaml)",
 		},
 		{
@@ -191,6 +197,9 @@ func TestHoverVerdicts(t *testing.T) {
 			uri:  uri("api/handler.go"), line: 3,
 			want: "**depdog** — `example.com/stub/api` (api) → `github.com/pkg/errors` (external)\n\n" +
 				"denied by `api: allow [service, std]`\n\n" +
+				"`example.com/stub/api` (component `api`) may import only `service`, `std`; " +
+				"`github.com/pkg/errors` (an external dependency) is not among them. " +
+				"Fix: add `github.com/pkg/errors` to `api`'s allow list, or depend only on what `api` already allows.\n\n" +
 				"[depdog.yaml](file:///work/proj/depdog.yaml)",
 		},
 		{
@@ -214,6 +223,9 @@ func TestHoverVerdicts(t *testing.T) {
 			uri:  uri("service/svc_test.go"), line: 3,
 			want: "**depdog** — `example.com/stub/service` (service) → `example.com/stub/util` (unassigned)\n\n" +
 				"denied by `service: allow [domain, std, golang.org/x]` [test]\n\n" +
+				"`example.com/stub/service` (component `service`) may import only `domain`, `std`, `golang.org/x`; " +
+				"`example.com/stub/util` (an unassigned package) is not among them. " +
+				"Fix: add `unassigned` to `service`'s allow list, or depend only on what `service` already allows.\n\n" +
 				"[depdog.yaml](file:///work/proj/depdog.yaml)",
 		},
 		{
@@ -282,6 +294,47 @@ func TestHoverVerdicts(t *testing.T) {
 					h.Range.Start.Character, h.Range.End.Character)
 			}
 		})
+	}
+}
+
+// TestHoverIncludesExplanation: a denied edge's hover carries the same
+// plain-English WHY + fix core.Explanation produces (the one wording source
+// shared with explain/JSON/github/SARIF/MCP), while an allowed edge does not —
+// its verdict already says it passes.
+func TestHoverIncludesExplanation(t *testing.T) {
+	hover := func(uri string, line int) string {
+		in := clientInput(
+			`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}`,
+			`{"jsonrpc":"2.0","method":"initialized","params":{}}`,
+			hoverRequest(9, uri, line),
+			`{"jsonrpc":"2.0","id":2,"method":"shutdown"}`,
+			`{"jsonrpc":"2.0","method":"exit"}`,
+		)
+		var out, logs bytes.Buffer
+		chk := hoverCheck()
+		srv := NewServer(func(ctx context.Context, _ string) (*Check, error) { return chk, nil }, "test", "depdog.yaml")
+		if err := srv.Serve(context.Background(), in, &out, &logs); err != nil {
+			t.Fatalf("Serve: %v", err)
+		}
+		resp := responseByID(t, decodeStream(t, out.Bytes()), 9)
+		var h decodedHover
+		if err := json.Unmarshal(resp.Result, &h); err != nil {
+			t.Fatalf("hover result: %v", err)
+		}
+		return h.Contents.Value
+	}
+
+	// api → github.com/pkg/errors is denied by api's whitelist: the hover must
+	// carry the actionable fix, not just the terse rule.
+	denied := hover("file:///work/proj/api/handler.go", 3)
+	if !strings.Contains(denied, "Fix: add `github.com/pkg/errors` to `api`'s allow list") {
+		t.Errorf("denied hover missing the explanation's fix clause:\n%q", denied)
+	}
+
+	// domain → strings is allowed; the verdict suffices, no "Fix:" clause.
+	allowed := hover("file:///work/proj/domain/order.go", 2)
+	if strings.Contains(allowed, "Fix:") {
+		t.Errorf("allowed hover should carry no fix explanation:\n%q", allowed)
 	}
 }
 
@@ -473,7 +526,8 @@ func TestVerdictFor(t *testing.T) {
 		{
 			name:   "in-module boundary deny wins over everything",
 			relDir: "api", imp: 0, // api → domain
-			want: edgeVerdict{Component: "api", Target: "domain", Allowed: false, Reason: `boundary "walls"`},
+			want: edgeVerdict{Component: "api", Target: "domain", Allowed: false, Reason: `boundary "walls"`,
+				Kind: core.ReasonBoundary, Boundary: "walls"},
 		},
 		{
 			name:   "in-module allowed by component rule",
@@ -493,7 +547,8 @@ func TestVerdictFor(t *testing.T) {
 		{
 			name:   "sealed boundary deny into an unassigned member",
 			relDir: "service", imp: 1, // service → secret
-			want: edgeVerdict{Component: "service", Target: "unassigned", Allowed: false, Reason: `boundary "sealedbox" (sealed)`},
+			want: edgeVerdict{Component: "service", Target: "unassigned", Allowed: false, Reason: `boundary "sealedbox" (sealed)`,
+				Kind: core.ReasonBoundarySealed, Boundary: "sealedbox"},
 		},
 		{
 			name:   "external module allowed by prefix ref",

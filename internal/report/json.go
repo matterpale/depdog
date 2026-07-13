@@ -41,6 +41,7 @@ type jsonViolation struct {
 	TestOnly      bool           `json:"test_only"`
 	Boundary      string         `json:"boundary,omitempty"` // boundary name for boundary violations
 	Reason        string         `json:"reason,omitempty"`   // "boundary" / "boundary-sealed"
+	Explanation   string         `json:"explanation"`        // plain-English WHY + fix (additive; the machine-readable reason/kind stay above)
 	Positions     []jsonPosition `json:"positions"`
 }
 
@@ -186,6 +187,7 @@ func buildReport(res *core.Result, rs *core.RuleSet, elapsed time.Duration) json
 			TestOnly:      v.TestOnly,
 			Boundary:      v.Boundary,
 			Reason:        string(v.Reason),
+			Explanation:   core.Explanation(core.ExplainViolation(v, rs)),
 			Positions:     make([]jsonPosition, 0, len(v.Positions)),
 		}
 		for _, p := range v.Positions {

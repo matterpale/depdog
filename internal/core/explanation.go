@@ -54,6 +54,52 @@ type Explain struct {
 	Peers    []string
 }
 
+// ExplainViolation builds the Explanation input for a decided Violation, drawn
+// from the violation and the rule set that judged it, so every render surface
+// (JSON, text, github, SARIF) phrases a denied edge identically without
+// duplicating the population logic. The source component's allow/deny refs and
+// inferred stance come from rs; for a boundary violation the boundary's peer
+// member labels come from rs too. For an external destination TargetRef is the
+// concrete import path so a module-scoped deny/allow can name the module.
+func ExplainViolation(v Violation, rs *RuleSet) Explain {
+	e := Explain{
+		From:          v.FromPackage,
+		To:            v.ImportPath,
+		Kind:          v.Reason,
+		FromComponent: v.FromComponent,
+		Target:        v.Target,
+		Boundary:      v.Boundary,
+	}
+	if rule, ok := rs.Rules[v.FromComponent]; ok {
+		e.Allow, e.Deny = rule.Allow, rule.Deny
+	}
+	e.Stance = rs.Stance(v.FromComponent)
+	if v.Target == "external" || v.Target == "external module" {
+		e.TargetRef = v.ImportPath
+	}
+	if v.Reason == ReasonBoundary || v.Reason == ReasonBoundarySealed {
+		e.Peers = rs.boundaryPeers(v.Boundary)
+	}
+	return e
+}
+
+// boundaryPeers returns the member labels of the named boundary, in the
+// boundary's own sorted order, so a boundary explanation can name the concrete
+// peers it involves. Empty when no boundary of that name is declared.
+func (rs *RuleSet) boundaryPeers(name string) []string {
+	for bi := range rs.Boundaries {
+		if rs.Boundaries[bi].Name != name {
+			continue
+		}
+		labels := make([]string, 0, len(rs.Boundaries[bi].Members))
+		for _, m := range rs.Boundaries[bi].Members {
+			labels = append(labels, m.Label)
+		}
+		return labels
+	}
+	return nil
+}
+
 // Explanation renders the prose WHY plus an actionable fix for one denied edge,
 // templated per ReasonKind (see the plan's D2). It is pure and std-only: the
 // same inputs always produce the same string, so it is safe to pin in goldens

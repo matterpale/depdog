@@ -178,6 +178,11 @@ func (h *mcpHandler) Explain(_ context.Context, from, to string) ([]byte, error)
 			out.Boundary = boundary
 			out.Sealed = sealed
 			out.Reason = boundaryReason(boundary, sealed)
+			out.Explanation = core.Explanation(core.ExplainViolation(core.Violation{
+				FromPackage: pv.ImportPath, FromComponent: fromComp,
+				ImportPath: tpv.ImportPath, Target: emptyToUnassigned(tpv.Component),
+				Reason: boundaryKind(sealed), Boundary: boundary,
+			}, ev.Rules))
 			out.Positions = edgePositions(ev.Result, pv.ImportPath, tpv.ImportPath)
 			return marshalIndent(out)
 		}
@@ -200,6 +205,16 @@ func (h *mcpHandler) Explain(_ context.Context, from, to string) ([]byte, error)
 	out.DecidedBy = "rule"
 	out.Reason = reason
 	out.Target = target
+	if !allowed {
+		imp := target
+		if isModule {
+			imp = to
+		}
+		out.Explanation = core.Explanation(core.ExplainViolation(core.Violation{
+			FromPackage: pv.ImportPath, FromComponent: fromComp,
+			ImportPath: imp, Target: target,
+		}, ev.Rules))
+	}
 	// Positions only exist for an edge that is actually in the graph.
 	if tpv, ok := findPackageView(views, to, ev.Result.ModulePath); ok {
 		out.Positions = edgePositions(ev.Result, pv.ImportPath, tpv.ImportPath)
@@ -242,6 +257,11 @@ func (h *mcpHandler) CanImport(_ context.Context, from, to string) ([]byte, erro
 			out.Allowed = false
 			out.DecidedBy = "boundary"
 			out.Reason = boundaryReason(boundary, sealed)
+			out.Explanation = core.Explanation(core.ExplainViolation(core.Violation{
+				FromPackage: from, FromComponent: fromComp,
+				ImportPath: to, Target: target,
+				Reason: boundaryKind(sealed), Boundary: boundary,
+			}, rs))
 			return marshalIndent(out)
 		}
 	}
@@ -258,6 +278,16 @@ func (h *mcpHandler) CanImport(_ context.Context, from, to string) ([]byte, erro
 	out.Allowed = allowed
 	out.DecidedBy = "rule"
 	out.Reason = reason
+	if !allowed {
+		imp := target
+		if isModule {
+			imp = to
+		}
+		out.Explanation = core.Explanation(core.ExplainViolation(core.Violation{
+			FromPackage: from, FromComponent: fromComp,
+			ImportPath: imp, Target: target,
+		}, rs))
+	}
 	return marshalIndent(out)
 }
 
@@ -326,16 +356,20 @@ func (h *mcpHandler) loadRuleSet() (*core.RuleSet, error) {
 // verdict, and what decided it (a rule, a boundary, or the default policy),
 // with positions for any offending edge that exists in the graph.
 type explainResult struct {
-	From          string         `json:"from"`
-	FromComponent string         `json:"from_component"`
-	To            string         `json:"to"`
-	Target        string         `json:"target,omitempty"`
-	Allowed       bool           `json:"allowed"`
-	DecidedBy     string         `json:"decided_by"`
-	Reason        string         `json:"reason"`
-	Boundary      string         `json:"boundary,omitempty"`
-	Sealed        bool           `json:"sealed,omitempty"`
-	Positions     []jsonPosition `json:"positions,omitempty"`
+	From          string `json:"from"`
+	FromComponent string `json:"from_component"`
+	To            string `json:"to"`
+	Target        string `json:"target,omitempty"`
+	Allowed       bool   `json:"allowed"`
+	DecidedBy     string `json:"decided_by"`
+	Reason        string `json:"reason"`
+	Boundary      string `json:"boundary,omitempty"`
+	Sealed        bool   `json:"sealed,omitempty"`
+	// Explanation is the plain-English WHY + fix for a denied edge (additive; the
+	// machine-readable reason/decided_by above stay unchanged). Omitted when the
+	// edge is allowed — the verdict already says it passes.
+	Explanation string         `json:"explanation,omitempty"`
+	Positions   []jsonPosition `json:"positions,omitempty"`
 }
 
 // canImportResult is the can_import tool's JSON payload: the boolean verdict,
@@ -347,6 +381,9 @@ type canImportResult struct {
 	Allowed   bool   `json:"allowed"`
 	DecidedBy string `json:"decided_by"`
 	Reason    string `json:"reason"`
+	// Explanation is the plain-English WHY + fix for a denied edge (additive;
+	// reason/decided_by above stay unchanged). Omitted when the edge is allowed.
+	Explanation string `json:"explanation,omitempty"`
 }
 
 type jsonPosition struct {
@@ -574,6 +611,15 @@ func boundaryReason(boundary string, sealed bool) string {
 		return fmt.Sprintf("denied by boundary %q (sealed)", boundary)
 	}
 	return fmt.Sprintf("denied by boundary %q", boundary)
+}
+
+// boundaryKind maps a boundary deny's sealed flag to the ReasonKind the prose
+// generator branches on.
+func boundaryKind(sealed bool) core.ReasonKind {
+	if sealed {
+		return core.ReasonBoundarySealed
+	}
+	return core.ReasonBoundary
 }
 
 func refsToStrings(refs []core.Ref) []string {
