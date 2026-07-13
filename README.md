@@ -103,7 +103,7 @@ depdog check     # check against the rules; exit 1 on violations
 proposes a component mapping you refine interactively — drop, rename, or
 re-path components. Or accept all as-is with `--yes`.
 
-Alternatively, ask a coding agent to get you started with the dedicated [skill](skills/depdog-config/SKILL.md).
+Alternatively, ask a coding agent to get you started with the dedicated [skill](skills/depdog/SKILL.md).
 
 ## Configuration
 
@@ -255,9 +255,10 @@ depdog is built to be driven by tools and agents, not just humans:
 `check --format json` emits a stable schema and the [exit codes](#commands) are
 a contract.
 
-[`skills/depdog-config/SKILL.md`](skills/depdog-config/SKILL.md)
-is a self-contained, tool-agnostic playbook any coding agent can follow to map a
-codebase to components and author a `depdog.yaml`. The editor
+[`skills/depdog/SKILL.md`](skills/depdog/SKILL.md)
+is a self-contained, tool-agnostic playbook any coding agent can follow to work
+with depdog end to end — mapping a codebase to components, authoring the
+`depdog.yaml`, and validating with `check`. The editor
 [JSON Schema](schema/depdog.schema.json) hands the same autocomplete and
 validation to any schema-aware agent.
 
