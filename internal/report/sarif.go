@@ -20,11 +20,15 @@ func SARIF(w io.Writer, res *core.Result, rs *core.RuleSet, version string) erro
 // SARIFWorkspace merges the analyzed units into one SARIF log with one run per
 // unit (SARIF's runs array is built for exactly this). Each unit's file URIs are
 // prefixed with its walk-root-relative directory so code-scanning resolves them
-// from the repo root.
-func SARIFWorkspace(w io.Writer, mods []Module, version string) error {
-	runs := make([]sarifRun, 0, len(mods))
+// from the repo root. A work-file run appends one extra run carrying the
+// cross-unit verdicts (cross may be nil).
+func SARIFWorkspace(w io.Writer, mods []Module, cross *CrossUnit, version string) error {
+	runs := make([]sarifRun, 0, len(mods)+1)
 	for _, m := range mods {
 		runs = append(runs, sarifRunFor(m.Result, m.Rules, version, m.Rel))
+	}
+	if cross != nil {
+		runs = append(runs, sarifCrossRun(cross, version))
 	}
 	return encodeSARIF(w, runs)
 }

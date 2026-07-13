@@ -1,0 +1,116 @@
+{
+  "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
+  "version": "2.1.0",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "name": "depdog",
+          "informationUri": "https://github.com/matterpale/depdog",
+          "version": "0.0.0-dev",
+          "rules": []
+        }
+      },
+      "results": []
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "depdog",
+          "informationUri": "https://github.com/matterpale/depdog",
+          "version": "0.0.0-dev",
+          "rules": []
+        }
+      },
+      "results": []
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "depdog",
+          "informationUri": "https://github.com/matterpale/depdog",
+          "version": "0.0.0-dev",
+          "rules": [
+            {
+              "id": "api",
+              "shortDescription": {
+                "text": "Cross-unit dependency rules for unit api"
+              }
+            },
+            {
+              "id": "shared",
+              "shortDescription": {
+                "text": "Cross-unit dependency rules for unit shared"
+              }
+            },
+            {
+              "id": "web",
+              "shortDescription": {
+                "text": "Cross-unit dependency rules for unit web"
+              }
+            }
+          ]
+        }
+      },
+      "results": [
+        {
+          "ruleId": "api",
+          "level": "error",
+          "message": {
+            "text": "cross-unit: api depends on billing (denied by boundary \"services\") — units `api` and `billing` are peers in the `services` boundary (its members include `api` and `billing`), which is mutually exclusive, so neither may depend on the other. Fix: extract the shared code into a unit outside `services`, or remove one member from the boundary."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "services/api/main.go"
+                },
+                "region": {
+                  "startLine": 8
+                }
+              }
+            }
+          ]
+        },
+        {
+          "ruleId": "shared",
+          "level": "error",
+          "message": {
+            "text": "cross-unit: shared depends on web (shared: deny [*]) — unit `shared` explicitly denies depending on `web` (its deny list in depdog.work.yaml names `web`). Fix: remove `web` from `shared`'s deny list if the dependency is intended, or drop the reference to `web`."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "shared/index.ts"
+                },
+                "region": {
+                  "startLine": 3
+                }
+              }
+            }
+          ]
+        },
+        {
+          "ruleId": "web",
+          "level": "error",
+          "message": {
+            "text": "cross-unit: web depends on shared/internal (shared: internal [internal/**]) — `web` reaches into `shared`'s internal paths: `shared/internal` matches `internal/**`, which `shared` declares internal. Fix: depend on `shared` through its exported surface (`src/**`), or widen `shared`'s surface in depdog.work.yaml."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "web/src/app.ts"
+                },
+                "region": {
+                  "startLine": 4
+                }
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,175 @@
+{
+  "root": "crossunit",
+  "units": [
+    {
+      "dir": "services/api",
+      "lang": "go",
+      "module": "example.com/api",
+      "default": "allow",
+      "violations": [],
+      "warnings": [],
+      "components": [
+        {
+          "name": "app",
+          "stance": "blacklist",
+          "packages": 1,
+          "edges": 2,
+          "violations": 0
+        }
+      ],
+      "boundaries": [],
+      "cycles": [],
+      "stats": {
+        "packages": 1,
+        "edges": 2,
+        "duration_ms": 0
+      }
+    },
+    {
+      "dir": "web",
+      "lang": "ts",
+      "module": "@acme/web",
+      "default": "allow",
+      "violations": [],
+      "warnings": [],
+      "components": [
+        {
+          "name": "app",
+          "stance": "blacklist",
+          "packages": 1,
+          "edges": 3,
+          "violations": 0
+        }
+      ],
+      "boundaries": [],
+      "cycles": [],
+      "stats": {
+        "packages": 1,
+        "edges": 3,
+        "duration_ms": 0
+      }
+    }
+  ],
+  "skipped": [
+    {
+      "dir": "./services/billing",
+      "reason": "unit \"billing\" — scanned for cross-unit governance only"
+    },
+    {
+      "dir": "./shared",
+      "reason": "unit \"shared\" — scanned for cross-unit governance only"
+    }
+  ],
+  "cross_unit": {
+    "default": "allow",
+    "units": [
+      {
+        "name": "api",
+        "dir": "services/api",
+        "identities": [
+          "example.com/api"
+        ]
+      },
+      {
+        "name": "billing",
+        "dir": "services/billing",
+        "identities": [
+          "example.com/billing"
+        ]
+      },
+      {
+        "name": "shared",
+        "dir": "shared",
+        "lang": "ts",
+        "identities": [
+          "@acme/shared"
+        ]
+      },
+      {
+        "name": "web",
+        "dir": "web",
+        "lang": "ts",
+        "identities": [
+          "@acme/web"
+        ]
+      }
+    ],
+    "violations": [
+      {
+        "from_unit": "api",
+        "to_unit": "billing",
+        "path": "billing",
+        "rule": "denied by boundary \"services\"",
+        "reason": "cross-unit-boundary",
+        "boundary": "services",
+        "test_only": false,
+        "explanation": "units `api` and `billing` are peers in the `services` boundary (its members include `api` and `billing`), which is mutually exclusive, so neither may depend on the other. Fix: extract the shared code into a unit outside `services`, or remove one member from the boundary.",
+        "positions": [
+          {
+            "file": "services/api/main.go",
+            "line": 8
+          }
+        ]
+      },
+      {
+        "from_unit": "shared",
+        "to_unit": "web",
+        "path": "web",
+        "rule": "shared: deny [*]",
+        "reason": "cross-unit",
+        "test_only": false,
+        "explanation": "unit `shared` explicitly denies depending on `web` (its deny list in depdog.work.yaml names `web`). Fix: remove `web` from `shared`'s deny list if the dependency is intended, or drop the reference to `web`.",
+        "positions": [
+          {
+            "file": "shared/index.ts",
+            "line": 3
+          }
+        ]
+      },
+      {
+        "from_unit": "web",
+        "to_unit": "shared",
+        "path": "shared/internal",
+        "rule": "shared: internal [internal/**]",
+        "reason": "cross-unit-surface",
+        "test_only": false,
+        "explanation": "`web` reaches into `shared`'s internal paths: `shared/internal` matches `internal/**`, which `shared` declares internal. Fix: depend on `shared` through its exported surface (`src/**`), or widen `shared`'s surface in depdog.work.yaml.",
+        "positions": [
+          {
+            "file": "web/src/app.ts",
+            "line": 4
+          }
+        ]
+      }
+    ],
+    "boundaries": [
+      {
+        "name": "services",
+        "sealed": false,
+        "members": [
+          {
+            "component": "api"
+          },
+          {
+            "component": "billing"
+          }
+        ]
+      }
+    ],
+    "cycles": [
+      [
+        "shared",
+        "web"
+      ]
+    ],
+    "stats": {
+      "units": 4,
+      "edges": 3
+    }
+  },
+  "stats": {
+    "packages": 2,
+    "edges": 5,
+    "duration_ms": 0
+  }
+}

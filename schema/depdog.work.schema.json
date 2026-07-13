@@ -1,0 +1,101 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://github.com/matterpale/depdog/schema/depdog.work.schema.json",
+  "title": "depdog work file (cross-unit governance)",
+  "description": "Cross-unit dependency rules for a polyglot monorepo, enforced by `depdog check` when depdog.work.yaml sits at the checked root. Units are named root-relative subtrees; rules, boundaries and surfaces govern the dependency edges between them.",
+  "type": "object",
+  "required": ["version", "units"],
+  "additionalProperties": false,
+  "properties": {
+    "version": {
+      "type": "integer",
+      "const": 1,
+      "description": "Work file format version (independent of depdog.yaml's version)."
+    },
+    "units": {
+      "type": "object",
+      "description": "Named units. A unit is a root-relative directory subtree, usually one language project. Shorthand is a bare directory string; the expanded form takes {path, lang, config}.",
+      "additionalProperties": {
+        "oneOf": [
+          { "type": "string" },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["path"],
+            "properties": {
+              "path": {
+                "type": "string",
+                "description": "Root-relative directory of the unit (a plain dir, not a glob). Ownership is subtree-prefix; nested unit dirs resolve most-specific-wins."
+              },
+              "lang": {
+                "type": "string",
+                "description": "Language adapter pin (e.g. go, ts, py). Optional; omitted means auto-detect from marker files."
+              },
+              "config": {
+                "type": "string",
+                "description": "Root-relative path of the unit's own depdog.yaml. Optional; defaults to <path>/depdog.yaml. A unit without a config is still scanned so its cross-unit edges are governed."
+              }
+            }
+          }
+        ]
+      }
+    },
+    "default": {
+      "type": "string",
+      "enum": ["allow", "deny"],
+      "description": "Fallback stance for a unit with no allow/deny rule: allow (open — may depend on any unit) or deny (strict whitelist). Optional; defaults to allow."
+    },
+    "rules": {
+      "type": "object",
+      "description": "Per-unit dependency rules, same vocabulary as component rules with units as the members. Refs are unit names or \"*\"; deny wins.",
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "allow": { "type": "array", "items": { "type": "string" } },
+          "deny": { "type": "array", "items": { "type": "string" } }
+        }
+      }
+    },
+    "boundaries": {
+      "type": "object",
+      "description": "Named mutual-exclusion groups of units: distinct members may not depend on each other. sealed: true adds a one-way wall (no unit outside the members may depend inward). Shorthand is a bare list of unit names; the expanded form takes {members, sealed}.",
+      "additionalProperties": {
+        "oneOf": [
+          { "type": "array", "items": { "type": "string" } },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["members"],
+            "properties": {
+              "members": { "type": "array", "items": { "type": "string" } },
+              "sealed": { "type": "boolean" }
+            }
+          }
+        ]
+      }
+    },
+    "surfaces": {
+      "type": "object",
+      "description": "Which sub-paths of a unit other units may reach. Globs are unit-relative. A target path matching internal is denied even when the unit edge is allowed; with a non-empty exports list, any other non-empty target path is denied too. An empty target path (the unit's public root, e.g. a bare package name) always passes.",
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "exports": {
+            "oneOf": [
+              { "type": "string" },
+              { "type": "array", "items": { "type": "string" } }
+            ]
+          },
+          "internal": {
+            "oneOf": [
+              { "type": "string" },
+              { "type": "array", "items": { "type": "string" } }
+            ]
+          }
+        }
+      }
+    }
+  }
+}

@@ -15,8 +15,9 @@ subtree's import graph with the matching adapter, and evaluates the unit's rules
 Units are **self-contained**. A unit is never checked against another unit's
 rules, and an import that leaves a unit — into a sibling unit or a third-party
 package — classifies as `external`, the same as any dependency outside the unit.
-depdog does not yet govern edges *between* units (that is designed future work,
-see [cross-unit governance](#composition-and-non-goals)).
+Governing the edges *between* units is the separate, opt-in
+[`depdog.work.yaml` layer](cross-language.md), which runs on top of the fan-out
+described here.
 
 ## `depdog check --all` and `--unit`
 
@@ -117,9 +118,11 @@ and directs you to the per-unit `lang:` key instead.
   `go.work` membership, so it spans TS, Python, Rust and the rest alongside Go.
   Use `check` (auto `go.work` fan-out) inside a pure-Go workspace; use `check
   --all` from the root of a mixed repo.
-- **No cross-unit edge governance (yet).** `--all` runs many *independent*
-  units. It does not model or enforce edges *between* units — a TS app importing
-  a Go service's generated client is `external` to the TS unit, full stop.
-  Governing those cross-language edges from a single repo-root manifest is
-  designed but unbuilt future work; it is explicitly out of scope for this
-  release.
+- **Cross-unit edge governance is a separate, opt-in layer.** `--all` by itself
+  runs many *independent* units: it does not model or enforce edges *between*
+  units — a TS app importing a Go service's generated client is `external` to
+  the TS unit, full stop. To govern those edges, add a repo-root
+  `depdog.work.yaml`: at that root, `depdog check` (and `--all`) runs this
+  fan-out *plus* a cross-unit pass judging unit-to-unit edges against
+  work-file rules, boundaries and surfaces. Full guide:
+  [docs/cross-language.md](cross-language.md).

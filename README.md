@@ -30,9 +30,11 @@ one neutral rule format and one engine, **polyglot** across
 [nine languages](#multi-language-support) through thin, hot-swappable adapters,
 and `depdog check --all` governs a mixed monorepo — a `web/` TS app, a
 `services/api` Go module, an `ml/` Python package — in a single pass with one
-exit code ([monorepos](#monorepos)). Every adapter is a pure static import
-scanner — **no build, no toolchain** — so depdog is fast and runs even on code
-that doesn't compile yet.
+exit code ([monorepos](#monorepos)). A repo-root `depdog.work.yaml` goes one
+step further and governs how those units **may depend on each other** — the
+thing [no other tool does](#cross-language-governance). Every adapter is a pure
+static import scanner — **no build, no toolchain** — so depdog is fast and runs
+even on code that doesn't compile yet.
 
 <sub>*Unlike Go-package-loader–based linters such as
 [go-arch-lint](https://github.com/fe3dback/go-arch-lint) (which load your
@@ -297,6 +299,43 @@ depdog picks the adapter from the project's marker files automatically, and the
 persistent `--lang` flag forces a specific one — details, including nested
 layouts and two-language ambiguity, in [docs/languages.md](docs/languages.md).
 
+## Cross-language governance
+
+Checking each unit of a monorepo is table stakes; depdog also governs the
+dependency edges **between** units — across languages — from one repo-root
+`depdog.work.yaml`:
+
+```yaml
+version: 1
+units:
+  web:     { path: web, lang: ts }
+  shared:  shared
+  api:     { path: services/api }
+  billing: { path: services/billing }
+rules:
+  web:    { allow: [shared] }   # the frontend may depend only on the shared lib
+  shared: { deny: ["*"] }       # a library depends on nobody
+boundaries:
+  services: [api, billing]      # no service may depend on another
+surfaces:
+  shared: { exports: ["src/**"], internal: ["internal/**"] }
+```
+
+Units are the members; the vocabulary is the same allow/deny + boundaries you
+already know, plus **surfaces** ("other units may reach `shared`'s `src/**`
+but never `internal/**`"). Edges are detected from each unit's own scan — an
+import resolving into another unit's tree, or one matching another unit's
+import identity (`go.mod` module path, `package.json` name, `Cargo.toml` /
+`pyproject.toml` name). At the work-file root, plain `depdog check` runs the
+per-unit fan-out *plus* the cross pass: one report, one exit code, in every
+`--format` (JSON gains an additive `cross_unit` block). A unit doesn't even
+need its own `depdog.yaml` to be governed at this level. Full guide:
+[docs/cross-language.md](docs/cross-language.md).
+
+No other architecture linter — go-arch-lint, deptrac, dependency-cruiser,
+import-linter, ArchUnit — governs edges *across* languages; this is what the
+language-neutral core buys.
+
 ## For AI agents
 
 depdog is built to be driven by tools and agents, not just humans:
@@ -333,9 +372,9 @@ per-editor snippets in [docs/editors.md](docs/editors.md).
   the host's `GOOS`/`GOARCH` and default build tags; imports guarded by other
   build constraints (e.g. `//go:build windows` on a non-Windows machine) aren't
   seen.
-- <a id="monorepos"></a>**Monorepos — per-unit, no cross-unit governance.**
-  depdog checks a monorepo by fanning out over its **units**, each checked
-  independently against its own `depdog.yaml`, via two discovery kinds:
+- <a id="monorepos"></a>**Monorepos — per-unit fan-out; cross-unit rules are
+  opt-in.** depdog checks a monorepo by fanning out over its **units**, each
+  checked independently against its own `depdog.yaml`, via two discovery kinds:
   **`go.work` fan-out** (automatic — inside a Go workspace `depdog check` fans
   out over every member module with a `depdog.yaml`; members without one are
   advisory-skipped, `--module <path-or-dir>` narrows, `GOWORK=off` opts out),
@@ -343,17 +382,22 @@ per-editor snippets in [docs/editors.md](docs/editors.md).
   check --all` walks down, discovers *every* `depdog.yaml`, and checks each unit
   against its own auto-detected adapter; `--unit <dir>` narrows). Both aggregate
   into one report and a single exit code (max severity across units) in every
-  `--format`. Each unit is still checked in isolation, so an import from one
-  unit into another classifies as `external`: depdog does **not** yet govern
-  edges *between* units — cross-unit governance is designed future work, not
-  part of this release. Full guide: [docs/monorepo.md](docs/monorepo.md).
+  `--format`. Within the fan-out each unit is checked in isolation, so an import
+  from one unit into another classifies as `external`; governing the edges
+  *between* units is the opt-in
+  [`depdog.work.yaml` layer](#cross-language-governance) on top. Note the
+  cross-unit pass detects source-level references (resolved paths and import
+  identities) — a plain HTTP call between services leaves no import to detect.
+  Full guides: [docs/monorepo.md](docs/monorepo.md),
+  [docs/cross-language.md](docs/cross-language.md).
 
 ## Compatibility
 
 depdog 1.0 follows semver. The **machine-readable contract is stable** — broken
 only by a major bump, additive within a major line: the config v2 `depdog.yaml`
 schema, both `--format json` shapes (the single-unit report **and** the
-`--all`/`go.work` aggregate envelope, `root`/`units[]`/`skipped[]`/`stats`), the
+`--all`/`go.work` aggregate envelope, `root`/`units[]`/`skipped[]`/`stats`,
+plus the additive `cross_unit` block on work-file runs), the
 exit codes (`0` clean · `1` violations · `2` config/usage error), and documented
 CLI flag semantics. The **human-readable presentation is not** — text and TUI
 rendering, log/stderr wording, Go internals (all `internal/`, no exported API),

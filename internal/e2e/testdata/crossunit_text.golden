@@ -1,0 +1,32 @@
+▸ ./services/api (go)
+depdog check — example.com/api
+
+✓ no violations · 1 package · 2 edges checked in X
+
+▸ ./web (ts)
+depdog check — @acme/web
+
+✓ no violations · 1 package · 3 edges checked in X
+
+▸ cross-unit (depdog.work.yaml, 4 units governed)
+
+✗ denied by boundary "services"  (1 violation)
+    api
+      → billing  services/api/main.go:8
+
+✗ shared: deny [*]  (1 violation)
+    shared
+      → web  shared/index.ts:3
+
+✗ shared: internal [internal/**]  (1 violation)
+    web
+      → shared/internal  web/src/app.ts:4
+
+! 1 unit cycle:
+    shared ↔ web
+
+! 2 units skipped (no depdog.yaml):
+    ./services/billing  (unit "billing" — scanned for cross-unit governance only)
+    ./shared  (unit "shared" — scanned for cross-unit governance only)
+
+✗ 0 violations across 2 checked units (2 skipped) · 3 cross-unit violations · 2 packages · 5 edges · checked in X
