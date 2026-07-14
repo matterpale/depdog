@@ -127,6 +127,16 @@ func SetBoundarySealed(data []byte, boundary string, sealed bool) ([]byte, error
 	}
 	lines := strings.Split(string(data), "\n")
 
+	// commit joins the (mutated) lines back and validates the result with
+	// Parse — the shared tail of every branch, whether it rewrites a line or
+	// inserts one.
+	commit := func() ([]byte, error) {
+		out := []byte(strings.Join(lines, "\n"))
+		if _, err := Parse(out); err != nil {
+			return nil, fmt.Errorf("the edit produced an invalid config: %w", err)
+		}
+		return out, nil
+	}
 	spliceLine := func(li int, edit func(orig string) (string, error)) ([]byte, error) {
 		if li < 0 || li >= len(lines) {
 			return nil, fmt.Errorf("boundary %q line %d is out of range", boundary, li+1)
@@ -136,11 +146,7 @@ func SetBoundarySealed(data []byte, boundary string, sealed bool) ([]byte, error
 			return nil, err
 		}
 		lines[li] = next
-		out := []byte(strings.Join(lines, "\n"))
-		if _, err := Parse(out); err != nil {
-			return nil, fmt.Errorf("the edit produced an invalid config: %w", err)
-		}
-		return out, nil
+		return commit()
 	}
 
 	switch bval.Kind {
@@ -200,8 +206,12 @@ func SetBoundarySealed(data []byte, boundary string, sealed bool) ([]byte, error
 				if !ok {
 					return "", fmt.Errorf("boundary %q mapping is malformed", boundary)
 				}
-				head := strings.TrimRight(orig[col:end-1], " ")
-				return orig[:col] + head + ", sealed: true }" + orig[end:], nil
+				head := strings.TrimRight(orig[col:end-1], " ,") // tolerate a trailing comma
+				sep := ", "
+				if strings.TrimSpace(head) == "{" { // empty mapping: no leading comma
+					sep = " "
+				}
+				return orig[:col] + head + sep + "sealed: true }" + orig[end:], nil
 			})
 		}
 		// Block mapping: insert a sealed line after the last line the mapping
@@ -222,26 +232,24 @@ func SetBoundarySealed(data []byte, boundary string, sealed bool) ([]byte, error
 			return nil, fmt.Errorf("boundary %q line %d is out of range", boundary, at)
 		}
 		lines = append(lines[:at], append([]string{indent + "sealed: true"}, lines[at:]...)...)
-		out := []byte(strings.Join(lines, "\n"))
-		if _, err := Parse(out); err != nil {
-			return nil, fmt.Errorf("the edit produced an invalid config: %w", err)
-		}
-		return out, nil
+		return commit()
 
 	default:
 		return nil, fmt.Errorf("boundary %q has an unexpected shape — edit it by hand", boundary)
 	}
 }
 
-// parseYAMLBool reads the spellings yaml.v3 resolves to a bool in a config
-// that already passed Parse.
+// parseYAMLBool reports whether a plain scalar reads as true, delegating to
+// yaml.v3 so it matches exactly what the decode path put in Boundary.Sealed —
+// including the YAML-1.1 spellings (yes/on/y/…) the resolver still accepts, not
+// just true/True/TRUE. The value has already passed Parse as a bool, so a
+// non-bool scalar cannot reach here; if one somehow does it reads as false.
 func parseYAMLBool(s string) bool {
-	switch s {
-	case "true", "True", "TRUE":
-		return true
-	default:
-		return false
+	var b bool
+	if err := yaml.Unmarshal([]byte(s), &b); err == nil {
+		return b
 	}
+	return false
 }
 
 func addMember(seq *yaml.Node, member string) bool {

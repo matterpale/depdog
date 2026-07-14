@@ -10,13 +10,14 @@ import (
 
 // RuleSet prints the compiled configuration for debugging: the active config
 // path, the default stance and options, then each component with its patterns,
-// inferred stance and rule, and any boundaries. It mirrors the TUI's Config
-// tab — the path title, a key/value header, a per-component stance, and
-// colored allow/deny refs — and is color-aware (color is "auto", "always" or
-// "never"): piped output and NO_COLOR stay plain, a real terminal gets color.
-// path is the module-relative config location ("" hides the title, keeping
-// callers without one unchanged). Components and boundaries are already
-// sorted, so output is deterministic.
+// inferred stance and rule, and any boundaries. It mirrors the layout of the
+// TUI's Config tab — the path title, a key/value header, a per-component
+// stance, and colored allow/deny refs — and is color-aware (color is "auto",
+// "always" or "never"): piped output and NO_COLOR stay plain, a real terminal
+// gets color. path is the module-relative config location; unlike the TUI tab,
+// which always renders a header and falls back to "(config path unknown)", an
+// empty path here hides the title, keeping callers without one unchanged.
+// Components and boundaries are already sorted, so output is deterministic.
 func RuleSet(w io.Writer, rs *core.RuleSet, path, color string) error {
 	st := newStyles(w, color)
 	var b strings.Builder
