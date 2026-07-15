@@ -25,22 +25,11 @@ usually live in someone's head or a wiki, and they rot.
 
 You declare who may import whom in a `depdog.yaml`, and
 depdog checks it against every import edge in your codebase, exiting
-non-zero for CI. **Nine languages, one tool, one command — even in one repo:**
+non-zero for CI. One tool,
 one neutral rule format and one engine, **polyglot** across
-[nine languages](#multi-language-support) through thin, hot-swappable adapters,
-and `depdog check --all` governs a mixed monorepo — a `web/` TS app, a
-`services/api` Go module, an `ml/` Python package — in a single pass with one
-exit code ([monorepos](#monorepos)). A repo-root `depdog.work.yaml` goes one
-step further and governs how those units **may depend on each other** — the
-thing [no other tool does](#cross-language-governance). Every adapter is a pure
-static import scanner — **no build, no toolchain** — so depdog is fast and runs
-even on code that doesn't compile yet.
-
-<sub>*Unlike Go-package-loader–based linters such as
-[go-arch-lint](https://github.com/fe3dback/go-arch-lint) (which load your
-packages through the Go toolchain), depdog scans source directly — so it works
-mid-refactor, on a broken build, and across languages with no Go toolchain at
-all.*</sub>
+[languages](#multi-language-support) through thin, hot-swappable adapters,
+and `depdog check --all` governs a mixed monorepo in a single pass with one
+exit code ([monorepos](#monorepos)).
 
 ```
 depdog check — github.com/matterpale/depdog
@@ -158,7 +147,7 @@ test-file handling. Boundaries have their own page —
 ## CI
 
 `depdog check` is CI-ready as-is. For inline pull-request annotations use the
-GitHub format; for GitHub code scanning, emit SARIF:
+`github` format; for code scanners, use `sarif`:
 
 ```yaml
 - run: go run github.com/matterpale/depdog/cmd/depdog check --format github
@@ -235,32 +224,6 @@ reflects structural movement, not a config change.
 | `depdog tui` (or bare `depdog`)                  | Interactive terminal UI: component dashboard, browsable violations, per-package imports and importers, and a Config tab showing the compiled rules |
 | `depdog baseline`                                | Record current violations to `depdog.baseline.yaml` for the [ratchet](#adopting-rules-on-a-codebase-that-doesnt-pass-yet)                          |
 
-<details>
-<summary><b>All flags</b></summary>
-
-| Command | Flags                                                                                                                                                                                            |
-|---------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `init`  | `--preset ddd\|hexagonal\|layered\|flat` · `--default deny\|allow` · `--yes` (non-interactive) · `--force` (overwrite) · `--merge` (extend an existing file, preserving comments and formatting) |
-| `check` | `--format text\|json\|github\|sarif` · `--fail-on any\|new` · `--color auto\|always\|never`                                                                                                      |
-| `graph` | `--format dot\|mermaid` · `--level component\|package` · `--violations-only` · `--focus <component>`                                                                                             |
-| `diff`  | `--since <ref>` (required) · `--format text\|github\|json`                                                                                                                                       |
-
-</details>
-
-<details>
-<summary><b>TUI keys</b></summary>
-
-In the TUI, <kbd>1</kbd>–<kbd>4</kbd> (or <kbd>tab</kbd>) switch between the
-Dashboard, Violations, Packages and Config screens. The Violations and Packages
-lists scroll and filter with <kbd>/</kbd>; <kbd>e</kbd> opens the selection in
-`$EDITOR` at its file:line, <kbd>r</kbd> re-runs the check in place, and
-<kbd>?</kbd> shows all keys. The Config tab (<kbd>4</kbd>) shows the active
-config path and the compiled rule set (the same data as `depdog config`);
-<kbd>e</kbd> there opens `depdog.yaml` in `$EDITOR`, and the editor exiting
-auto-re-runs the check so the edited rules take effect on every screen.
-
-</details>
-
 Exit codes are a contract:
 
 | Code | Meaning    |
@@ -298,43 +261,6 @@ language is one `internal/lang/<x>` package plus one registry entry.
 depdog picks the adapter from the project's marker files automatically, and the
 persistent `--lang` flag forces a specific one — details, including nested
 layouts and two-language ambiguity, in [docs/languages.md](docs/languages.md).
-
-## Cross-language governance
-
-Checking each unit of a monorepo is table stakes; depdog also governs the
-dependency edges **between** units — across languages — from one repo-root
-`depdog.work.yaml`:
-
-```yaml
-version: 1
-units:
-  web:     { path: web, lang: ts }
-  shared:  shared
-  api:     { path: services/api }
-  billing: { path: services/billing }
-rules:
-  web:    { allow: [shared] }   # the frontend may depend only on the shared lib
-  shared: { deny: ["*"] }       # a library depends on nobody
-boundaries:
-  services: [api, billing]      # no service may depend on another
-surfaces:
-  shared: { exports: ["src/**"], internal: ["internal/**"] }
-```
-
-Units are the members; the vocabulary is the same allow/deny + boundaries you
-already know, plus **surfaces** ("other units may reach `shared`'s `src/**`
-but never `internal/**`"). Edges are detected from each unit's own scan — an
-import resolving into another unit's tree, or one matching another unit's
-import identity (`go.mod` module path, `package.json` name, `Cargo.toml` /
-`pyproject.toml` name). At the work-file root, plain `depdog check` runs the
-per-unit fan-out *plus* the cross pass: one report, one exit code, in every
-`--format` (JSON gains an additive `cross_unit` block). A unit doesn't even
-need its own `depdog.yaml` to be governed at this level. Full guide:
-[docs/cross-language.md](docs/cross-language.md).
-
-No other architecture linter — go-arch-lint, deptrac, dependency-cruiser,
-import-linter, ArchUnit — governs edges *across* languages; this is what the
-language-neutral core buys.
 
 ## For AI agents
 
