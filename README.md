@@ -25,11 +25,9 @@ usually live in someone's head or a wiki, and they rot.
 
 You declare who may import whom in a `depdog.yaml`, and
 depdog checks it against every import edge in your codebase, exiting
-non-zero for CI. One tool,
-one neutral rule format and one engine, **polyglot** across
-[languages](#multi-language-support) through thin, hot-swappable adapters,
-and `depdog check --all` governs a mixed monorepo in a single pass with one
-exit code ([monorepos](#monorepos)).
+non-zero for CI. One tool, one engine, **polyglot** across
+[languages](#multi-language-support) through thin, hot-swappable adapters. Mixed monorepos
+supported.
 
 ```
 depdog check — github.com/matterpale/depdog
