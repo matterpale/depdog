@@ -96,6 +96,7 @@ depdog check     # check against the rules; exit 1 on violations
 proposes a component mapping you refine interactively — drop, rename, or
 re-path components. Or accept all as-is with `--yes`.
 
+> [!TIP]
 Alternatively, ask a coding agent to get you started with the dedicated [skill](skills/depdog/SKILL.md).
 
 ## Configuration
