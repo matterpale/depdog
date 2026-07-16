@@ -9,7 +9,7 @@
 [![License: MIT](https://img.shields.io/badge/license-MIT-d68a1e)](LICENSE)
 
 [**Install**](#install)&nbsp;·&nbsp;[**Quick start**](#quick-start)&nbsp;·&nbsp;[**Configuration**](#configuration)
-&nbsp;·&nbsp;[**CI**](#ci)&nbsp;·&nbsp;[**Commands**](#commands)
+&nbsp;·&nbsp;[**CI**](#ci)&nbsp;·&nbsp;[**Commands**](#commands)&nbsp;·&nbsp;[**Docs**](docs/README.md)
 
 </div>
 
@@ -85,7 +85,7 @@ Prebuilt binaries for Linux, macOS, and Windows are on the
 [releases page](https://github.com/matterpale/depdog/releases); building from
 source (`go build -o depdog ./cmd/depdog`) needs Go 1.26+.
 
-## Quickstart
+## Quick start
 
 ```bash
 depdog init      # interactively kick off a starter depdog.yaml
@@ -107,11 +107,15 @@ version: 2
 
 # Each component lists its path glob(s) and, inline, who it may import.
 components:
-  main: { path: "cmd/**" }                                    # no rule → open (the default)
-  domain: { path: "internal/domain/**", allow: [ std ] }      # whitelist: std only
-  handler: { path: "internal/handler/**", deny: [ service, repository ] } # forbids its peers
-  service: { path: "internal/service/**", deny: [ handler, repository ] }
-  repository: { path: "internal/repository/**", deny: [ handler, service ] }
+  main: { path: "cmd/**" }                                # no rule → open (the default)
+  domain: { path: "internal/domain/**", allow: [ std ] }  # whitelist: std only
+  handler: { path: "internal/handler/**" }
+  service: { path: "internal/service/**" }
+  repository: { path: "internal/repository/**" }
+
+# A boundary isolates its members from each other: one line, no O(n²) deny lists.
+boundaries:
+  layers: [ handler, service, repository ]
 
 default: allow   # fallback for a rule-less component (like main); the default if omitted
 
@@ -120,9 +124,11 @@ options:
   skip: [ "internal/legacy/**" ]    # package dirs excluded from analysis
 ```
 
-Here `domain` is a **whitelist** (an `allow` list — only what's listed passes); the
-three peers instead use `deny` lists to forbid their siblings, and the stance is read
-per component from which word you use. `main` has no rule at all, so it
+Here `domain` is a **whitelist** (an `allow` list — only what's listed passes), and
+the `layers` **boundary** keeps the three peers out of each other — the same effect
+as giving each a `deny` list naming its two siblings, in one line. (`deny` lists
+still exist for one-off exclusions; a component with an `allow` list reads as a
+whitelist, one with only a `deny` list as a blacklist.) `main` has no rule at all, so it
 falls back to the top-level `default` — which is `allow`, so it may import anything
 (an explicit `allow: ["*"]` would be equivalent, just noisier). `path` takes a single
 glob or a list (`path: ["internal/api/**", "internal/rpc/**"]`).
@@ -131,10 +137,10 @@ An editor JSON Schema ships at
 [`schema/depdog.schema.json`](schema/depdog.schema.json) for autocomplete and
 validation (a test keeps it in lockstep with the parser).
 
-Two more knobs, both optional: **groups** name a reusable set of components you
-can reference in any allow/deny list, and **boundaries** add an orthogonal
-mutual-exclusion axis — named member sets that may not import across each other,
-for isolating services in a monorepo without O(n²) deny lists.
+One more knob, optional: **groups** name a reusable set of components you can
+reference in any allow/deny list. And boundaries go further than the shorthand
+above: members can be path globs as well as components, and `sealed: true` adds
+a one-way wall — nothing outside the boundary may reach in.
 
 **Full reference — [docs/configuration.md](docs/configuration.md):** component
 matching and precedence, the complete `allow`/`deny` vocabulary, groups, the
@@ -219,8 +225,9 @@ reflects structural movement, not a config change.
 | `depdog explain <component-or-package> [import]` | Explain why something is red (rule/boundary that fired, with file:line), constraints, boundary membership etc.                                     |
 | `depdog config`                                  | Print the compiled rule set — components, patterns, inferred stances, boundaries, options — for debugging a config                                 |
 | `depdog lsp`                                     | LSP server over stdio: violations become inline editor diagnostics at their import lines ([editor setup](docs/editors.md) · [design](docs/lsp.md)) |
-| `depdog tui` (or bare `depdog`)                  | Interactive terminal UI: component dashboard, browsable violations, per-package imports and importers, and a Config tab showing the compiled rules |
-| `depdog baseline`                                | Record current violations to `depdog.baseline.yaml` for the [ratchet](#adopting-rules-on-a-codebase-that-doesnt-pass-yet)                          |
+| `depdog mcp`                                     | Read-only MCP server over stdio: `check`, `explain` and `can_import` tools plus config resources, for agents ([docs/mcp.md](docs/mcp.md))          |
+| `depdog tui` (or bare `depdog`)                  | Interactive terminal UI: component dashboard, browsable violations, per-package imports and importers, a Config tab showing the compiled rules — and an experimental visual rule editor ([keys](docs/README.md#tui-keys)) |
+| `depdog baseline`                                | Record current violations to `depdog.baseline.yaml` for the [ratchet](#ratchet-friendly)                          |
 
 Exit codes are a contract:
 
@@ -238,7 +245,9 @@ commands, and the *same* engine.
 Only a thin language adapter differs; the rule format is neutral — component
 `path` globs match project-relative directories, and `std` / `external` are
 abstract buckets each adapter fills. Every adapter is a
-pure-Go static import scanner — **no language toolchain is required**, depdog stays a single binary.
+pure-Go static import scanner — **no language toolchain is required**, depdog
+stays a single binary. (The one exception: the Go adapter resolves its package
+graph through `go list` metadata — see [limitations](#limitations).)
 
 |         | Language | Detected by                               | Scans                                                     |
 |---------|----------|-------------------------------------------|-----------------------------------------------------------|
@@ -309,7 +318,7 @@ per-editor snippets in [docs/editors.md](docs/editors.md).
   `--format`. Within the fan-out each unit is checked in isolation, so an import
   from one unit into another classifies as `external`; governing the edges
   *between* units is the opt-in
-  [`depdog.work.yaml` layer](#cross-language-governance) on top. Note the
+  [`depdog.work.yaml` layer](docs/cross-language.md) on top. Note the
   cross-unit pass detects source-level references (resolved paths and import
   identities) — a plain HTTP call between services leaves no import to detect.
   Full guides: [docs/monorepo.md](docs/monorepo.md),
