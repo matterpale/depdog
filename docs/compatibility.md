@@ -40,7 +40,10 @@ release, but existing ones never change name or meaning.
   up `stats`. The presence of the `units` array is the discriminator between the
   two shapes: a run that analyzes exactly one unit with nothing skipped emits
   the single-unit report at the top level (no envelope), so a single-project
-  consumer is never surprised by an envelope. Envelope fields are additive.
+  consumer is never surprised by an envelope. Envelope fields are additive —
+  including the `cross_unit` block a
+  [`depdog.work.yaml` run](cross-language.md) adds, which follows the same
+  rules once present: fields are added, never renamed or removed.
 - **Exit codes.** `0` clean, `1` violations found, `2` config or usage error.
   These are the CI/agent contract and do not move.
 - **Documented CLI flag semantics.** The behavior of documented flags —

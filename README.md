@@ -221,7 +221,7 @@ reflects structural movement, not a config change.
 | `depdog tui` (or bare `depdog`)                  | Interactive terminal UI: component dashboard, browsable violations, per-package imports and importers, a Config tab showing the compiled rules — and an experimental visual rule editor ([keys](docs/README.md#tui-keys)) |
 | `depdog baseline`                                | Record current violations to `depdog.baseline.yaml` for the [ratchet](#ratchet-friendly)                          |
 
-Exit codes are a contract:
+Exit codes are a [contract](docs/compatibility.md):
 
 | Code | Meaning    |
 |:----:|------------|
@@ -264,8 +264,8 @@ layouts and two-language ambiguity, in [docs/languages.md](docs/languages.md).
 ## For AI agents
 
 depdog is built to be driven by tools and agents, not just humans:
-`check --format json` emits a stable schema and the [exit codes](#commands) are
-a contract.
+`check --format json` emits a [stable schema](docs/compatibility.md) and the
+[exit codes](#commands) are a contract.
 
 [`skills/depdog/SKILL.md`](skills/depdog/SKILL.md)
 is a self-contained, tool-agnostic playbook any coding agent can follow to work
@@ -286,6 +286,49 @@ Wire `depdog lsp` into Neovim, Helix, VS Code (via the bundled
 (via the LSP4IJ plugin), or Emacs for inline architecture diagnostics —
 per-editor snippets in [docs/editors.md](docs/editors.md).
 
+
+## How depdog compares
+
+Every major ecosystem has grown its own architecture linter —
+[go-arch-lint](https://github.com/fe3dback/go-arch-lint) for Go,
+[dependency-cruiser](https://github.com/sverweij/dependency-cruiser) for JS/TS,
+[deptrac](https://github.com/deptrac/deptrac) for PHP (Python has
+import-linter and Tach, Java has ArchUnit). Each is excellent inside its
+ecosystem, and each is welded to it — its language, and usually its toolchain.
+depdog's bet is different: one rule model, one engine, thin adapters.
+
+|                                            | depdog                     | go-arch-lint     | dependency-cruiser                 | deptrac                                  |
+|--------------------------------------------|----------------------------|------------------|------------------------------------|------------------------------------------|
+| Languages                                  | nine, one rule format      | Go               | JS/TS (+ Vue, Svelte)              | PHP                                      |
+| Needs                                      | one static binary*         | the Go toolchain | Node + the project's own compilers | PHP ≥ 8.2                                |
+| Baseline ratchet                           | ✓                          | —                | ✓                                  | ✓                                        |
+| CI formats                                 | GitHub annotations · SARIF | JSON             | Markdown · TeamCity · Azure DevOps | GitHub annotations · JUnit · CodeClimate |
+| Architecture diff per PR (edges ±)         | ✓ `diff --since`           | —                | —                                  | —                                        |
+| Inline editor diagnostics (LSP)            | ✓                          | —                | —                                  | —                                        |
+| Agent interface                            | [MCP](docs/mcp.md) · [skill](skills/depdog/SKILL.md) · [semver-stable JSON](docs/compatibility.md) | JSON | JSON · JS API | JSON |
+| Rules *across* languages in one monorepo   | ✓ `depdog.work.yaml`       | —                | —                                  | —                                        |
+
+<sub>*The Go adapter is the one exception: it resolves its package graph
+through `go list` metadata — see [limitations](#limitations).</sub>
+
+**vs go-arch-lint**, the nearest neighbour on a Go codebase: go-arch-lint
+loads your packages through the Go toolchain — even its basic check shells out
+to `go list`, and its default-on *deepscan* fully type-checks the module, so
+your dependencies must resolve. The payoff is real — deepscan traces
+dependency injection through interfaces, catching inversions no import scan
+can see. depdog deliberately stays at the import layer: scan source text,
+never build — so it runs mid-refactor, on code that doesn't compile yet, and
+the identical engine covers eight more languages. On top of that layer depdog
+adds what go-arch-lint doesn't have: the baseline ratchet, SARIF, an LSP, an
+MCP server, and per-PR architecture diffs.
+
+Inside their home ecosystems, dependency-cruiser (regex rules, a dozen-plus
+output formats) and deptrac (semantic layer collectors: by attribute,
+interface, composer package) go deeper than depdog does. depdog's case is the
+column no per-language tool can fill: the same `depdog.yaml` in every corner
+of the repo, the agent surface, and
+[cross-language rules](docs/cross-language.md) between the units of a mixed
+monorepo.
 
 ## Limitations
 
@@ -315,20 +358,6 @@ per-editor snippets in [docs/editors.md](docs/editors.md).
   identities) — a plain HTTP call between services leaves no import to detect.
   Full guides: [docs/monorepo.md](docs/monorepo.md),
   [docs/cross-language.md](docs/cross-language.md).
-
-## Compatibility
-
-depdog 1.0 follows semver. The **machine-readable contract is stable** — broken
-only by a major bump, additive within a major line: the config v2 `depdog.yaml`
-schema, both `--format json` shapes (the single-unit report **and** the
-`--all`/`go.work` aggregate envelope, `root`/`units[]`/`skipped[]`/`stats`,
-plus the additive `cross_unit` block on work-file runs), the
-exit codes (`0` clean · `1` violations · `2` config/usage error), and documented
-CLI flag semantics. The **human-readable presentation is not** — text and TUI
-rendering, log/stderr wording, Go internals (all `internal/`, no exported API),
-and SARIF/GitHub detail beyond path + rule identity may change any release. The
-JSON goldens, the schema-reflection test, and the single-unit byte-identity
-guard hold this line in CI. Full policy: [docs/compatibility.md](docs/compatibility.md).
 
 ## License
 
