@@ -124,25 +124,14 @@ options:
   skip: [ "internal/legacy/**" ]    # package dirs excluded from analysis
 ```
 
-Here `domain` is a **whitelist** (an `allow` list — only what's listed passes), and
-the `layers` **boundary** keeps the three peers out of each other — the same effect
-as giving each a `deny` list naming its two siblings, in one line. (`deny` lists
-still exist for one-off exclusions; a component with an `allow` list reads as a
-whitelist, one with only a `deny` list as a blacklist.)
-
-`main` has no rule at all, so it
-falls back to the top-level `default` — which is `allow`, so it may import anything
-(an explicit `allow: ["*"]` would be equivalent, just noisier). `path` takes a single
-glob or a list (`path: ["internal/api/**", "internal/rpc/**"]`).
+Here `domain` is an `allow` list — only what's listed passes. The `layers`
+**boundary** keeps the three peers out of each other — the same effect
+as giving each a `deny` list naming its two siblings, in one line.
+`deny` lists still exist for one-off exclusions.
 
 An editor JSON Schema ships at
 [`schema/depdog.schema.json`](schema/depdog.schema.json) for autocomplete and
 validation (a test keeps it in lockstep with the parser).
-
-One more knob, optional: **groups** name a reusable set of components you can
-reference in any allow/deny list. And boundaries go further than the shorthand
-above: members can be path globs as well as components, and `sealed: true` adds
-a one-way wall — nothing outside the boundary may reach in.
 
 **Full reference — [docs/configuration.md](docs/configuration.md):** component
 matching and precedence, the complete `allow`/`deny` vocabulary, groups, the
