@@ -128,7 +128,9 @@ Here `domain` is a **whitelist** (an `allow` list — only what's listed passes)
 the `layers` **boundary** keeps the three peers out of each other — the same effect
 as giving each a `deny` list naming its two siblings, in one line. (`deny` lists
 still exist for one-off exclusions; a component with an `allow` list reads as a
-whitelist, one with only a `deny` list as a blacklist.) `main` has no rule at all, so it
+whitelist, one with only a `deny` list as a blacklist.)
+
+`main` has no rule at all, so it
 falls back to the top-level `default` — which is `allow`, so it may import anything
 (an explicit `allow: ["*"]` would be equivalent, just noisier). `path` takes a single
 glob or a list (`path: ["internal/api/**", "internal/rpc/**"]`).
