@@ -218,8 +218,12 @@ reflects structural movement, not a config change.
 | `depdog config`                                  | Print the compiled rule set — components, patterns, inferred stances, boundaries, options — for debugging a config                                 |
 | `depdog lsp`                                     | LSP server over stdio: violations become inline editor diagnostics at their import lines ([editor setup](docs/editors.md) · [design](docs/lsp.md)) |
 | `depdog mcp`                                     | Read-only MCP server over stdio: `check`, `explain` and `can_import` tools plus config resources, for agents ([docs/mcp.md](docs/mcp.md))          |
-| `depdog tui` (or bare `depdog`)                  | Interactive terminal UI: component dashboard, browsable violations, per-package imports and importers, a Config tab showing the compiled rules — and an experimental visual rule editor ([keys](docs/README.md#tui-keys)) |
+| `depdog tui`                                     | Interactive terminal UI: component dashboard, browsable violations, per-package imports and importers, a Config tab showing the compiled rules — and an experimental visual rule editor ([keys](docs/README.md#tui-keys)) |
 | `depdog baseline`                                | Record current violations to `depdog.baseline.yaml` for the [ratchet](#ratchet-friendly)                          |
+
+Run bare, `depdog` evaluates the check — the same as `depdog check`, taking the
+same flags — so a plain `depdog` yields the real 0/1/2 exit code in a pipe or on
+a terminal. The interactive view is `depdog tui`.
 
 Exit codes are a [contract](docs/compatibility.md):
 
