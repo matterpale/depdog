@@ -14,6 +14,7 @@ import (
 type jsonReport struct {
 	Module     string          `json:"module"`
 	Default    string          `json:"default"`
+	Degraded   bool            `json:"degraded,omitempty"` // true when the graph was loaded approximately (see stderr); omitted otherwise
 	Violations []jsonViolation `json:"violations"`
 	Warnings   []jsonWarning   `json:"warnings"`
 	Components []jsonComponent `json:"components"`
@@ -173,6 +174,7 @@ func buildReport(res *core.Result, rs *core.RuleSet, elapsed time.Duration) json
 	out := jsonReport{
 		Module:     res.ModulePath,
 		Default:    policyName(rs.Policy),
+		Degraded:   res.Degraded,
 		Violations: make([]jsonViolation, 0, len(res.Violations)),
 		Warnings:   make([]jsonWarning, 0, len(res.Warnings)),
 		Components: make([]jsonComponent, 0, len(res.Components)),

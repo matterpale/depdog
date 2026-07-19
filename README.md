@@ -351,8 +351,10 @@ monorepo.
   abort: it falls back to a best-effort static scan (parsed imports + a path
   heuristic), prints a `depdog: warning:` to stderr that classification is
   approximate, and still checks the edges it can see. So `depdog check` runs on
-  Go code that doesn't compile yet, like the pure-static adapters; run
-  `go mod download` for exact results.
+  Go code with **unresolved imports** — a missing dependency, or a not-yet-created
+  package mid-refactor — rather than aborting (a genuinely unparseable file still
+  errors). `--format json` carries a `"degraded": true` flag so CI can tell an
+  approximate run from an exact one; run `go mod download` for exact results.
 - <a id="monorepos"></a>**Monorepos — per-unit fan-out; cross-unit rules are
   opt-in.** depdog checks a monorepo by fanning out over its **units**, each
   checked independently against its own `depdog.yaml`, via two discovery kinds:

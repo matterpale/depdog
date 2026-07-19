@@ -73,6 +73,10 @@ type Result struct {
 	Components []ComponentStat // one per declared component, sorted by name
 	Cycles     [][]string      // components forming an import cycle; each sorted
 	Stats      Stats
+	// Degraded is set when the adapter could not load the graph exactly (the Go
+	// adapter fell back to approximate classification). The prose is surfaced to
+	// stderr; this is the machine-readable signal for JSON consumers.
+	Degraded bool
 }
 
 // Evaluate checks every import edge of the graph against the rule set.

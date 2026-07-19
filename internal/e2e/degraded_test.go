@@ -48,7 +48,12 @@ func TestCheckGoDegradedFallback(t *testing.T) {
 		t.Fatalf("degraded json check exit %d, want 0\n%s", jexit, jout)
 	}
 	if strings.Contains(jout, "approximate") || strings.Contains(jout, "go list could not") {
-		t.Errorf("load warning leaked into json stdout:\n%s", jout)
+		t.Errorf("load warning prose leaked into json stdout:\n%s", jout)
+	}
+	// But the machine-readable "degraded" signal IS present, so a CI consumer can
+	// tell an approximate graph from an exact one without parsing stderr.
+	if !strings.Contains(jout, `"degraded": true`) {
+		t.Errorf("json should carry the degraded flag:\n%s", jout)
 	}
 	if !strings.Contains(jerr, "depdog: warning:") {
 		t.Errorf("warning should still be on stderr under --format json; got:\n%s", jerr)

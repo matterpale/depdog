@@ -113,6 +113,7 @@ func evaluateWith(cmd *cobra.Command, adapter lang.Adapter, root, cfgPath string
 	if err != nil {
 		return nil, err
 	}
+	res.Degraded = len(graph.LoadWarnings) > 0
 	return &evaluation{Result: res, Graph: graph, Rules: rs, ConfigPath: cfgPath}, nil
 }
 
