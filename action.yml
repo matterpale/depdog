@@ -1,0 +1,74 @@
+name: depdog
+description: Enforce your depdog.yaml architecture rules in CI — check import edges across any language.
+branding:
+  icon: shield
+  color: orange
+
+inputs:
+  version:
+    description: 'depdog release to use — a tag like "v0.6.0", or "latest".'
+    required: false
+    default: latest
+  args:
+    description: 'Arguments passed to depdog (e.g. "check --all --format github").'
+    required: false
+    default: check
+  working-directory:
+    description: Directory to run depdog in.
+    required: false
+    default: '.'
+
+runs:
+  using: composite
+  steps:
+    - name: Install depdog
+      shell: bash
+      env:
+        DEPDOG_VERSION: ${{ inputs.version }}
+      run: |
+        set -euo pipefail
+        repo="matterpale/depdog"
+
+        # Resolve the tag: "latest" follows the releases/latest redirect (no token needed for a public repo).
+        tag="$DEPDOG_VERSION"
+        if [ "$tag" = "latest" ]; then
+          tag="$(curl -fsSLI -o /dev/null -w '%{url_effective}' "https://github.com/$repo/releases/latest" | sed 's#.*/tag/##')"
+        fi
+        ver="${tag#v}"  # release archives name the version without the leading "v"
+
+        # Map the runner's OS/arch to the goreleaser asset naming.
+        case "$RUNNER_OS" in
+          Linux)   os=linux ;;
+          macOS)   os=darwin ;;
+          Windows) os=windows ;;
+          *) echo "::error::depdog action: unsupported RUNNER_OS '$RUNNER_OS'"; exit 1 ;;
+        esac
+        case "$RUNNER_ARCH" in
+          X64)   arch=amd64 ;;
+          ARM64) arch=arm64 ;;
+          *) echo "::error::depdog action: unsupported RUNNER_ARCH '$RUNNER_ARCH'"; exit 1 ;;
+        esac
+        ext=tar.gz
+        [ "$os" = windows ] && ext=zip
+
+        asset="depdog_${ver}_${os}_${arch}.${ext}"
+        url="https://github.com/$repo/releases/download/${tag}/${asset}"
+        echo "depdog action: downloading $url"
+
+        dir="$(mktemp -d)"
+        curl -fsSL "$url" -o "$dir/$asset"
+        if [ "$ext" = zip ]; then
+          unzip -q -o "$dir/$asset" -d "$dir"
+        else
+          tar -xzf "$dir/$asset" -C "$dir"
+        fi
+        echo "$dir" >> "$GITHUB_PATH"
+
+    - name: Run depdog
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        DEPDOG_ARGS: ${{ inputs.args }}
+      # Unquoted so multiple flags word-split; passing via env avoids injecting
+      # the input straight into the script.
+      run: depdog $DEPDOG_ARGS

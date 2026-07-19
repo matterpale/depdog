@@ -1,0 +1,20 @@
+# pre-commit framework hook (https://pre-commit.com). Add to a consumer's
+# .pre-commit-config.yaml:
+#
+#   repos:
+#     - repo: https://github.com/matterpale/depdog
+#       rev: v0.6.0
+#       hooks:
+#         - id: depdog
+#
+# pre-commit builds depdog from source (language: golang) and runs it once per
+# commit, regardless of which files changed — architecture is a whole-project
+# property. Prefer `depdog install-hook` if you don't use the pre-commit framework.
+- id: depdog
+  name: depdog
+  description: Enforce architecture rules on your import edges.
+  entry: depdog
+  args: [check]
+  language: golang
+  pass_filenames: false
+  always_run: true

@@ -38,6 +38,7 @@ Run bare, depdog evaluates the check (like ` + "`depdog check`" + `) and exits
 	root.AddCommand(checkCmd())
 	root.AddCommand(configCmd())
 	root.AddCommand(baselineCmd())
+	root.AddCommand(installHookCmd())
 	root.AddCommand(graphCmd())
 	root.AddCommand(explainCmd())
 	root.AddCommand(diffCmd())
