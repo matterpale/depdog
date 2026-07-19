@@ -124,3 +124,49 @@ func TestMetricsJSONShape(t *testing.T) {
 		t.Errorf("empty components should encode as []:\n%s", eb.String())
 	}
 }
+
+// TestMetricsUnassignedRow: a package no component claims shows up as an
+// "unassigned" row (and sorts among the u's, not first).
+func TestMetricsUnassignedRow(t *testing.T) {
+	// a/x imports z/x; only "a" is declared, so z is unassigned.
+	g := graph(pkg("a/x", "z/x"), pkg("z/x"))
+	rs := ruleSet("a")
+	m, err := Metrics(g, rs, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if m.ComponentCount != 2 || m.EdgeCount != 1 {
+		t.Fatalf("totals: comps=%d edges=%d, want 2/1", m.ComponentCount, m.EdgeCount)
+	}
+	byName := map[string]ComponentMetric{}
+	for _, c := range m.Components {
+		byName[c.Component] = c
+	}
+	if u, ok := byName["unassigned"]; !ok || u.FanIn != 1 || u.FanOut != 0 {
+		t.Errorf("unassigned row = %+v ok=%v, want fan_in 1 fan_out 0", u, ok)
+	}
+	if a := byName["a"]; a.FanOut != 1 {
+		t.Errorf("a fan_out = %d, want 1 (a → unassigned)", a.FanOut)
+	}
+	// Sorted by display name: "a" before "unassigned".
+	if m.Components[0].Component != "a" || m.Components[1].Component != "unassigned" {
+		t.Errorf("rows not sorted by display name: %+v", m.Components)
+	}
+}
+
+// TestMetricsIsolatedComponent: a component that owns a package but has no
+// cross-component edges reports fan-in/out 0 and instability 0.00.
+func TestMetricsIsolatedComponent(t *testing.T) {
+	g := graph(pkg("iso/x")) // imports nothing
+	rs := ruleSet("iso")
+	m, err := Metrics(g, rs, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if m.EdgeCount != 0 || len(m.Components) != 1 {
+		t.Fatalf("want one isolated component and no edges, got %d components / %d edges", len(m.Components), m.EdgeCount)
+	}
+	if got := m.Components[0]; got != (ComponentMetric{Component: "iso", FanIn: 0, FanOut: 0, Instability: 0.0}) {
+		t.Errorf("isolated component = %+v, want {iso 0 0 0.00}", got)
+	}
+}

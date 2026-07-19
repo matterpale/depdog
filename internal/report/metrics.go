@@ -42,30 +42,13 @@ type ArchMetrics struct {
 // core.Evaluate (metrics does not re-run Tarjan). The engine is pure — it takes
 // core types and does no IO — mirroring report.Diff.
 func Metrics(g *core.Graph, rs *core.RuleSet, cycles int) (ArchMetrics, error) {
-	views, err := core.BuildPackageViews(g, rs)
+	// edgeSet gives the distinct cross-component edges plus a representative dir
+	// per owning component (for boundary resolution) — the same extraction
+	// report.Diff uses, so metrics never drifts from it. repDirs has one entry
+	// per component that owns a package, so isolated components still get a row.
+	edges, repDirs, err := edgeSet(g, rs)
 	if err != nil {
 		return ArchMetrics{}, err
-	}
-	edges := componentEdgeSet(views)
-
-	// Representative module-relative dir per component (smallest, for
-	// determinism) so boundary crossings can be resolved — the same approach
-	// report.Diff's edgeSet uses. Also records which components own a package,
-	// so isolated components still get a row.
-	repDirs := make(map[string]string)
-	owning := make(map[string]bool)
-	for _, p := range g.Packages {
-		if rs.Skipped(p.RelDir) {
-			continue
-		}
-		comp, err := rs.AssignComponent(p.RelDir)
-		if err != nil {
-			return ArchMetrics{}, err
-		}
-		owning[comp] = true
-		if cur, ok := repDirs[comp]; !ok || p.RelDir < cur {
-			repDirs[comp] = p.RelDir
-		}
 	}
 
 	fanIn := make(map[string]int)
@@ -83,18 +66,22 @@ func Metrics(g *core.Graph, rs *core.RuleSet, cycles int) (ArchMetrics, error) {
 		}
 	}
 
-	names := make([]string, 0, len(owning))
-	for c := range owning {
+	names := make([]string, 0, len(repDirs))
+	for c := range repDirs {
 		names = append(names, c)
 	}
 	// Sort by display name so an "unassigned" row sorts among the u's rather
-	// than first (the raw empty component would sort ahead of everything).
+	// than first (the raw empty component would sort ahead of everything), with
+	// the raw name as a stable tiebreak.
 	sort.Slice(names, func(i, j int) bool {
-		return orUnassigned(names[i]) < orUnassigned(names[j])
+		if a, b := orUnassigned(names[i]), orUnassigned(names[j]); a != b {
+			return a < b
+		}
+		return names[i] < names[j]
 	})
 
 	m := ArchMetrics{
-		ComponentCount:    len(owning),
+		ComponentCount:    len(repDirs),
 		EdgeCount:         len(edges),
 		BoundaryCrossings: boundaryCrossings,
 		Cycles:            cycles,
