@@ -36,7 +36,7 @@ type Skipped struct {
 // advisory, and a rolled-up summary line counting checked units.
 func TextWorkspace(w io.Writer, mods []Module, skipped []Skipped, cross *CrossUnit, elapsed time.Duration, color string) error {
 	st := newStyles(w, color)
-	var totalV, totalW, totalP, totalE int
+	var totalErr, totalWarnV, totalW, totalP, totalE int
 	for i, m := range mods {
 		if i > 0 {
 			fmt.Fprintln(w)
@@ -45,7 +45,9 @@ func TextWorkspace(w io.Writer, mods []Module, skipped []Skipped, cross *CrossUn
 		if err := Text(w, m.Result, elapsed, color); err != nil {
 			return err
 		}
-		totalV += len(m.Result.Violations)
+		ec := m.Result.ErrorCount()
+		totalErr += ec
+		totalWarnV += len(m.Result.Violations) - ec // warn-severity violations
 		totalW += len(m.Result.Warnings)
 		totalP += m.Result.Stats.Packages
 		totalE += m.Result.Stats.Edges
@@ -68,19 +70,31 @@ func TextWorkspace(w io.Writer, mods []Module, skipped []Skipped, cross *CrossUn
 			}
 		}
 	}
+	// The exit code counts only error-severity violations (cross-unit violations
+	// are always error-severity), so the summary mark and count must too: a
+	// warn-only run is not a failure. The error-violation count is phrased as
+	// "violations" (so the clean "0 violations" and all-error cases are unchanged);
+	// warn-severity violations get their own segment.
+	crossV := cross.violationCount()
 	mark := st.good.Render("✓")
-	if totalV+cross.violationCount() > 0 {
+	switch {
+	case totalErr+crossV > 0:
 		mark = st.bad.Render("✗")
+	case totalWarnV > 0:
+		mark = st.warn.Render("⚠")
 	}
-	fmt.Fprintf(w, "\n%s %s across %s", mark, plural(totalV, "violation"), plural(len(mods), "checked unit"))
+	fmt.Fprintf(w, "\n%s %s across %s", mark, plural(totalErr, "violation"), plural(len(mods), "checked unit"))
 	if len(skipped) > 0 {
 		fmt.Fprintf(w, " (%d skipped)", len(skipped))
 	}
 	if cross != nil {
-		fmt.Fprintf(w, " · %s", plural(cross.violationCount(), "cross-unit violation"))
+		fmt.Fprintf(w, " · %s", plural(crossV, "cross-unit violation"))
+	}
+	if totalWarnV > 0 {
+		fmt.Fprintf(w, " · %s", st.warn.Render(plural(totalWarnV, "warning")))
 	}
 	if totalW > 0 {
-		fmt.Fprintf(w, " · %s", plural(totalW, "warning"))
+		fmt.Fprintf(w, " · %s", advisoryCount(totalW))
 	}
 	fmt.Fprintf(w, " · %s · %s · checked in %s\n",
 		plural(totalP, "package"), plural(totalE, "edge"), elapsed.Round(time.Millisecond))

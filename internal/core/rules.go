@@ -57,6 +57,27 @@ const (
 	PolicyAllow
 )
 
+// Severity grades a violation. The zero value is SeverityError, so any rule or
+// boundary that does not opt into `severity: warn` fails the build as before —
+// every construction path defaults to error automatically.
+type Severity int
+
+const (
+	// SeverityError violations fail `depdog check` (exit 1).
+	SeverityError Severity = iota
+	// SeverityWarn violations are reported on every surface but never flip the
+	// exit code — a tree whose only violations are warnings stays clean (exit 0).
+	SeverityWarn
+)
+
+// String renders the severity for machine output (json, sarif): "error" / "warn".
+func (s Severity) String() string {
+	if s == SeverityWarn {
+		return "warn"
+	}
+	return "error"
+}
+
 // TestFileMode controls how imports that appear only in _test.go files are
 // treated.
 type TestFileMode int
@@ -74,6 +95,9 @@ const (
 type Component struct {
 	Name     string
 	Patterns []string
+	// Severity grades the violations this component emits (its allow/deny and
+	// default-stance denials). The zero value (SeverityError) fails the build.
+	Severity Severity
 }
 
 // RuleSet is the compiled form of a depdog config. Components must be

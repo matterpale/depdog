@@ -403,17 +403,19 @@ func reportCheck(cmd *cobra.Command, run *checkRun, format, color string, elapse
 		if err := renderSingle(out, format, m.Result, m.Rules, elapsed, color); err != nil {
 			return 0, err
 		}
-		return len(m.Result.Violations), nil
+		// The exit code counts only error-severity violations; warn-severity
+		// ones are reported but never fail the build.
+		return m.Result.ErrorCount(), nil
 	}
 
 	total := 0
 	for _, m := range mods {
-		total += len(m.Result.Violations)
+		total += m.Result.ErrorCount()
 	}
 	var cross *report.CrossUnit
 	if run.CrossResult != nil {
 		cross = &report.CrossUnit{Result: run.CrossResult, Work: run.Work}
-		total += len(run.CrossResult.Violations)
+		total += run.CrossResult.ErrorCount()
 	}
 	switch format {
 	case "text":

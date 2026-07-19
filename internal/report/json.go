@@ -39,6 +39,7 @@ type jsonViolation struct {
 	Import        string         `json:"import"`
 	Target        string         `json:"target"`
 	Rule          string         `json:"rule"`
+	Severity      string         `json:"severity"` // "error" (fails the build) or "warn"
 	TestOnly      bool           `json:"test_only"`
 	Boundary      string         `json:"boundary,omitempty"` // boundary name for boundary violations
 	Reason        string         `json:"reason,omitempty"`   // "boundary" / "boundary-sealed"
@@ -193,6 +194,7 @@ func buildReport(res *core.Result, rs *core.RuleSet, elapsed time.Duration) json
 			Import:        v.ImportPath,
 			Target:        v.Target,
 			Rule:          v.Rule,
+			Severity:      v.Severity.String(),
 			TestOnly:      v.TestOnly,
 			Boundary:      v.Boundary,
 			Reason:        string(v.Reason),

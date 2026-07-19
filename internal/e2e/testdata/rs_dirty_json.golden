@@ -8,6 +8,7 @@
       "import": "crate::service::notify::notify",
       "target": "service",
       "rule": "domain: allow [std]",
+      "severity": "error",
       "test_only": false,
       "explanation": "`rsdirty/src/domain` (component `domain`) may import only `std`; `crate::service::notify::notify` (component `service`) is not among them. Fix: add `service` to `domain`'s allow list, or depend only on what `domain` already allows.",
       "positions": [
@@ -23,6 +24,7 @@
       "import": "crate::domain::new_order",
       "target": "domain",
       "rule": "handler: allow [service, std, external]",
+      "severity": "error",
       "test_only": false,
       "explanation": "`rsdirty/src/handler` (component `handler`) may import only `service`, `std`, `external`; `crate::domain::new_order` (component `domain`) is not among them. Fix: add `domain` to `handler`'s allow list, or depend only on what `handler` already allows.",
       "positions": [

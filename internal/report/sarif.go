@@ -67,9 +67,13 @@ func sarifRunFor(res *core.Result, rs *core.RuleSet, version, prefix string) sar
 				Region:           &sarifRegion{StartLine: p.Line},
 			}})
 		}
+		level := "error"
+		if v.Severity == core.SeverityWarn {
+			level = "warning"
+		}
 		results = append(results, sarifResult{
 			RuleID: v.FromComponent,
-			Level:  "error",
+			Level:  level,
 			// The terse "<C> imports <import> (<rule>)" line, enriched with the
 			// same plain-English WHY + fix every other surface carries (one
 			// source of wording: core.Explanation).

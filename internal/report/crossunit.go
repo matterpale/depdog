@@ -99,6 +99,7 @@ type jsonCrossViolation struct {
 	ToUnit      string         `json:"to_unit"`
 	Path        string         `json:"path"` // the target unit for unit-level denials; the offending target path for surface denials
 	Rule        string         `json:"rule"`
+	Severity    string         `json:"severity"` // always "error" (units can't opt into warn); present for consistency with intra-unit JSON
 	Reason      string         `json:"reason"`
 	Boundary    string         `json:"boundary,omitempty"`
 	TestOnly    bool           `json:"test_only"`
@@ -130,6 +131,7 @@ func buildCrossUnit(cu *CrossUnit) *jsonCrossUnit {
 			ToUnit:      v.Target,
 			Path:        v.ImportPath,
 			Rule:        v.Rule,
+			Severity:    v.Severity.String(),
 			Reason:      string(v.Reason),
 			Boundary:    v.Boundary,
 			TestOnly:    v.TestOnly,

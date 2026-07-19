@@ -39,6 +39,32 @@ under `default: allow` (the default) a rule-less component may import anything
 `default: deny` to make unruled components fail closed (`init` asks which
 stance you want).
 
+## Severity — warn vs error
+
+A component or a boundary can carry a `severity`:
+
+```yaml
+components:
+  legacy: { path: "internal/legacy/**", allow: [ std ], severity: warn }
+
+boundaries:
+  layers: { members: [ handler, service, repository ], severity: warn }
+```
+
+- `error` (the default when `severity` is omitted) — a violation fails the check
+  (exit `1`).
+- `warn` — the violation is still reported on every surface (text marks it
+  `[warn]`, JSON carries `"severity": "warn"`, GitHub emits `::warning::`, SARIF
+  uses `level: "warning"`, and the LSP shows it as a Warning), but it does **not**
+  flip the exit code. A tree whose only violations are warnings exits `0`.
+
+Severity is graded per **component** (it applies to every violation that
+component emits — its `allow`/`deny` and its default-stance denials) and per
+**boundary** (its crossings). It pairs with the baseline ratchet: mark a messy
+component `warn` to surface its edges without blocking, while `check --fail-on
+new` still fails on newly-introduced errors. Warnings are not written to
+`depdog baseline` (they never fail, so there is nothing to ratchet).
+
 ## Signals that never fail the build
 
 Three findings are always reported but never exit non-zero on their own —

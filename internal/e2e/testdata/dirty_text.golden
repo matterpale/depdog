@@ -13,4 +13,4 @@ depdog check — example.test/dirty
 ! 1 package not covered by any component:
     example.test/dirty/internal/util  (internal/util)
 
-4 violations · 1 warning · 6 packages · 14 edges checked in X
+4 violations · 1 advisory · 6 packages · 14 edges checked in X

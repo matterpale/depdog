@@ -1,0 +1,7 @@
+depdog check — example.test/severity
+
+⚠ app: allow [std]  (1 violation)
+    example.test/severity/app
+      → example.test/severity/lib  app/a.go:6 [warn]
+
+1 warning · 2 packages · 2 edges checked in X

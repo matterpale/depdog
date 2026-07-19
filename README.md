@@ -130,6 +130,17 @@ Here `domain` is an `allow` list — only what's listed passes. The `layers`
 as giving each a `deny` list naming its two siblings, in one line.
 `deny` lists still exist for one-off exclusions.
 
+**Graduated severity.** A component or boundary can carry `severity: warn`
+(default `error`). Its violations are then reported on every surface but do
+**not** fail the build — only `error` violations flip the exit code. Pair it
+with the [baseline ratchet](#ratchet-friendly) to warn on the messy edges while
+failing on new ones:
+
+```yaml
+components:
+  legacy: { path: "internal/legacy/**", allow: [ std ], severity: warn }
+```
+
 An editor JSON Schema ships at
 [`schema/depdog.schema.json`](schema/depdog.schema.json) for autocomplete and
 validation (a test keeps it in lockstep with the parser).

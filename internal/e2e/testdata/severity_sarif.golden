@@ -1,0 +1,44 @@
+{
+  "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
+  "version": "2.1.0",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "name": "depdog",
+          "informationUri": "https://github.com/matterpale/depdog",
+          "version": "0.0.0-dev",
+          "rules": [
+            {
+              "id": "app",
+              "shortDescription": {
+                "text": "Import rules for component app"
+              }
+            }
+          ]
+        }
+      },
+      "results": [
+        {
+          "ruleId": "app",
+          "level": "warning",
+          "message": {
+            "text": "app imports example.test/severity/lib (app: allow [std]) — `example.test/severity/app` (component `app`) may import only `std`; `example.test/severity/lib` (component `lib`) is not among them. Fix: add `lib` to `app`'s allow list, or depend only on what `app` already allows."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "app/a.go"
+                },
+                "region": {
+                  "startLine": 6
+                }
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

@@ -59,12 +59,16 @@ func githubAnnotations(b *strings.Builder, res *core.Result, rs *core.RuleSet, p
 		// carry, so the terse annotation gains the WHY + fix (one source of
 		// wording: core.Explanation). LF in it is escaped by ghData below.
 		msg += " — " + core.Explanation(core.ExplainViolation(v, rs))
+		level := "error"
+		if v.Severity == core.SeverityWarn {
+			level = "warning"
+		}
 		if len(v.Positions) == 0 {
-			fmt.Fprintf(b, "::error::%s\n", ghData(msg))
+			fmt.Fprintf(b, "::%s::%s\n", level, ghData(msg))
 			continue
 		}
 		for _, p := range v.Positions {
-			fmt.Fprintf(b, "::error file=%s,line=%d::%s\n", ghProp(joinPrefix(prefix, p.File)), p.Line, ghData(msg))
+			fmt.Fprintf(b, "::%s file=%s,line=%d::%s\n", level, ghProp(joinPrefix(prefix, p.File)), p.Line, ghData(msg))
 		}
 	}
 	for _, wr := range res.Warnings {

@@ -61,7 +61,17 @@ func Text(w io.Writer, res *core.Result, elapsed time.Duration, color string) er
 	}
 	for _, rule := range order {
 		vs := groups[rule]
-		fmt.Fprintf(&b, "\n%s %s  (%s)\n", st.bad.Render("✗"), st.rule.Render(rule), plural(len(vs), "violation"))
+		// A group shares a rule string, but the shared "default: deny" rule can
+		// span components of different severities — mark the header as an error
+		// group if any member is an error, else as a warning group.
+		mark := st.warn.Render("⚠")
+		for _, v := range vs {
+			if v.Severity == core.SeverityError {
+				mark = st.bad.Render("✗")
+				break
+			}
+		}
+		fmt.Fprintf(&b, "\n%s %s  (%s)\n", mark, st.rule.Render(rule), plural(len(vs), "violation"))
 		width := 0
 		for _, v := range vs {
 			if len(v.ImportPath) > width {
@@ -84,6 +94,9 @@ func Text(w io.Writer, res *core.Result, elapsed time.Duration, color string) er
 			marker := ""
 			if v.TestOnly {
 				marker = " [test]"
+			}
+			if v.Severity == core.SeverityWarn {
+				marker += " [warn]"
 			}
 			// Pad before styling so ANSI codes never throw off the column.
 			fmt.Fprintf(&b, "      → %s%s%s\n",
@@ -121,11 +134,19 @@ func Text(w io.Writer, res *core.Result, elapsed time.Duration, color string) er
 	b.WriteString("\n")
 	if len(res.Violations) == 0 {
 		b.WriteString(st.good.Render("✓ no violations"))
+	} else if errs := res.ErrorCount(); errs > 0 {
+		b.WriteString(st.bad.Render(plural(errs, "violation")))
+		if warns := len(res.Violations) - errs; warns > 0 {
+			fmt.Fprintf(&b, " · %s", st.warn.Render(plural(warns, "warning")))
+		}
 	} else {
-		b.WriteString(st.bad.Render(plural(len(res.Violations), "violation")))
+		// Only warn-severity violations remain, so the build stays clean (exit 0).
+		b.WriteString(st.warn.Render(plural(len(res.Violations), "warning")))
 	}
-	if len(res.Warnings) > 0 {
-		fmt.Fprintf(&b, " · %s", plural(len(res.Warnings), "warning"))
+	if n := len(res.Warnings); n > 0 {
+		// "advisory", not "warning", so these config-hygiene notes (unassigned
+		// packages, dead patterns) don't collide with warn-severity violations.
+		fmt.Fprintf(&b, " · %s", advisoryCount(n))
 	}
 	fmt.Fprintf(&b, " · %s · %s checked in %s\n",
 		plural(res.Stats.Packages, "package"),
@@ -141,4 +162,13 @@ func plural(n int, word string) string {
 		return fmt.Sprintf("1 %s", word)
 	}
 	return fmt.Sprintf("%d %ss", n, word)
+}
+
+// advisoryCount renders the count of advisory (never-fatal) notes with the
+// correct irregular plural — "1 advisory" / "N advisories".
+func advisoryCount(n int) string {
+	if n == 1 {
+		return "1 advisory"
+	}
+	return fmt.Sprintf("%d advisories", n)
 }

@@ -445,3 +445,44 @@ rules:
 		}
 	}
 }
+
+func TestParseSeverity(t *testing.T) {
+	rs, err := Parse([]byte(`version: 2
+components:
+  app: { path: "app/**", allow: [std], severity: warn }
+  lib: { path: "lib/**" }
+boundaries:
+  walls: { members: [app, lib], severity: warn }
+default: allow
+`))
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	sevOf := func(name string) core.Severity {
+		for _, c := range rs.Components {
+			if c.Name == name {
+				return c.Severity
+			}
+		}
+		t.Fatalf("no component %q", name)
+		return 0
+	}
+	if sevOf("app") != core.SeverityWarn {
+		t.Errorf("app severity = %v, want warn", sevOf("app"))
+	}
+	if sevOf("lib") != core.SeverityError {
+		t.Errorf("lib severity = %v, want error (the absent default)", sevOf("lib"))
+	}
+	if len(rs.Boundaries) != 1 || rs.Boundaries[0].Severity != core.SeverityWarn {
+		t.Errorf("boundary severity = %+v, want warn", rs.Boundaries)
+	}
+
+	// An unknown severity is an actionable config error.
+	_, err = Parse([]byte("version: 2\ncomponents: {a: {path: \"a/**\", severity: loud}}\ndefault: allow\n"))
+	if err == nil {
+		t.Fatal("expected an error for severity: loud")
+	}
+	if !strings.Contains(err.Error(), "severity") {
+		t.Errorf("error should mention severity: %v", err)
+	}
+}
