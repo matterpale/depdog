@@ -29,10 +29,19 @@ runs:
         set -euo pipefail
         repo="matterpale/depdog"
 
-        # Resolve the tag: "latest" follows the releases/latest redirect (no token needed for a public repo).
+        # Resolve the tag. "latest" follows the releases/latest redirect (no token
+        # needed for a public repo); a bare "0.6.0" is normalized to the
+        # "v"-prefixed tag depdog actually publishes.
         tag="$DEPDOG_VERSION"
         if [ "$tag" = "latest" ]; then
-          tag="$(curl -fsSLI -o /dev/null -w '%{url_effective}' "https://github.com/$repo/releases/latest" | sed 's#.*/tag/##')"
+          eff="$(curl -fsSLI -o /dev/null -w '%{url_effective}' "https://github.com/$repo/releases/latest")" || eff=""
+          tag="${eff##*/tag/}"
+          if [ -z "$eff" ] || [ "$tag" = "$eff" ]; then
+            echo "::error::depdog action: could not resolve the latest release tag from github.com/$repo — set version: to a specific tag like v0.6.0."
+            exit 1
+          fi
+        elif [ "${tag#v}" = "$tag" ]; then
+          tag="v$tag"
         fi
         ver="${tag#v}"  # release archives name the version without the leading "v"
 
@@ -56,11 +65,16 @@ runs:
         echo "depdog action: downloading $url"
 
         dir="$(mktemp -d)"
-        curl -fsSL "$url" -o "$dir/$asset"
-        if [ "$ext" = zip ]; then
-          unzip -q -o "$dir/$asset" -d "$dir"
-        else
-          tar -xzf "$dir/$asset" -C "$dir"
+        if ! curl -fsSL "$url" -o "$dir/$asset"; then
+          echo "::error::depdog action: could not download $url — check that release $tag publishes an asset for ${os}/${arch} (see github.com/$repo/releases)."
+          exit 1
+        fi
+        # `tar -xf` handles both formats: gzip is auto-detected for .tar.gz, and
+        # bsdtar (the tar on Windows runners) also extracts .zip — so there is no
+        # dependency on `unzip` being present.
+        if ! tar -xf "$dir/$asset" -C "$dir"; then
+          echo "::error::depdog action: could not extract $asset."
+          exit 1
         fi
         echo "$dir" >> "$GITHUB_PATH"
 

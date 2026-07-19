@@ -75,3 +75,29 @@ func writeExec(t *testing.T, path, body string) {
 		t.Fatal(err)
 	}
 }
+
+// TestInstallHookRelativeHooksPathFromSubdir: with a repo-local, *relative*
+// core.hooksPath, install-hook run from a subdirectory must write the hook at
+// the worktree top level (where git looks), not under the cwd.
+func TestInstallHookRelativeHooksPathFromSubdir(t *testing.T) {
+	t.Setenv("GIT_CONFIG_GLOBAL", os.DevNull)
+	t.Setenv("GIT_CONFIG_SYSTEM", os.DevNull)
+
+	repo := t.TempDir()
+	gitInit(t, repo)
+	git(t, repo, "config", "core.hooksPath", ".githooks")
+	sub := filepath.Join(repo, "pkg", "deep")
+	if err := os.MkdirAll(sub, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, stderr, exit := run(t, sub, "install-hook"); exit != 0 {
+		t.Fatalf("install-hook from subdir exit %d\n%s", exit, stderr)
+	}
+	if _, err := os.Stat(filepath.Join(repo, ".githooks", "pre-commit")); err != nil {
+		t.Errorf("hook not written at the worktree top-level .githooks (git's location): %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(sub, ".githooks", "pre-commit")); err == nil {
+		t.Errorf("hook wrongly written under the subdir cwd rather than the worktree top")
+	}
+}

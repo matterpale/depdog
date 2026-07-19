@@ -105,7 +105,14 @@ func preCommitHookPath(dir string) (string, error) {
 	if hp, err := runGit(dir, "config", "--local", "--get", "core.hooksPath"); err == nil {
 		if hp = strings.TrimSpace(hp); hp != "" {
 			if !filepath.IsAbs(hp) {
-				hp = filepath.Join(dir, hp)
+				// git resolves a relative core.hooksPath against the working-tree
+				// top level, not the cwd — so must we, or a run from a subdirectory
+				// would write the hook where git never looks for it.
+				top, err := runGit(dir, "rev-parse", "--show-toplevel")
+				if err != nil {
+					return "", fmt.Errorf("not a git repository (%s) — `depdog install-hook` needs one to install a pre-commit hook: %w", dir, err)
+				}
+				hp = filepath.Join(strings.TrimSpace(top), hp)
 			}
 			return filepath.Join(hp, "pre-commit"), nil
 		}
