@@ -36,21 +36,31 @@ func runWatch(cmd *cobra.Command, args []string, o checkOptions) error {
 	if o.format != "text" {
 		return fmt.Errorf("--watch supports only --format text (got %q)", o.format)
 	}
-	root, err := os.Getwd()
+	root, err := watchRoot(o)
 	if err != nil {
 		return err
 	}
 
 	out := cmd.OutOrStdout()
 	errOut := cmd.ErrOrStderr()
-	runOnce := func() {
+
+	// The initial run is fatal on a config/usage error, matching the one-shot
+	// contract — you can't watch a project that doesn't resolve. Errors on a
+	// later re-check (a config broken mid-edit) are printed but keep the loop
+	// alive so the next save can recover.
+	clearScreen(out)
+	if _, err := runCheckOnce(cmd, args, o); err != nil {
+		return err
+	}
+	fmt.Fprintln(errOut, "— watching for changes (Ctrl-C to stop) —")
+
+	reCheck := func() {
 		clearScreen(out)
 		if _, err := runCheckOnce(cmd, args, o); err != nil {
 			fmt.Fprintf(errOut, "depdog: %v\n", err)
 		}
 		fmt.Fprintln(errOut, "— watching for changes (Ctrl-C to stop) —")
 	}
-	runOnce()
 
 	w, err := newTreeWatcher(root)
 	if err != nil {
@@ -58,7 +68,42 @@ func runWatch(cmd *cobra.Command, args []string, o checkOptions) error {
 	}
 	ctx, stop := signal.NotifyContext(cmd.Context(), os.Interrupt)
 	defer stop()
-	return watchLoop(ctx, w, watchInterval, runOnce)
+	return watchLoop(ctx, w, watchInterval, reCheck)
+}
+
+// watchRoot resolves the directory --watch should poll. With --config it is the
+// config's directory; with --all it is the cwd (polyglot discovery walks
+// downward from there); otherwise it is the enclosing project root — the nearest
+// ancestor holding a depdog.yaml or go.mod — so `cd subdir && depdog check
+// --watch` still sees edits elsewhere in the module rather than watching only
+// the subdirectory. Falls back to the cwd.
+func watchRoot(o checkOptions) (string, error) {
+	cwd, err := os.Getwd()
+	if err != nil {
+		return "", err
+	}
+	if o.configPath != "" {
+		abs, err := filepath.Abs(o.configPath)
+		if err != nil {
+			return "", err
+		}
+		return filepath.Dir(abs), nil
+	}
+	if o.all {
+		return cwd, nil
+	}
+	for dir := cwd; ; {
+		for _, marker := range []string{"depdog.yaml", "go.mod"} {
+			if _, err := os.Stat(filepath.Join(dir, marker)); err == nil {
+				return dir, nil
+			}
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir { // reached the filesystem root
+			return cwd, nil
+		}
+		dir = parent
+	}
 }
 
 // watchLoop polls w every interval and calls onChange whenever the tree's newest
@@ -124,16 +169,16 @@ func newestModTime(root string) (time.Time, error) {
 		if err != nil {
 			return nil // tolerate races (a file deleted between readdir and stat)
 		}
-		if d.IsDir() {
-			if path != root && (watchSkipDirs[d.Name()] || strings.HasPrefix(d.Name(), ".")) {
-				return fs.SkipDir
-			}
-			return nil
+		if d.IsDir() && path != root && (watchSkipDirs[d.Name()] || strings.HasPrefix(d.Name(), ".")) {
+			return fs.SkipDir
 		}
 		info, err := d.Info()
 		if err != nil {
 			return nil
 		}
+		// Directory mtimes count too: they bump on a create/delete/rename inside
+		// the directory, so a removed or renamed file — which lowers no surviving
+		// file's mtime — still advances the newest time and triggers a re-check.
 		if mt := info.ModTime(); mt.After(newest) {
 			newest = mt
 		}
@@ -143,7 +188,15 @@ func newestModTime(root string) (time.Time, error) {
 }
 
 // clearScreen resets the terminal to the top-left and clears it, so each watch
-// re-check replaces the previous report rather than scrolling.
+// re-check replaces the previous report rather than scrolling. It only emits the
+// escape sequence when w is a terminal, so piped/redirected output (or a test
+// buffer) is never polluted with control bytes.
 func clearScreen(w io.Writer) {
-	fmt.Fprint(w, "\033[H\033[2J")
+	f, ok := w.(*os.File)
+	if !ok {
+		return
+	}
+	if fi, err := f.Stat(); err == nil && fi.Mode()&os.ModeCharDevice != 0 {
+		fmt.Fprint(w, "\033[H\033[2J")
+	}
 }
