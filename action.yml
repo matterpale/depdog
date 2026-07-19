@@ -69,6 +69,30 @@ runs:
           echo "::error::depdog action: could not download $url — check that release $tag publishes an asset for ${os}/${arch} (see github.com/$repo/releases)."
           exit 1
         fi
+
+        # Verify the download against the release checksums.txt (goreleaser
+        # publishes one per release). A mismatch or a missing entry is fatal
+        # (a tampered/served-wrong binary); an unreachable checksums.txt only
+        # warns, so a transient network hiccup on the sidecar file doesn't block.
+        if curl -fsSL "https://github.com/$repo/releases/download/${tag}/checksums.txt" -o "$dir/checksums.txt"; then
+          if command -v sha256sum >/dev/null 2>&1; then
+            have="$(sha256sum "$dir/$asset" | awk '{print $1}')"
+          else
+            have="$(shasum -a 256 "$dir/$asset" | awk '{print $1}')"
+          fi
+          want="$(awk -v a="$asset" '$2 == a {print $1}' "$dir/checksums.txt")"
+          if [ -z "$want" ]; then
+            echo "::error::depdog action: $asset is not listed in checksums.txt for $tag."
+            exit 1
+          fi
+          if [ "$have" != "$want" ]; then
+            echo "::error::depdog action: checksum mismatch for $asset (want $want, got $have) — refusing to run a tampered download."
+            exit 1
+          fi
+        else
+          echo "::warning::depdog action: could not fetch checksums.txt for $tag; skipping integrity verification."
+        fi
+
         # `tar -xf` handles both formats: gzip is auto-detected for .tar.gz, and
         # bsdtar (the tar on Windows runners) also extracts .zip — so there is no
         # dependency on `unzip` being present.
