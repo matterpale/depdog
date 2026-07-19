@@ -1801,3 +1801,27 @@ func TestMatrixHorizontalScroll(t *testing.T) {
 		t.Errorf("row labels must stay fixed while scrolling:\n%s", v)
 	}
 }
+
+func TestModuleHeadersDisambiguate(t *testing.T) {
+	// A last segment shared by two modules widens to the shortest suffix that
+	// differs, so the columns never read the same.
+	heads := moduleHeaders([]string{"example.com/other/sync", "golang.org/x/sync"})
+	if heads[0] != "other/sync" || heads[1] != "x/sync" {
+		t.Errorf("colliding last segments should widen: got %q, want [other/sync x/sync]", heads)
+	}
+
+	// A unique last segment stays bare — the common case, unchanged.
+	if solo := moduleHeaders([]string{"golang.org/x/sync"}); len(solo) != 1 || solo[0] != "sync" {
+		t.Errorf("a unique last segment stays bare: got %q, want [sync]", solo)
+	}
+
+	// A bare segment colliding with two parents: all three must stay distinct.
+	tri := moduleHeaders([]string{"a/util", "b/util", "util"})
+	seen := map[string]bool{}
+	for _, h := range tri {
+		if seen[h] {
+			t.Errorf("headers must be distinct across the set: %q", tri)
+		}
+		seen[h] = true
+	}
+}

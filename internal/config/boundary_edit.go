@@ -231,7 +231,14 @@ func SetBoundarySealed(data []byte, boundary string, sealed bool) ([]byte, error
 		if at > len(lines) {
 			return nil, fmt.Errorf("boundary %q line %d is out of range", boundary, at)
 		}
-		lines = append(lines[:at], append([]string{indent + "sealed: true"}, lines[at:]...)...)
+		// Split on "\n" leaves a trailing "\r" on every line of a CRLF file;
+		// match the adjacent line's ending so the inserted line doesn't become a
+		// lone LF in an otherwise-CRLF file.
+		eol := ""
+		if strings.HasSuffix(lines[at-1], "\r") {
+			eol = "\r"
+		}
+		lines = append(lines[:at], append([]string{indent + "sealed: true" + eol}, lines[at:]...)...)
 		return commit()
 
 	default:

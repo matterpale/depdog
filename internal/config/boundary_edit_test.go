@@ -195,3 +195,23 @@ default: allow
 		t.Errorf("unknown boundary error = %v", err)
 	}
 }
+
+func TestSetBoundarySealedCRLF(t *testing.T) {
+	// A block mapping in a CRLF file: the inserted sealed line must adopt the
+	// file's CRLF ending rather than introducing a lone LF.
+	block := "version: 2\r\ncomponents:\r\n  a: { path: \"a/**\" }\r\n  b: { path: \"b/**\" }\r\nboundaries:\r\n  blocky:\r\n    members: [a, b]\r\n"
+	out, err := SetBoundarySealed([]byte(block), "blocky", true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(out), "    sealed: true\r\n") {
+		t.Errorf("the inserted sealed line should carry the file's CRLF ending:\n%q", string(out))
+	}
+	// No lone LF should survive: stripping every CRLF pair leaves no bare "\n".
+	if strings.Contains(strings.ReplaceAll(string(out), "\r\n", ""), "\n") {
+		t.Errorf("a CRLF edit must not introduce a bare LF:\n%q", string(out))
+	}
+	if _, err := Parse(out); err != nil {
+		t.Fatalf("Parse after CRLF block seal: %v", err)
+	}
+}

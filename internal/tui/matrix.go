@@ -71,12 +71,66 @@ func moduleHeader(mod string) string {
 	return seg
 }
 
-// moduleColWidth sizes the module columns to their longest short label,
+// moduleHeaders returns a column header per module in mods: normally the last
+// path segment (moduleHeader), but any last segment shared by two or more
+// modules is widened to the shortest trailing path suffix that tells them apart
+// — e.g. "a/util" vs "b/util" — falling back to the full path. Distinct module
+// paths always yield distinct headers, so no two columns read the same.
+func moduleHeaders(mods []string) []string {
+	heads := make([]string, len(mods))
+	collide := map[string]int{}
+	for i, mod := range mods {
+		heads[i] = moduleHeader(mod)
+		collide[heads[i]]++
+	}
+	for i, mod := range mods {
+		if collide[heads[i]] > 1 { // the bare last segment is ambiguous — widen it
+			heads[i] = uniqueModuleSuffix(mod, mods)
+		}
+	}
+	return heads
+}
+
+// uniqueModuleSuffix returns the shortest trailing path suffix of mod (whole
+// segments) that no other module in mods shares at the same segment length, or
+// mod's full path if none is unique.
+func uniqueModuleSuffix(mod string, mods []string) string {
+	segs := moduleSegs(mod)
+	for k := 1; k < len(segs); k++ {
+		suf := strings.Join(segs[len(segs)-k:], "/")
+		unique := true
+		for _, other := range mods {
+			if other == mod {
+				continue
+			}
+			osegs := moduleSegs(other)
+			if len(osegs) >= k && strings.Join(osegs[len(osegs)-k:], "/") == suf {
+				unique = false
+				break
+			}
+		}
+		if unique {
+			return suf
+		}
+	}
+	if full := strings.Join(segs, "/"); full != "" {
+		return full
+	}
+	return mod
+}
+
+// moduleSegs splits a module path into its slash-separated segments, ignoring a
+// trailing slash (matching moduleHeader's normalization).
+func moduleSegs(mod string) []string {
+	return strings.Split(strings.TrimRight(mod, "/"), "/")
+}
+
+// moduleColWidth sizes the module columns to their longest header label,
 // bounded so one long name cannot flood the grid.
-func moduleColWidth(mods []string) int {
+func moduleColWidth(heads []string) int {
 	w := 0
-	for _, mod := range mods {
-		if l := len(moduleHeader(mod)); l > w {
+	for _, h := range heads {
+		if l := len(h); l > w {
 			w = l
 		}
 	}
@@ -188,7 +242,8 @@ func (m Model) matrixCols() []matrixCol {
 	}
 	comps := m.rules.Components
 	mods := m.matrixModules()
-	modW := moduleColWidth(mods)
+	heads := moduleHeaders(mods)
+	modW := moduleColWidth(heads)
 	cols := make([]matrixCol, 0, len(comps)+len(specialTargets)+len(mods))
 	x := 0
 	add := func(c matrixCol) {
@@ -206,7 +261,7 @@ func (m Model) matrixCols() []matrixCol {
 	if len(mods) > 0 {
 		x += matrixSepW
 		for i, mod := range mods {
-			add(matrixCol{target: mod, head: moduleHeader(mod), isModule: true, w: modW, groupStart: i == 0})
+			add(matrixCol{target: mod, head: heads[i], isModule: true, w: modW, groupStart: i == 0})
 		}
 	}
 	return cols
