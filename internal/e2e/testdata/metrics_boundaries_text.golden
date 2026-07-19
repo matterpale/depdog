@@ -1,0 +1,8 @@
+depdog metrics — boundaryfix
+
+COMPONENT  FAN-IN  FAN-OUT  INSTABILITY
+service-a       2        1         0.33
+service-b       0        1         1.00
+shared          1        1         0.50
+
+3 components · 3 cross-component edges · 2 boundary crossings · 0 cycles
