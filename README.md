@@ -154,6 +154,17 @@ test-file handling. Boundaries have their own page —
   with: { sarif_file: depdog.sarif }
 ```
 
+Or use the **composite action** — it downloads the released binary (no Go
+toolchain needed on the runner, so it works for any-language repos) and runs
+depdog:
+
+```yaml
+- uses: matterpale/depdog@v0.6.0
+  with:
+    version: latest                    # a tag like v0.6.0, or "latest"
+    args: check --all --format github
+```
+
 For a **polyglot monorepo**, one step governs every language at once — from the
 repo root, `--all` discovers every `depdog.yaml` under the tree, checks each
 unit against its own auto-detected adapter, and aggregates into one report with
@@ -173,6 +184,26 @@ then fail only on new ones — and shrink the baseline over time:
 ```bash
 depdog baseline                 # writes depdog.baseline.yaml
 depdog check --fail-on new      # exits 1 only on violations not in the baseline
+```
+
+### Pre-commit hook
+
+Catch a broken architecture before it reaches CI. Install a git hook directly:
+
+```bash
+depdog install-hook   # writes .git/hooks/pre-commit → runs `depdog check`
+```
+
+It is idempotent and won't overwrite a pre-commit hook it didn't write (pass
+`--force` to replace one). Or, with the [pre-commit framework](https://pre-commit.com),
+add to `.pre-commit-config.yaml`:
+
+```yaml
+repos:
+  - repo: https://github.com/matterpale/depdog
+    rev: v0.6.0
+    hooks:
+      - id: depdog
 ```
 
 ### Diff your architecture per PR
@@ -221,6 +252,7 @@ reflects structural movement, not a config change.
 | `depdog mcp`                                     | Read-only MCP server over stdio: `check`, `explain` and `can_import` tools plus config resources, for agents ([docs/mcp.md](docs/mcp.md))          |
 | `depdog tui`                                     | Interactive terminal UI: component dashboard, browsable violations, per-package imports and importers, a Config tab showing the compiled rules — and an experimental visual rule editor ([keys](docs/README.md#tui-keys)) |
 | `depdog baseline`                                | Record current violations to `depdog.baseline.yaml` for the [ratchet](#ratchet-friendly)                          |
+| `depdog install-hook`                            | Install a git `pre-commit` hook that runs `depdog check` (idempotent; `--force` to replace a foreign hook)         |
 
 Run bare, `depdog` evaluates the check — the same as `depdog check`, taking the
 same flags — so a plain `depdog` yields the real 0/1/2 exit code in a pipe or on
