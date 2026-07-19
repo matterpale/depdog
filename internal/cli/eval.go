@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 
@@ -102,11 +103,17 @@ func evaluateWith(cmd *cobra.Command, adapter lang.Adapter, root, cfgPath string
 	if err != nil {
 		return nil, err
 	}
+	// Load-time advisories (e.g. the Go adapter degrading to approximate
+	// classification) go to stderr so --format json/github/sarif stdout stays clean.
+	for _, w := range graph.LoadWarnings {
+		fmt.Fprintln(cmd.ErrOrStderr(), "depdog: warning: "+w)
+	}
 
 	res, err := core.Evaluate(graph, rs)
 	if err != nil {
 		return nil, err
 	}
+	res.Degraded = len(graph.LoadWarnings) > 0
 	return &evaluation{Result: res, Graph: graph, Rules: rs, ConfigPath: cfgPath}, nil
 }
 

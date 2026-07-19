@@ -117,6 +117,9 @@ func workUnitGraphs(cmd *cobra.Command, cwd string, w *core.WorkRules, run *chec
 		if err != nil {
 			return nil, fmt.Errorf("scanning unit %q (./%s): %w", u.Name, u.Dir, err)
 		}
+		for _, w := range graph.LoadWarnings {
+			fmt.Fprintf(cmd.ErrOrStderr(), "depdog: warning: unit %q (./%s): %s\n", u.Name, u.Dir, w)
+		}
 		inputs = append(inputs, core.UnitGraph{Unit: u.Name, Graph: graph})
 	}
 	return inputs, nil

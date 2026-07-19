@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/matterpale/depdog/internal/core"
@@ -140,5 +141,81 @@ func BenchmarkLoadLarge(b *testing.B) {
 		if _, err := l.Load(ctx); err != nil {
 			b.Fatal(err)
 		}
+	}
+}
+
+// TestLoadDegradedFallback proves the Go adapter degrades to a best-effort graph
+// (rather than aborting) when `go list` cannot resolve every import — the
+// "works on code that doesn't compile yet" property the pure-static adapters
+// have. The resolvable edges still classify exactly; the unresolved one is
+// bucketed by the path heuristic; a human-actionable warning is recorded.
+func TestLoadDegradedFallback(t *testing.T) {
+	t.Setenv("GOWORK", "off")  // hermetic on machines using workspaces
+	t.Setenv("GOPROXY", "off") // resolve the unresolvable external import offline (no network)
+
+	dir := t.TempDir()
+	write := func(rel, body string) {
+		t.Helper()
+		p := filepath.Join(dir, filepath.FromSlash(rel))
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write("go.mod", "module example.com/deg\n\ngo 1.21\n")
+	// Package a imports stdlib (strings), a resolvable sibling (b), an in-module
+	// path that does not exist, and an undownloaded third-party dep — the two
+	// kinds of unresolved import go list reports.
+	write("a/a.go", "package a\n\nimport (\n\t\"strings\"\n\n\t\"example.com/deg/b\"\n\t\"example.com/deg/missing\"\n\t\"github.com/nope/dep\"\n)\n\nvar _ = strings.TrimSpace\nvar _ = b.V\nvar _ = missing.X\nvar _ = dep.X\n")
+	write("b/b.go", "package b\n\nvar V = 1\n")
+
+	g, err := (&Loader{Dir: dir}).Load(context.Background())
+	if err != nil {
+		t.Fatalf("Load degraded module returned error (should degrade, not abort): %v", err)
+	}
+	if len(g.LoadWarnings) == 0 {
+		t.Fatalf("expected a LoadWarning for the unresolved import; got none")
+	}
+	if !strings.Contains(g.LoadWarnings[0], "go mod download") {
+		t.Errorf("warning is not actionable (no fix): %q", g.LoadWarnings[0])
+	}
+	// Both unresolved imports are counted (the count is the true total, not the
+	// 5-error display cap).
+	if !strings.Contains(g.LoadWarnings[0], "2 package load errors") {
+		t.Errorf("warning should report both load errors: %q", g.LoadWarnings[0])
+	}
+
+	byPath := make(map[string]core.Package, len(g.Packages))
+	for _, p := range g.Packages {
+		byPath[p.ImportPath] = p
+	}
+	a, ok := byPath["example.com/deg/a"]
+	if !ok {
+		t.Fatalf("package a missing from degraded graph (have %d packages)", len(g.Packages))
+	}
+	find := func(imp string) (core.Import, bool) {
+		for _, i := range a.Imports {
+			if i.Path == imp {
+				return i, true
+			}
+		}
+		return core.Import{}, false
+	}
+	if i, ok := find("strings"); !ok || i.Class != core.ClassStd {
+		t.Errorf("resolvable std edge missing/misclassified: %+v ok=%v", i, ok)
+	}
+	if i, ok := find("example.com/deg/b"); !ok || i.Class != core.ClassInModule {
+		t.Errorf("resolvable in-module edge missing/misclassified: %+v ok=%v", i, ok)
+	}
+	// The unresolved in-module import survives, bucketed by the heuristic as in-module.
+	if i, ok := find("example.com/deg/missing"); !ok || i.Class != core.ClassInModule || i.RelDir != "missing" {
+		t.Errorf("unresolved import missing/misclassified (want in-module RelDir=missing): %+v ok=%v", i, ok)
+	}
+	// The unresolved EXTERNAL import (an undownloaded third-party dep — the common
+	// real trigger) buckets as external via the dotted-first-segment heuristic.
+	if i, ok := find("github.com/nope/dep"); !ok || i.Class != core.ClassExternal {
+		t.Errorf("unresolved external import missing/misclassified (want external): %+v ok=%v", i, ok)
 	}
 }
