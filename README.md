@@ -9,7 +9,7 @@
 [![License: MIT](https://img.shields.io/badge/license-MIT-d68a1e)](LICENSE)
 
 [**Install**](#install)&nbsp;·&nbsp;[**Quick start**](#quick-start)&nbsp;·&nbsp;[**Configuration**](#configuration)
-&nbsp;·&nbsp;[**CI**](#ci)&nbsp;·&nbsp;[**Commands**](#commands)
+&nbsp;·&nbsp;[**CI**](#ci)&nbsp;·&nbsp;[**Commands**](#commands)&nbsp;·&nbsp;[**Docs**](docs/README.md)
 
 </div>
 
@@ -25,22 +25,9 @@ usually live in someone's head or a wiki, and they rot.
 
 You declare who may import whom in a `depdog.yaml`, and
 depdog checks it against every import edge in your codebase, exiting
-non-zero for CI. **Nine languages, one tool, one command — even in one repo:**
-one neutral rule format and one engine, **polyglot** across
-[nine languages](#multi-language-support) through thin, hot-swappable adapters,
-and `depdog check --all` governs a mixed monorepo — a `web/` TS app, a
-`services/api` Go module, an `ml/` Python package — in a single pass with one
-exit code ([monorepos](#monorepos)). A repo-root `depdog.work.yaml` goes one
-step further and governs how those units **may depend on each other** — the
-thing [no other tool does](#cross-language-governance). Every adapter is a pure
-static import scanner — **no build, no toolchain** — so depdog is fast and runs
-even on code that doesn't compile yet.
-
-<sub>*Unlike Go-package-loader–based linters such as
-[go-arch-lint](https://github.com/fe3dback/go-arch-lint) (which load your
-packages through the Go toolchain), depdog scans source directly — so it works
-mid-refactor, on a broken build, and across languages with no Go toolchain at
-all.*</sub>
+non-zero for CI. One tool, one engine, **polyglot** across
+[languages](#multi-language-support) through thin, hot-swappable adapters. Mixed monorepos
+supported.
 
 ```
 depdog check — github.com/matterpale/depdog
@@ -98,7 +85,7 @@ Prebuilt binaries for Linux, macOS, and Windows are on the
 [releases page](https://github.com/matterpale/depdog/releases); building from
 source (`go build -o depdog ./cmd/depdog`) needs Go 1.26+.
 
-## Quickstart
+## Quick start
 
 ```bash
 depdog init      # interactively kick off a starter depdog.yaml
@@ -109,6 +96,7 @@ depdog check     # check against the rules; exit 1 on violations
 proposes a component mapping you refine interactively — drop, rename, or
 re-path components. Or accept all as-is with `--yes`.
 
+> [!TIP]
 Alternatively, ask a coding agent to get you started with the dedicated [skill](skills/depdog/SKILL.md).
 
 ## Configuration
@@ -120,11 +108,15 @@ version: 2
 
 # Each component lists its path glob(s) and, inline, who it may import.
 components:
-  main: { path: "cmd/**" }                                    # no rule → open (the default)
-  domain: { path: "internal/domain/**", allow: [ std ] }      # whitelist: std only
-  handler: { path: "internal/handler/**", deny: [ service, repository ] } # forbids its peers
-  service: { path: "internal/service/**", deny: [ handler, repository ] }
-  repository: { path: "internal/repository/**", deny: [ handler, service ] }
+  main: { path: "cmd/**" }                                # no rule → open (the default)
+  domain: { path: "internal/domain/**", allow: [ std ] }  # whitelist: std only
+  handler: { path: "internal/handler/**" }
+  service: { path: "internal/service/**" }
+  repository: { path: "internal/repository/**" }
+
+# A boundary isolates its members from each other: one line, no O(n²) deny lists.
+boundaries:
+  layers: [ handler, service, repository ]
 
 default: allow   # fallback for a rule-less component (like main); the default if omitted
 
@@ -133,21 +125,14 @@ options:
   skip: [ "internal/legacy/**" ]    # package dirs excluded from analysis
 ```
 
-Here `domain` is a **whitelist** (an `allow` list — only what's listed passes); the
-three peers instead use `deny` lists to forbid their siblings, and the stance is read
-per component from which word you use. `main` has no rule at all, so it
-falls back to the top-level `default` — which is `allow`, so it may import anything
-(an explicit `allow: ["*"]` would be equivalent, just noisier). `path` takes a single
-glob or a list (`path: ["internal/api/**", "internal/rpc/**"]`).
+Here `domain` is an `allow` list — only what's listed passes. The `layers`
+**boundary** keeps the three peers out of each other — the same effect
+as giving each a `deny` list naming its two siblings, in one line.
+`deny` lists still exist for one-off exclusions.
 
 An editor JSON Schema ships at
 [`schema/depdog.schema.json`](schema/depdog.schema.json) for autocomplete and
 validation (a test keeps it in lockstep with the parser).
-
-Two more knobs, both optional: **groups** name a reusable set of components you
-can reference in any allow/deny list, and **boundaries** add an orthogonal
-mutual-exclusion axis — named member sets that may not import across each other,
-for isolating services in a monorepo without O(n²) deny lists.
 
 **Full reference — [docs/configuration.md](docs/configuration.md):** component
 matching and precedence, the complete `allow`/`deny` vocabulary, groups, the
@@ -158,7 +143,7 @@ test-file handling. Boundaries have their own page —
 ## CI
 
 `depdog check` is CI-ready as-is. For inline pull-request annotations use the
-GitHub format; for GitHub code scanning, emit SARIF:
+`github` format; for code scanners, use `sarif`:
 
 ```yaml
 - run: go run github.com/matterpale/depdog/cmd/depdog check --format github
@@ -232,36 +217,15 @@ reflects structural movement, not a config change.
 | `depdog explain <component-or-package> [import]` | Explain why something is red (rule/boundary that fired, with file:line), constraints, boundary membership etc.                                     |
 | `depdog config`                                  | Print the compiled rule set — components, patterns, inferred stances, boundaries, options — for debugging a config                                 |
 | `depdog lsp`                                     | LSP server over stdio: violations become inline editor diagnostics at their import lines ([editor setup](docs/editors.md) · [design](docs/lsp.md)) |
-| `depdog tui` (or bare `depdog`)                  | Interactive terminal UI: component dashboard, browsable violations, per-package imports and importers, and a Config tab showing the compiled rules |
-| `depdog baseline`                                | Record current violations to `depdog.baseline.yaml` for the [ratchet](#adopting-rules-on-a-codebase-that-doesnt-pass-yet)                          |
+| `depdog mcp`                                     | Read-only MCP server over stdio: `check`, `explain` and `can_import` tools plus config resources, for agents ([docs/mcp.md](docs/mcp.md))          |
+| `depdog tui`                                     | Interactive terminal UI: component dashboard, browsable violations, per-package imports and importers, a Config tab showing the compiled rules — and an experimental visual rule editor ([keys](docs/README.md#tui-keys)) |
+| `depdog baseline`                                | Record current violations to `depdog.baseline.yaml` for the [ratchet](#ratchet-friendly)                          |
 
-<details>
-<summary><b>All flags</b></summary>
+Run bare, `depdog` evaluates the check — the same as `depdog check`, taking the
+same flags — so a plain `depdog` yields the real 0/1/2 exit code in a pipe or on
+a terminal. The interactive view is `depdog tui`.
 
-| Command | Flags                                                                                                                                                                                            |
-|---------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `init`  | `--preset ddd\|hexagonal\|layered\|flat` · `--default deny\|allow` · `--yes` (non-interactive) · `--force` (overwrite) · `--merge` (extend an existing file, preserving comments and formatting) |
-| `check` | `--format text\|json\|github\|sarif` · `--fail-on any\|new` · `--color auto\|always\|never`                                                                                                      |
-| `graph` | `--format dot\|mermaid` · `--level component\|package` · `--violations-only` · `--focus <component>`                                                                                             |
-| `diff`  | `--since <ref>` (required) · `--format text\|github\|json`                                                                                                                                       |
-
-</details>
-
-<details>
-<summary><b>TUI keys</b></summary>
-
-In the TUI, <kbd>1</kbd>–<kbd>4</kbd> (or <kbd>tab</kbd>) switch between the
-Dashboard, Violations, Packages and Config screens. The Violations and Packages
-lists scroll and filter with <kbd>/</kbd>; <kbd>e</kbd> opens the selection in
-`$EDITOR` at its file:line, <kbd>r</kbd> re-runs the check in place, and
-<kbd>?</kbd> shows all keys. The Config tab (<kbd>4</kbd>) shows the active
-config path and the compiled rule set (the same data as `depdog config`);
-<kbd>e</kbd> there opens `depdog.yaml` in `$EDITOR`, and the editor exiting
-auto-re-runs the check so the edited rules take effect on every screen.
-
-</details>
-
-Exit codes are a contract:
+Exit codes are a [contract](docs/compatibility.md):
 
 | Code | Meaning    |
 |:----:|------------|
@@ -277,7 +241,9 @@ commands, and the *same* engine.
 Only a thin language adapter differs; the rule format is neutral — component
 `path` globs match project-relative directories, and `std` / `external` are
 abstract buckets each adapter fills. Every adapter is a
-pure-Go static import scanner — **no language toolchain is required**, depdog stays a single binary.
+pure-Go static import scanner — **no language toolchain is required**, depdog
+stays a single binary. (The one exception: the Go adapter resolves its package
+graph through `go list` metadata — see [limitations](#limitations).)
 
 |         | Language | Detected by                               | Scans                                                     |
 |---------|----------|-------------------------------------------|-----------------------------------------------------------|
@@ -299,48 +265,11 @@ depdog picks the adapter from the project's marker files automatically, and the
 persistent `--lang` flag forces a specific one — details, including nested
 layouts and two-language ambiguity, in [docs/languages.md](docs/languages.md).
 
-## Cross-language governance
-
-Checking each unit of a monorepo is table stakes; depdog also governs the
-dependency edges **between** units — across languages — from one repo-root
-`depdog.work.yaml`:
-
-```yaml
-version: 1
-units:
-  web:     { path: web, lang: ts }
-  shared:  shared
-  api:     { path: services/api }
-  billing: { path: services/billing }
-rules:
-  web:    { allow: [shared] }   # the frontend may depend only on the shared lib
-  shared: { deny: ["*"] }       # a library depends on nobody
-boundaries:
-  services: [api, billing]      # no service may depend on another
-surfaces:
-  shared: { exports: ["src/**"], internal: ["internal/**"] }
-```
-
-Units are the members; the vocabulary is the same allow/deny + boundaries you
-already know, plus **surfaces** ("other units may reach `shared`'s `src/**`
-but never `internal/**`"). Edges are detected from each unit's own scan — an
-import resolving into another unit's tree, or one matching another unit's
-import identity (`go.mod` module path, `package.json` name, `Cargo.toml` /
-`pyproject.toml` name). At the work-file root, plain `depdog check` runs the
-per-unit fan-out *plus* the cross pass: one report, one exit code, in every
-`--format` (JSON gains an additive `cross_unit` block). A unit doesn't even
-need its own `depdog.yaml` to be governed at this level. Full guide:
-[docs/cross-language.md](docs/cross-language.md).
-
-No other architecture linter — go-arch-lint, deptrac, dependency-cruiser,
-import-linter, ArchUnit — governs edges *across* languages; this is what the
-language-neutral core buys.
-
 ## For AI agents
 
 depdog is built to be driven by tools and agents, not just humans:
-`check --format json` emits a stable schema and the [exit codes](#commands) are
-a contract.
+`check --format json` emits a [stable schema](docs/compatibility.md) and the
+[exit codes](#commands) are a contract.
 
 [`skills/depdog/SKILL.md`](skills/depdog/SKILL.md)
 is a self-contained, tool-agnostic playbook any coding agent can follow to work
@@ -361,6 +290,49 @@ Wire `depdog lsp` into Neovim, Helix, VS Code (via the bundled
 (via the LSP4IJ plugin), or Emacs for inline architecture diagnostics —
 per-editor snippets in [docs/editors.md](docs/editors.md).
 
+
+## How depdog compares
+
+Every major ecosystem has grown its own architecture linter —
+[go-arch-lint](https://github.com/fe3dback/go-arch-lint) for Go,
+[dependency-cruiser](https://github.com/sverweij/dependency-cruiser) for JS/TS,
+[deptrac](https://github.com/deptrac/deptrac) for PHP (Python has
+import-linter and Tach, Java has ArchUnit). Each is excellent inside its
+ecosystem, and each is welded to it — its language, and usually its toolchain.
+depdog's bet is different: one rule model, one engine, thin adapters.
+
+|                                            | depdog                     | go-arch-lint     | dependency-cruiser                 | deptrac                                  |
+|--------------------------------------------|----------------------------|------------------|------------------------------------|------------------------------------------|
+| Languages                                  | nine, one rule format      | Go               | JS/TS (+ Vue, Svelte)              | PHP                                      |
+| Needs                                      | one static binary*         | the Go toolchain | Node + the project's own compilers | PHP ≥ 8.2                                |
+| Baseline ratchet                           | ✓                          | —                | ✓                                  | ✓                                        |
+| CI formats                                 | GitHub annotations · SARIF | JSON             | Markdown · TeamCity · Azure DevOps | GitHub annotations · JUnit · CodeClimate |
+| Architecture diff per PR (edges ±)         | ✓ `diff --since`           | —                | —                                  | —                                        |
+| Inline editor diagnostics (LSP)            | ✓                          | —                | —                                  | —                                        |
+| Agent interface                            | [MCP](docs/mcp.md) · [skill](skills/depdog/SKILL.md) · [semver-stable JSON](docs/compatibility.md) | JSON | JSON · JS API | JSON |
+| Rules *across* languages in one monorepo   | ✓ `depdog.work.yaml`       | —                | —                                  | —                                        |
+
+<sub>*The Go adapter is the one exception: it resolves its package graph
+through `go list` metadata — see [limitations](#limitations).</sub>
+
+**vs go-arch-lint**, the nearest neighbour on a Go codebase: go-arch-lint
+loads your packages through the Go toolchain — even its basic check shells out
+to `go list`, and its default-on *deepscan* fully type-checks the module, so
+your dependencies must resolve. The payoff is real — deepscan traces
+dependency injection through interfaces, catching inversions no import scan
+can see. depdog deliberately stays at the import layer: scan source text,
+never build — so it runs mid-refactor, on code that doesn't compile yet, and
+the identical engine covers eight more languages. On top of that layer depdog
+adds what go-arch-lint doesn't have: the baseline ratchet, SARIF, an LSP, an
+MCP server, and per-PR architecture diffs.
+
+Inside their home ecosystems, dependency-cruiser (regex rules, a dozen-plus
+output formats) and deptrac (semantic layer collectors: by attribute,
+interface, composer package) go deeper than depdog does. depdog's case is the
+column no per-language tool can fill: the same `depdog.yaml` in every corner
+of the repo, the agent surface, and
+[cross-language rules](docs/cross-language.md) between the units of a mixed
+monorepo.
 
 ## Limitations
 
@@ -385,25 +357,11 @@ per-editor snippets in [docs/editors.md](docs/editors.md).
   `--format`. Within the fan-out each unit is checked in isolation, so an import
   from one unit into another classifies as `external`; governing the edges
   *between* units is the opt-in
-  [`depdog.work.yaml` layer](#cross-language-governance) on top. Note the
+  [`depdog.work.yaml` layer](docs/cross-language.md) on top. Note the
   cross-unit pass detects source-level references (resolved paths and import
   identities) — a plain HTTP call between services leaves no import to detect.
   Full guides: [docs/monorepo.md](docs/monorepo.md),
   [docs/cross-language.md](docs/cross-language.md).
-
-## Compatibility
-
-depdog 1.0 follows semver. The **machine-readable contract is stable** — broken
-only by a major bump, additive within a major line: the config v2 `depdog.yaml`
-schema, both `--format json` shapes (the single-unit report **and** the
-`--all`/`go.work` aggregate envelope, `root`/`units[]`/`skipped[]`/`stats`,
-plus the additive `cross_unit` block on work-file runs), the
-exit codes (`0` clean · `1` violations · `2` config/usage error), and documented
-CLI flag semantics. The **human-readable presentation is not** — text and TUI
-rendering, log/stderr wording, Go internals (all `internal/`, no exported API),
-and SARIF/GitHub detail beyond path + rule identity may change any release. The
-JSON goldens, the schema-reflection test, and the single-unit byte-identity
-guard hold this line in CI. Full policy: [docs/compatibility.md](docs/compatibility.md).
 
 ## License
 

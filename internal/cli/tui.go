@@ -111,6 +111,7 @@ func launch(cmd *cobra.Command, configPath string, args []string, ev *evaluation
 		},
 		AddMember:    config.AddBoundaryMember,
 		RemoveMember: config.RemoveBoundaryMember,
+		SetSealed:    config.SetBoundarySealed,
 	}
 	return tui.Run(ev.Result, pkgs,
 		tui.WithRoot(root),

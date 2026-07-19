@@ -7,16 +7,17 @@ example; this page is the complete reference for every field. The orthogonal
 ## Components and matching
 
 A component is a named set of packages: each `path` glob is matched, recursive
-doublestar style, against module-relative package directories. When patterns
-overlap, the most specific one wins; equal specificity is an ambiguity error,
-not a silent pick.
+doublestar style, against module-relative package directories. `path` takes a
+single glob or a list (`path: ["internal/api/**", "internal/rpc/**"]`). When
+patterns overlap, the most specific one wins; equal specificity is an ambiguity
+error, not a silent pick.
 
 ## What goes in `allow` and `deny`
 
 | Entry                  | Matches                                                             |
 |------------------------|---------------------------------------------------------------------|
 | `domain`, `handler`, … | another component, by name                                          |
-| `std`                  | the Go standard library                                             |
+| `std`                  | the language's standard library (each adapter fills the bucket)     |
 | `external`             | any module that isn't yours                                         |
 | `unassigned`           | in-module packages no component claims                              |
 | `"*"`                  | everything                                                          |
@@ -26,9 +27,16 @@ not a silent pick.
 [domain, core] }`, then reference `inner` in any allow/deny list; it expands
 to its members when the config loads.
 
+A component's **stance** is read from which word its rule uses: one with an
+`allow` list is a **whitelist** (only what's listed passes), one with only a
+`deny` list a **blacklist** (`depdog config` prints the inferred stance per
+component).
+
 Two rules of precedence to remember: an explicit `deny` always beats an
 `allow`, and a component with neither falls back to the top-level `default` —
-set `default: deny` to make unruled components fail closed (`init` asks which
+under `default: allow` (the default) a rule-less component may import anything
+(an explicit `allow: ["*"]` would be equivalent, just noisier); set
+`default: deny` to make unruled components fail closed (`init` asks which
 stance you want).
 
 ## Signals that never fail the build

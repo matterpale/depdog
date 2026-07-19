@@ -1,3 +1,5 @@
+depdog.yaml
+
 default     deny  (rule-less components import nothing)
 test_files  hybrid
 

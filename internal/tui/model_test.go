@@ -117,6 +117,7 @@ func (s *stubEditor) editor(rs *core.RuleSet, res *core.Result, pkgs []core.Pack
 		Rename:       func(d []byte, o, n string) ([]byte, error) { return tr("rename", o, n) },
 		AddMember:    func(d []byte, b, mem string) ([]byte, error) { return tr("addmember", b, mem) },
 		RemoveMember: func(d []byte, b, mem string) ([]byte, error) { return tr("removemember", b, mem) },
+		SetSealed:    func(d []byte, b string, sealed bool) ([]byte, error) { return tr("setsealed", b, fmt.Sprint(sealed)) },
 	}
 }
 
@@ -989,6 +990,31 @@ func TestBoundaryMemberCursorAndRemove(t *testing.T) {
 	}
 }
 
+func TestBoundarySealedToggle(t *testing.T) {
+	s := &stubEditor{}
+	m := editorModel(s, fixtureBoundaryRuleSet())
+	m = update(m, runes("b")) // overlay; adapters (unsealed) selected
+
+	update(m, runes("s"))
+	if s.last() != "setsealed adapters true" {
+		t.Errorf("s should stage sealing adapters, got %q", s.last())
+	}
+
+	m = update(m, runes("j")) // cmd-services is already sealed
+	update(m, runes("s"))
+	if s.last() != "setsealed cmd-services false" {
+		t.Errorf("s should stage unsealing cmd-services, got %q", s.last())
+	}
+
+	// Outside the overlay `s` is not a matrix key: nothing staged.
+	m = update(m, runes("b"))
+	before := len(s.calls)
+	update(m, runes("s"))
+	if len(s.calls) != before {
+		t.Errorf("s on the rules grid should stage nothing, got %q", s.last())
+	}
+}
+
 func TestBoundaryAddMemberForm(t *testing.T) {
 	s := &stubEditor{}
 	m := editorModel(s, fixtureBoundaryRuleSet())
@@ -1688,4 +1714,114 @@ func TestProgramLifecycle(t *testing.T) {
 
 	tm.Send(runes("q"))
 	tm.WaitFinished(t, teatest.WithFinalTimeout(3*time.Second))
+}
+
+// fixtureModuleRuleSet extends the fixture with a depguard-style module ref, so
+// the matrix grows a module column.
+func fixtureModuleRuleSet() *core.RuleSet {
+	rs := fixtureRuleSet()
+	rs.Rules["handler"] = core.Rule{Allow: []core.Ref{
+		{Kind: core.RefComponent, Name: "domain"},
+		{Kind: core.RefStd},
+		{Kind: core.RefExternalModule, Name: "golang.org/x/sync"},
+	}}
+	return rs
+}
+
+func TestMatrixModuleColumn(t *testing.T) {
+	m := update(New(fixtureResult(), fixturePkgs(), WithConfig("depdog.yaml", fixtureModuleRuleSet())), runes("m"))
+
+	// 2 components + 3 specials + 1 module.
+	if got := m.matrixColCount(); got != 6 {
+		t.Fatalf("matrixColCount = %d, want 6 (module ref gets a column)", got)
+	}
+	if got := m.matrixTargetAt(5); got != "golang.org/x/sync" {
+		t.Fatalf("matrixTargetAt(5) = %q, want the full module path", got)
+	}
+	if !strings.Contains(m.View(), "sync") {
+		t.Errorf("the module column header (last path segment) should render:\n%s", m.View())
+	}
+
+	// handler (row 1) explicitly allows the module; domain falls to its
+	// whitelist stance (deny).
+	if k := m.verdictAt("handler", 5); k != cellAllow {
+		t.Errorf("handler → module verdict = %v, want explicit allow", k)
+	}
+	if k := m.verdictAt("domain", 5); k != cellDefaultDeny {
+		t.Errorf("domain → module verdict = %v, want default deny", k)
+	}
+
+	// The focus pane names the full path and the explicit verdict.
+	m.matrixSel, m.matrixCol = 1, 5
+	v := m.View()
+	if !strings.Contains(v, "handler → golang.org/x/sync") || !strings.Contains(v, "allow (explicit)") {
+		t.Errorf("focus cursor line should name the module edge and verdict:\n%s", v)
+	}
+}
+
+func TestMatrixModuleToggle(t *testing.T) {
+	s := &stubEditor{}
+	m := editorModel(s, fixtureModuleRuleSet())
+	m.matrixSel, m.matrixCol = 1, 5 // handler → golang.org/x/sync (explicit allow)
+	update(m, runes(" "))
+	if s.last() != "rule handler golang.org/x/sync deny" {
+		t.Errorf("space on an allowed module cell should stage deny, got %q", s.last())
+	}
+	m.matrixSel = 0 // domain → module: default deny → next is allow
+	update(m, runes(" "))
+	if s.last() != "rule domain golang.org/x/sync allow" {
+		t.Errorf("space on a default module cell should stage allow, got %q", s.last())
+	}
+}
+
+func TestMatrixHorizontalScroll(t *testing.T) {
+	// Wide grid: long component names inflate the gutter and columns beyond a
+	// narrow terminal.
+	rs := fixtureModuleRuleSet()
+	m := update(New(fixtureResult(), fixturePkgs(), WithConfig("depdog.yaml", rs)), runes("m"))
+	m = update(m, tea.WindowSizeMsg{Width: 34, Height: 30})
+
+	// Cursor at the leftmost column: nothing hidden on the left.
+	if strings.Contains(m.View(), "‹") {
+		t.Errorf("no left marker expected at column 0:\n%s", m.View())
+	}
+
+	// Cursor on the last (module) column: the window slides, the left marker
+	// appears, and the cursor's column header is visible.
+	m.matrixCol = 5
+	v := m.View()
+	if !strings.Contains(v, "‹") {
+		t.Errorf("expected the ‹ left marker when scrolled:\n%s", v)
+	}
+	if !strings.Contains(v, "sync") {
+		t.Errorf("the cursored module column should be scrolled into view:\n%s", v)
+	}
+	// The gutter stays: row labels remain visible.
+	if !strings.Contains(v, "1 domain") || !strings.Contains(v, "2 handler") {
+		t.Errorf("row labels must stay fixed while scrolling:\n%s", v)
+	}
+}
+
+func TestModuleHeadersDisambiguate(t *testing.T) {
+	// A last segment shared by two modules widens to the shortest suffix that
+	// differs, so the columns never read the same.
+	heads := moduleHeaders([]string{"example.com/other/sync", "golang.org/x/sync"})
+	if heads[0] != "other/sync" || heads[1] != "x/sync" {
+		t.Errorf("colliding last segments should widen: got %q, want [other/sync x/sync]", heads)
+	}
+
+	// A unique last segment stays bare — the common case, unchanged.
+	if solo := moduleHeaders([]string{"golang.org/x/sync"}); len(solo) != 1 || solo[0] != "sync" {
+		t.Errorf("a unique last segment stays bare: got %q, want [sync]", solo)
+	}
+
+	// A bare segment colliding with two parents: all three must stay distinct.
+	tri := moduleHeaders([]string{"a/util", "b/util", "util"})
+	seen := map[string]bool{}
+	for _, h := range tri {
+		if seen[h] {
+			t.Errorf("headers must be distinct across the set: %q", tri)
+		}
+		seen[h] = true
+	}
 }

@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -20,13 +21,126 @@ import (
 // plus `depdog check`.
 
 // specialTargets are the non-component import targets that get their own
-// columns: the abstract buckets every adapter fills. A specific external-module
-// allow/deny ref has no column here, so such an edge reads as a stance cell —
-// module columns are a later refinement.
+// columns: the abstract buckets every adapter fills. Specific external modules
+// referenced by any rule (RefExternalModule) get their own columns after
+// these, so a depguard-style module rule reads as an explicit cell rather
+// than disappearing into the stance.
 var specialTargets = []struct{ target, header string }{
 	{"std", "std"},
 	{"external", "ext"},
 	{"unassigned", "una"},
+}
+
+// matrixModules lists the distinct external-module refs across every rule,
+// sorted — each gets its own column after the special buckets. Derived from
+// the (possibly staged) rule set on every call, so columns appear and vanish
+// with the rules that mention them.
+func (m Model) matrixModules() []string {
+	if m.rules == nil {
+		return nil
+	}
+	seen := map[string]bool{}
+	var mods []string
+	for _, rule := range m.rules.Rules {
+		for _, refs := range [][]core.Ref{rule.Allow, rule.Deny} {
+			for _, r := range refs {
+				if r.Kind == core.RefExternalModule && !seen[r.Name] {
+					seen[r.Name] = true
+					mods = append(mods, r.Name)
+				}
+			}
+		}
+	}
+	sort.Strings(mods)
+	return mods
+}
+
+// moduleHeader is the short column label for a module path: its last segment.
+// The focus pane's cursor line names the full path. Trailing slashes are
+// trimmed first, so a ref like "example.com/mod/" still yields a labelled
+// column rather than a blank one; a ref that trims to nothing falls back to the
+// raw path.
+func moduleHeader(mod string) string {
+	seg := strings.TrimRight(mod, "/")
+	if i := strings.LastIndexByte(seg, '/'); i >= 0 {
+		seg = seg[i+1:]
+	}
+	if seg == "" {
+		return mod
+	}
+	return seg
+}
+
+// moduleHeaders returns a column header per module in mods: normally the last
+// path segment (moduleHeader), but any last segment shared by two or more
+// modules is widened to the shortest trailing path suffix that tells them apart
+// — e.g. "a/util" vs "b/util" — falling back to the full path. Distinct module
+// paths always yield distinct headers, so no two columns read the same.
+func moduleHeaders(mods []string) []string {
+	heads := make([]string, len(mods))
+	collide := map[string]int{}
+	for i, mod := range mods {
+		heads[i] = moduleHeader(mod)
+		collide[heads[i]]++
+	}
+	for i, mod := range mods {
+		if collide[heads[i]] > 1 { // the bare last segment is ambiguous — widen it
+			heads[i] = uniqueModuleSuffix(mod, mods)
+		}
+	}
+	return heads
+}
+
+// uniqueModuleSuffix returns the shortest trailing path suffix of mod (whole
+// segments) that no other module in mods shares at the same segment length, or
+// mod's full path if none is unique.
+func uniqueModuleSuffix(mod string, mods []string) string {
+	segs := moduleSegs(mod)
+	for k := 1; k < len(segs); k++ {
+		suf := strings.Join(segs[len(segs)-k:], "/")
+		unique := true
+		for _, other := range mods {
+			if other == mod {
+				continue
+			}
+			osegs := moduleSegs(other)
+			if len(osegs) >= k && strings.Join(osegs[len(osegs)-k:], "/") == suf {
+				unique = false
+				break
+			}
+		}
+		if unique {
+			return suf
+		}
+	}
+	if full := strings.Join(segs, "/"); full != "" {
+		return full
+	}
+	return mod
+}
+
+// moduleSegs splits a module path into its slash-separated segments, ignoring a
+// trailing slash (matching moduleHeader's normalization).
+func moduleSegs(mod string) []string {
+	return strings.Split(strings.TrimRight(mod, "/"), "/")
+}
+
+// moduleColWidth sizes the module columns to their longest header label,
+// bounded so one long name cannot flood the grid.
+func moduleColWidth(heads []string) int {
+	w := 0
+	for _, h := range heads {
+		if l := len(h); l > w {
+			w = l
+		}
+	}
+	if w > 9 {
+		w = 9
+	}
+	if w < 3 {
+		w = 3
+	}
+	return w + 2
 }
 
 // cellKind classifies one from→target edge for the matrix.
@@ -104,29 +218,114 @@ func glyphFor(k cellKind) (glyph string, style lipgloss.Style) {
 	}
 }
 
-// matrixColCount is the number of columns (every component, then the special
-// targets) — the clamp bound for the column cursor.
-func (m Model) matrixColCount() int {
-	if m.rules == nil {
-		return 0
-	}
-	return len(m.rules.Components) + len(specialTargets)
+// matrixCol is one column of the rule matrix: its import target, header label,
+// whether that target is an external module (resolved through the module
+// decision path rather than the bucket one), its display width, its x offset
+// within the scrollable region, and whether a group separator precedes it.
+type matrixCol struct {
+	target     string // component name, a special bucket, or a full module path
+	head       string // the short column-header label
+	isModule   bool
+	groupStart bool // first column of the specials / modules group — a separator precedes it
+	w, x       int
 }
 
-// matrixTargetAt maps a column index to its import target: the first
-// len(Components) columns are components, the rest the special buckets.
-func (m Model) matrixTargetAt(col int) string {
+// matrixCols is the single source of truth for the components│specials│modules
+// column layout: the ordered columns with their targets, headers, widths, and
+// geometry. Every consumer — the grid render, the column-cursor bound, the
+// target/verdict lookups, and the horizontal window — reads it, so the layout
+// is encoded once. Derived from the (possibly staged) rule set, so columns
+// appear and vanish with the rules that mention each module.
+func (m Model) matrixCols() []matrixCol {
+	if m.rules == nil {
+		return nil
+	}
 	comps := m.rules.Components
-	switch {
-	case col < 0:
-		return ""
-	case col < len(comps):
-		return comps[col].Name
-	case col-len(comps) < len(specialTargets):
-		return specialTargets[col-len(comps)].target
-	default:
+	mods := m.matrixModules()
+	heads := moduleHeaders(mods)
+	modW := moduleColWidth(heads)
+	cols := make([]matrixCol, 0, len(comps)+len(specialTargets)+len(mods))
+	x := 0
+	add := func(c matrixCol) {
+		c.x = x
+		x += c.w
+		cols = append(cols, c)
+	}
+	for i, c := range comps {
+		add(matrixCol{target: c.Name, head: fmt.Sprintf("%d", i+1), w: matrixCompW})
+	}
+	x += matrixSepW
+	for i, st := range specialTargets {
+		add(matrixCol{target: st.target, head: st.header, w: matrixSpecW, groupStart: i == 0})
+	}
+	if len(mods) > 0 {
+		x += matrixSepW
+		for i, mod := range mods {
+			add(matrixCol{target: mod, head: heads[i], isModule: true, w: modW, groupStart: i == 0})
+		}
+	}
+	return cols
+}
+
+// matrixColCount is the number of columns — the clamp bound for the column cursor.
+func (m Model) matrixColCount() int { return len(m.matrixCols()) }
+
+// matrixTargetAt maps a column index to its import target (component name,
+// special bucket, or full module path), "" when out of range.
+func (m Model) matrixTargetAt(col int) string {
+	cols := m.matrixCols()
+	if col < 0 || col >= len(cols) {
 		return ""
 	}
+	return cols[col].target
+}
+
+// verdictFor is the cell verdict for the from component against a resolved
+// column, dispatching module columns to the module decision path. The grid's
+// per-cell path uses it against precomputed columns so a full render never
+// re-derives the module list.
+func (m Model) verdictFor(from string, c matrixCol) cellKind {
+	if c.isModule {
+		return moduleCellVerdict(m.rules, from, c.target)
+	}
+	return cellVerdict(m.rules, from, c.target)
+}
+
+// verdictAt is verdictFor addressed by column index, for the focus pane and the
+// toggle — both cold paths resolving a single cursored cell.
+func (m Model) verdictAt(from string, col int) cellKind {
+	cols := m.matrixCols()
+	if col < 0 || col >= len(cols) {
+		return cellSelf
+	}
+	return m.verdictFor(from, cols[col])
+}
+
+// moduleCellVerdict decides how the from→module cell reads: an exact
+// allow/deny ref for that module path is explicit; anything else (including a
+// broader prefix ref or the external bucket) falls to DecideModule, the same
+// path `explain <from> <module>` reports.
+func moduleCellVerdict(rs *core.RuleSet, from, mod string) cellKind {
+	rule := rs.Rules[from]
+	switch {
+	case hasExactModuleRef(rule.Deny, mod):
+		return cellDeny
+	case hasExactModuleRef(rule.Allow, mod):
+		return cellAllow
+	}
+	if allowed, _ := rs.DecideModule(from, mod); allowed {
+		return cellDefaultAllow
+	}
+	return cellDefaultDeny
+}
+
+func hasExactModuleRef(refs []core.Ref, mod string) bool {
+	for _, r := range refs {
+		if r.Kind == core.RefExternalModule && r.Name == mod {
+			return true
+		}
+	}
+	return false
 }
 
 // nextVerdict is the toggle cycle for a cell: default → allow → deny → default.
@@ -170,12 +369,13 @@ func (m Model) toggleCell() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	from := comps[clamp(m.matrixSel, len(comps))].Name
-	target := m.matrixTargetAt(clamp(m.matrixCol, m.matrixColCount()))
+	col := clamp(m.matrixCol, m.matrixColCount())
+	target := m.matrixTargetAt(col)
 	if target == "" || target == from {
 		m.status = "a component always imports itself — nothing to toggle"
 		return m, nil
 	}
-	verdict := nextVerdict(cellVerdict(m.rules, from, target))
+	verdict := nextVerdict(m.verdictAt(from, col))
 	return m.applyEdit(
 		func(d []byte) ([]byte, error) { return m.editor.SetRule(d, from, target, verdict) },
 		fmt.Sprintf("%s → %s: %s", from, target, verdict))
@@ -184,6 +384,9 @@ func (m Model) toggleCell() (tea.Model, tea.Cmd) {
 const (
 	matrixCompW = 3 // width of a component column (holds a 1-glyph cell / a 1–2 digit index)
 	matrixSpecW = 4 // width of a special-target column (holds "std"/"ext"/"una")
+	matrixSepW  = 2 // width of a group separator (" │" between headers/cells, "─┼" on the divider)
+	hMarkerW    = 1 // width of the dim ‹ the horizontal window prepends for hidden-left columns
+	hTailW      = 1 // width of the … matrixView's shared right-edge truncation appends
 )
 
 // centerGlyph places a single-width glyph in a w-wide column, styled.
@@ -192,18 +395,21 @@ func centerGlyph(glyph string, w int, style lipgloss.Style) string {
 	return strings.Repeat(" ", left) + style.Render(glyph) + strings.Repeat(" ", w-1-left)
 }
 
-// centerText centers a short ASCII header in a w-wide column, dimmed — bold and
-// bright when active marks it as the cursor's column.
+// centerText centers a short header in a w-wide column, dimmed — bold and
+// bright when active marks it as the cursor's column. Module headers may hold
+// non-ASCII runes, so it measures and clips by display width (never mid-rune)
+// rather than by byte count.
 func centerText(s string, w int, active bool) string {
-	if len(s) > w {
-		s = s[:w]
+	if lipgloss.Width(s) > w {
+		s = ansi.Truncate(s, w, "")
 	}
 	style := styleDim
 	if active {
 		style = styleActive
 	}
-	left := (w - len(s)) / 2
-	return strings.Repeat(" ", left) + style.Render(s) + strings.Repeat(" ", w-len(s)-left)
+	sw := lipgloss.Width(s)
+	left := (w - sw) / 2
+	return strings.Repeat(" ", left) + style.Render(s) + strings.Repeat(" ", w-sw-left)
 }
 
 func padRight(s string, w int) string {
@@ -235,14 +441,29 @@ func (m Model) selectedComponent() *core.Component {
 // sel row's label is a selection bar, the col column's header is highlighted,
 // and the (sel,col) intersection is drawn as the edit cursor. The 1-based row
 // index also heads that component's column, so the row labels double as the
-// column key.
+// column key. Grids wider than the terminal are windowed horizontally: the
+// row-label gutter stays fixed and the column region scrolls to keep the
+// cursor visible, a dim ‹ marking columns hidden on the left (the shared
+// right-edge truncation marks the right).
 func (m Model) matrixGrid(sel, col int) (header, rows []string) {
 	comps := m.rules.Components
+	cols := m.matrixCols()
 
-	// Live violations, keyed by the (from component, target) cell they cross.
+	// Live violations, keyed by the (from component, column target) cell they
+	// cross. A module import records Target "external", so besides the external
+	// bucket it also lights every module column its import path falls under —
+	// otherwise the module columns, the whole point of the feature, never
+	// highlight.
 	viol := make(map[[2]string]bool, len(m.res.Violations))
 	for _, v := range m.res.Violations {
 		viol[[2]string{v.FromComponent, v.Target}] = true
+		if v.Target == "external" {
+			for _, c := range cols {
+				if c.isModule && (v.ImportPath == c.target || strings.HasPrefix(v.ImportPath, c.target+"/")) {
+					viol[[2]string{v.FromComponent, c.target}] = true
+				}
+			}
+		}
 	}
 
 	labelW := len(`from \ to`)
@@ -252,35 +473,36 @@ func (m Model) matrixGrid(sel, col int) (header, rows []string) {
 		}
 	}
 
+	hslice := m.matrixHSlice(cols, col, labelW+matrixSepW)
 	sep := styleDim.Render(" │")
-	cell := func(from, target string, w, colIdx, rowIdx int) string {
-		g, style := glyphFor(cellVerdict(m.rules, from, target))
-		if viol[[2]string{from, target}] {
-			style = styleSelectedBad // a live crossing pops out of the grid
+
+	// The header, the divider, and every cell row share one walk over the
+	// columns: a group separator before each group-start column, then the
+	// column's content at its own width.
+	writeCols := func(b *strings.Builder, groupSep string, content func(b *strings.Builder, i int, c matrixCol)) {
+		for i, c := range cols {
+			if c.groupStart {
+				b.WriteString(groupSep)
+			}
+			content(b, i, c)
 		}
-		if rowIdx == sel && colIdx == col {
-			style = styleCursor // the edit cursor wins over everything
-		}
-		return centerGlyph(g, w, style)
 	}
 
 	var h strings.Builder
-	h.WriteString(styleDim.Render(padRight(`from \ to`, labelW)))
-	h.WriteString(sep)
-	for i := range comps {
-		h.WriteString(centerText(fmt.Sprintf("%d", i+1), matrixCompW, i == col))
-	}
-	h.WriteString(sep)
-	for k, st := range specialTargets {
-		h.WriteString(centerText(st.header, matrixSpecW, len(comps)+k == col))
-	}
-	divider := styleDim.Render(
-		strings.Repeat("─", labelW) + "─┼" +
-			strings.Repeat("─", matrixCompW*len(comps)) + "─┼" +
-			strings.Repeat("─", matrixSpecW*len(specialTargets)))
+	writeCols(&h, sep, func(b *strings.Builder, i int, c matrixCol) {
+		b.WriteString(centerText(c.head, c.w, i == col))
+	})
+
+	var d strings.Builder
+	writeCols(&d, "─┼", func(b *strings.Builder, _ int, c matrixCol) {
+		b.WriteString(strings.Repeat("─", c.w))
+	})
+
 	header = []string{
 		styleTitle.Render("Rule matrix") + styleWarn.Render("  experimental") + styleDim.Render("   rows import columns · ↑↓←→ move the cursor"),
-		"", h.String(), divider,
+		"",
+		styleDim.Render(padRight(`from \ to`, labelW)) + sep + hslice(h.String()),
+		styleDim.Render(strings.Repeat("─", labelW)+"─┼") + hslice(styleDim.Render(d.String())),
 	}
 
 	for i, from := range comps {
@@ -289,18 +511,52 @@ func (m Model) matrixGrid(sel, col int) (header, rows []string) {
 			label = styleSelected.Render(label)
 		}
 		var r strings.Builder
-		r.WriteString(label)
-		r.WriteString(sep)
-		for j, to := range comps {
-			r.WriteString(cell(from.Name, to.Name, matrixCompW, j, i))
-		}
-		r.WriteString(sep)
-		for k, st := range specialTargets {
-			r.WriteString(cell(from.Name, st.target, matrixSpecW, len(comps)+k, i))
-		}
-		rows = append(rows, r.String())
+		writeCols(&r, sep, func(b *strings.Builder, j int, c matrixCol) {
+			g, style := glyphFor(m.verdictFor(from.Name, c))
+			if viol[[2]string{from.Name, c.target}] {
+				style = styleSelectedBad // a live crossing pops out of the grid
+			}
+			if i == sel && j == col {
+				style = styleCursor // the edit cursor wins over everything
+			}
+			b.WriteString(centerGlyph(g, c.w, style))
+		})
+		rows = append(rows, label+sep+hslice(r.String()))
 	}
 	return header, rows
+}
+
+// matrixHSlice returns the transform the grid applies to each line's column
+// region: the identity when everything fits (or no size is known yet), else a
+// left-trim that keeps the cursor's column in view, replacing the hidden
+// prefix with a dim ‹. The right edge is clipped by the view's shared
+// ANSI-aware truncation, so only the left side is handled here. Derived
+// purely from the cursor, like the vertical window — no scroll state.
+func (m Model) matrixHSlice(cols []matrixCol, col, gutterW int) func(string) string {
+	identity := func(s string) string { return s }
+	if m.width <= 0 || len(cols) == 0 {
+		return identity
+	}
+	last := cols[len(cols)-1]
+	restW := last.x + last.w
+	avail := m.width - gutterW
+	// After a left trim the region reads ‹ marker · visible columns · … tail.
+	// Reserve the marker and tail, plus one column so the cursor never sits
+	// flush against the ellipsis; don't trim when the region already fits or the
+	// window is too narrow to hold a marker and a tail on both sides.
+	margin := hMarkerW + hTailW + 1
+	if avail < 2*margin || restW <= avail {
+		return identity
+	}
+	c := cols[clamp(col, len(cols))]
+	hoff := c.x + c.w - (avail - margin) // keep the cursor clear of the … tail
+	if hoff > c.x {
+		hoff = c.x // never hide the cursor's own left edge
+	}
+	if hoff <= 0 {
+		return identity
+	}
+	return func(s string) string { return ansi.TruncateLeft(s, hoff, styleDim.Render("‹")) }
 }
 
 // matrixFocus renders the per-component "arrows" pane for the selected row: its
@@ -353,7 +609,7 @@ func (m Model) matrixFocus(sel, col int) []string {
 
 	// The cursor line: the exact edge a toggle acts on, and what it would become.
 	if target := m.matrixTargetAt(col); target != "" && target != from {
-		k := cellVerdict(m.rules, from, target)
+		k := m.verdictAt(from, col)
 		cursor := "  " + styleDim.Render("cursor") + " " + from + " → " + styleTitle.Render(target) +
 			styleDim.Render("  = "+verdictLabel(k))
 		if m.editor != nil {
@@ -366,9 +622,9 @@ func (m Model) matrixFocus(sel, col int) []string {
 
 // matrixView renders the Matrix tab: the fixed header, a height-aware window of
 // component rows kept centered on the selection (with ▲/▼ markers), the focus
-// pane for the selected component, and the legend. Rows wider than the terminal
-// are truncated (ANSI-aware) so a large matrix can't push the header off screen;
-// horizontal scrolling is a later refinement.
+// pane for the selected component, and the legend. Wide grids scroll
+// horizontally with the cursor (matrixHSlice); the final ANSI-aware truncation
+// clips the right edge so a large matrix can't push the header off screen.
 func (m Model) matrixView() string {
 	title := styleTitle.Render("Rule matrix")
 	if m.rules == nil {

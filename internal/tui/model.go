@@ -151,6 +151,7 @@ type Editor struct {
 	Rename       func(data []byte, oldName, newName string) ([]byte, error)
 	AddMember    func(data []byte, boundary, member string) ([]byte, error)
 	RemoveMember func(data []byte, boundary, member string) ([]byte, error)
+	SetSealed    func(data []byte, boundary string, sealed bool) ([]byte, error)
 }
 
 // WithEditor wires the visual rule editor. Without it the editor is read-only
@@ -335,6 +336,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "d":
 			if m.matrixMode && m.matrixBoundaries && m.editor != nil {
 				return m.removeSelectedMember()
+			}
+		case "s":
+			if m.matrixMode && m.matrixBoundaries && m.editor != nil {
+				return m.toggleSealed()
 			}
 		case "p":
 			if m.matrixMode && !m.matrixBoundaries && m.editor != nil && m.selectedComponent() != nil {
@@ -727,7 +732,7 @@ func helpView() string {
 		{"─ in the matrix (experimental) ─", ""},
 		{"↑↓←→", "move the edit cursor over the grid"},
 		{"space", "toggle the cursored edge — allow → deny → default"},
-		{"b", "boundaries overlay — ←/→ pick a member, a add, d remove"},
+		{"b", "boundaries overlay — ←/→ pick a member, a add, d remove, s toggle sealed"},
 		{"a", "add a new component (name + path) to depdog.yaml"},
 		{"p", "re-path the selected component (edit its path glob)"},
 		{"R", "rename the selected component (refs follow automatically)"},
@@ -813,7 +818,7 @@ func (m Model) footer() string {
 		if m.matrixBoundaries {
 			h := "↑/↓ boundary · ←/→ member · b rules"
 			if m.editor != nil {
-				h += " · a add · d remove"
+				h += " · a add · d remove · s seal"
 			}
 			return styleDim.Render(h + save + " · esc exit · ? help")
 		}

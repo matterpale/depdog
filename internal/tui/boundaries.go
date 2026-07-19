@@ -64,6 +64,23 @@ func (m Model) removeSelectedMember() (tea.Model, tea.Cmd) {
 		fmt.Sprintf("removed %q from %q", member, name))
 }
 
+// toggleSealed stages flipping the selected boundary's sealed flag (in
+// memory, via applyEdit).
+func (m Model) toggleSealed() (tea.Model, tea.Cmd) {
+	b := m.currentBoundary()
+	if b == nil || m.editor == nil || m.editor.SetSealed == nil {
+		return m, nil
+	}
+	name, want := b.Name, !b.Sealed
+	desc := fmt.Sprintf("sealed %q", name)
+	if !want {
+		desc = fmt.Sprintf("unsealed %q", name)
+	}
+	return m.applyEdit(
+		func(d []byte) ([]byte, error) { return m.editor.SetSealed(d, name, want) },
+		desc)
+}
+
 // boundaryViolationCounts tallies live violations per boundary name.
 func (m Model) boundaryViolationCounts() map[string]int {
 	counts := map[string]int{}

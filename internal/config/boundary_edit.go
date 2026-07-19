@@ -25,11 +25,11 @@ func RemoveBoundaryMember(data []byte, boundary, member string) ([]byte, error) 
 	})
 }
 
-// editBoundaryMembers locates a boundary's single-line flow member sequence,
-// applies mutate, and splices the re-encoded `[...]` back into its line. It
-// refuses anchors, an unknown boundary, a non-flow/multi-line member list, or a
-// boundary shape it doesn't recognise.
-func editBoundaryMembers(data []byte, boundary string, mutate func(seq *yaml.Node) bool) ([]byte, error) {
+// findBoundary parses the config and returns the named boundary's value node
+// (the shorthand sequence or the expanded mapping). It refuses anchors, a
+// non-mapping config, a missing boundaries block, or an unknown boundary — the
+// shared prologue of every boundary splice.
+func findBoundary(data []byte, boundary string) (*yaml.Node, error) {
 	var doc yaml.Node
 	if err := yaml.Unmarshal(data, &doc); err != nil {
 		return nil, err
@@ -49,6 +49,18 @@ func editBoundaryMembers(data []byte, boundary string, mutate func(seq *yaml.Nod
 	bkey, bval := mappingPair(bounds, boundary)
 	if bkey == nil {
 		return nil, fmt.Errorf("boundary %q is not in the config", boundary)
+	}
+	return bval, nil
+}
+
+// editBoundaryMembers locates a boundary's single-line flow member sequence,
+// applies mutate, and splices the re-encoded `[...]` back into its line. It
+// refuses anchors, an unknown boundary, a non-flow/multi-line member list, or a
+// boundary shape it doesn't recognise.
+func editBoundaryMembers(data []byte, boundary string, mutate func(seq *yaml.Node) bool) ([]byte, error) {
+	bval, err := findBoundary(data, boundary)
+	if err != nil {
+		return nil, err
 	}
 
 	var seq *yaml.Node
@@ -99,6 +111,154 @@ func editBoundaryMembers(data []byte, boundary string, mutate func(seq *yaml.Nod
 	return out, nil
 }
 
+// SetBoundarySealed sets a boundary's sealed flag with the smallest edit that
+// keeps the file's shape: an existing `sealed:` scalar is rewritten in place;
+// a shorthand `name: [a, b]` being sealed becomes the expanded single-line
+// `name: { members: [a, b], sealed: true }` (the member text is kept
+// verbatim); a single-line flow mapping gains `, sealed: true` before its
+// closing brace; a block mapping gains a `sealed: true` line after its last
+// key. Unsealing a boundary with no `sealed:` key is a no-op (absent means
+// false), as is setting the flag it already has. The result is validated with
+// Parse, like every other splice.
+func SetBoundarySealed(data []byte, boundary string, sealed bool) ([]byte, error) {
+	bval, err := findBoundary(data, boundary)
+	if err != nil {
+		return nil, err
+	}
+	lines := strings.Split(string(data), "\n")
+
+	// commit joins the (mutated) lines back and validates the result with
+	// Parse — the shared tail of every branch, whether it rewrites a line or
+	// inserts one.
+	commit := func() ([]byte, error) {
+		out := []byte(strings.Join(lines, "\n"))
+		if _, err := Parse(out); err != nil {
+			return nil, fmt.Errorf("the edit produced an invalid config: %w", err)
+		}
+		return out, nil
+	}
+	spliceLine := func(li int, edit func(orig string) (string, error)) ([]byte, error) {
+		if li < 0 || li >= len(lines) {
+			return nil, fmt.Errorf("boundary %q line %d is out of range", boundary, li+1)
+		}
+		next, err := edit(lines[li])
+		if err != nil {
+			return nil, err
+		}
+		lines[li] = next
+		return commit()
+	}
+
+	switch bval.Kind {
+	case yaml.SequenceNode: // shorthand: name: [a, b] — sealed is implicitly false
+		if !sealed {
+			return data, nil
+		}
+		if endLine(bval) != bval.Line {
+			return nil, fmt.Errorf("boundary %q members are not a single-line list — edit it by hand", boundary)
+		}
+		return spliceLine(bval.Line-1, func(orig string) (string, error) {
+			col := byteOffset(orig, bval.Column)
+			if col >= len(orig) || orig[col] != '[' {
+				return "", fmt.Errorf("cannot locate boundary %q members on its line", boundary)
+			}
+			end, ok := matchBracket(orig, col)
+			if !ok {
+				return "", fmt.Errorf("boundary %q member list is malformed", boundary)
+			}
+			return orig[:col] + "{ members: " + orig[col:end] + ", sealed: true }" + orig[end:], nil
+		})
+
+	case yaml.MappingNode:
+		_, sval := mappingPair(bval, "sealed")
+		if sval != nil {
+			if sval.Kind != yaml.ScalarNode || sval.Style != 0 {
+				return nil, fmt.Errorf("boundary %q has a sealed value this edit cannot rewrite — edit it by hand", boundary)
+			}
+			if parseYAMLBool(sval.Value) == sealed {
+				return data, nil
+			}
+			want := "false"
+			if sealed {
+				want = "true"
+			}
+			return spliceLine(sval.Line-1, func(orig string) (string, error) {
+				col := byteOffset(orig, sval.Column)
+				if col+len(sval.Value) > len(orig) || orig[col:col+len(sval.Value)] != sval.Value {
+					return "", fmt.Errorf("cannot locate boundary %q sealed value on its line", boundary)
+				}
+				return orig[:col] + want + orig[col+len(sval.Value):], nil
+			})
+		}
+		if !sealed {
+			return data, nil // no sealed key means false already
+		}
+		if bval.Style&yaml.FlowStyle != 0 { // flow mapping: name: { members: [...] }
+			if endLine(bval) != bval.Line {
+				return nil, fmt.Errorf("boundary %q spans multiple lines in flow style — edit it by hand", boundary)
+			}
+			return spliceLine(bval.Line-1, func(orig string) (string, error) {
+				col := byteOffset(orig, bval.Column)
+				if col >= len(orig) || orig[col] != '{' {
+					return "", fmt.Errorf("cannot locate boundary %q mapping on its line", boundary)
+				}
+				end, ok := matchDelim(orig, col, '{', '}')
+				if !ok {
+					return "", fmt.Errorf("boundary %q mapping is malformed", boundary)
+				}
+				head := strings.TrimRight(orig[col:end-1], " ,") // tolerate a trailing comma
+				sep := ", "
+				if strings.TrimSpace(head) == "{" { // empty mapping: no leading comma
+					sep = " "
+				}
+				return orig[:col] + head + sep + "sealed: true }" + orig[end:], nil
+			})
+		}
+		// Block mapping: insert a sealed line after the last line the mapping
+		// occupies, indented like its first key.
+		if len(bval.Content) == 0 {
+			return nil, fmt.Errorf("boundary %q has an unexpected shape — edit it by hand", boundary)
+		}
+		k0 := bval.Content[0]
+		if k0.Line-1 < 0 || k0.Line-1 >= len(lines) {
+			return nil, fmt.Errorf("boundary %q line %d is out of range", boundary, k0.Line)
+		}
+		indent := lines[k0.Line-1][:byteOffset(lines[k0.Line-1], k0.Column)]
+		if strings.TrimSpace(indent) != "" {
+			return nil, fmt.Errorf("boundary %q has an unexpected layout — edit it by hand", boundary)
+		}
+		at := endLine(bval) // insert after the mapping's last line (1-based → index)
+		if at > len(lines) {
+			return nil, fmt.Errorf("boundary %q line %d is out of range", boundary, at)
+		}
+		// Split on "\n" leaves a trailing "\r" on every line of a CRLF file;
+		// match the adjacent line's ending so the inserted line doesn't become a
+		// lone LF in an otherwise-CRLF file.
+		eol := ""
+		if strings.HasSuffix(lines[at-1], "\r") {
+			eol = "\r"
+		}
+		lines = append(lines[:at], append([]string{indent + "sealed: true" + eol}, lines[at:]...)...)
+		return commit()
+
+	default:
+		return nil, fmt.Errorf("boundary %q has an unexpected shape — edit it by hand", boundary)
+	}
+}
+
+// parseYAMLBool reports whether a plain scalar reads as true, delegating to
+// yaml.v3 so it matches exactly what the decode path put in Boundary.Sealed —
+// including the YAML-1.1 spellings (yes/on/y/…) the resolver still accepts, not
+// just true/True/TRUE. The value has already passed Parse as a bool, so a
+// non-bool scalar cannot reach here; if one somehow does it reads as false.
+func parseYAMLBool(s string) bool {
+	var b bool
+	if err := yaml.Unmarshal([]byte(s), &b); err == nil {
+		return b
+	}
+	return false
+}
+
 func addMember(seq *yaml.Node, member string) bool {
 	for _, n := range seq.Content {
 		if n.Value == member {
@@ -141,6 +301,12 @@ func encodeFlowSeq(n *yaml.Node) (string, error) {
 // matchBracket returns the index just past the `]` matching the `[` at open,
 // honoring quotes, and whether it was found.
 func matchBracket(s string, open int) (int, bool) {
+	return matchDelim(s, open, '[', ']')
+}
+
+// matchDelim returns the index just past the closer matching the opener at
+// open, honoring quotes, and whether it was found.
+func matchDelim(s string, open int, oc, cc byte) (int, bool) {
 	depth := 0
 	inSingle, inDouble := false, false
 	for i := open; i < len(s); i++ {
@@ -161,9 +327,9 @@ func matchBracket(s string, open int) (int, bool) {
 			inSingle = true
 		case c == '"':
 			inDouble = true
-		case c == '[':
+		case c == oc:
 			depth++
-		case c == ']':
+		case c == cc:
 			depth--
 			if depth == 0 {
 				return i + 1, true
