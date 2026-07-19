@@ -54,8 +54,10 @@ func (l *Loader) Load(ctx context.Context, patterns ...string) (*core.Graph, err
 	// property holds for Go too, matching the pure-static adapters. A hard error
 	// from packages.Load itself (not-a-module, no toolchain) is still fatal above.
 	var loadErrs []string
+	totalErrs := 0
 	packages.Visit(pkgs, nil, func(p *packages.Package) {
 		for _, e := range p.Errors {
+			totalErrs++ // the true count, so the warning doesn't report the cap as the total
 			if len(loadErrs) < 5 {
 				loadErrs = append(loadErrs, e.Error())
 			}
@@ -145,8 +147,8 @@ func (l *Loader) Load(ctx context.Context, patterns ...string) (*core.Graph, err
 	}
 	fset := token.NewFileSet()
 	graph := &core.Graph{ModulePath: modPath}
-	if len(loadErrs) > 0 {
-		graph.LoadWarnings = []string{degradedWarning(loadErrs)}
+	if totalErrs > 0 {
+		graph.LoadWarnings = []string{degradedWarning(totalErrs, loadErrs)}
 	}
 	for _, e := range entries {
 		imports := make(map[string]*impAgg)
@@ -220,9 +222,9 @@ func relDir(modPath, pkgPath string) string {
 // bucketed by classifyFallback's path heuristic (std vs external) instead of the
 // toolchain's exact module metadata, so build-tag / replace / vendor resolution
 // may be off. It is human-actionable — it names the fix.
-func degradedWarning(loadErrs []string) string {
+func degradedWarning(total int, sample []string) string {
 	noun := "error"
-	if len(loadErrs) != 1 {
+	if total != 1 {
 		noun = "errors"
 	}
 	var b strings.Builder
@@ -230,9 +232,13 @@ func degradedWarning(loadErrs []string) string {
 		"import classification is approximate — unresolved packages are bucketed by a path "+
 		"heuristic (std vs external) and build-tag/replace/vendor resolution may be off. "+
 		"Fix: run `go mod download` (or `go mod tidy`) and re-run for exact results.",
-		len(loadErrs), noun)
-	b.WriteString("\n  first load errors:")
-	for _, e := range loadErrs {
+		total, noun)
+	if len(sample) < total {
+		fmt.Fprintf(&b, "\n  first %d load errors:", len(sample))
+	} else {
+		b.WriteString("\n  load errors:")
+	}
+	for _, e := range sample {
 		b.WriteString("\n    " + e)
 	}
 	return b.String()

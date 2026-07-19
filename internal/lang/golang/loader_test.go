@@ -150,7 +150,8 @@ func BenchmarkLoadLarge(b *testing.B) {
 // have. The resolvable edges still classify exactly; the unresolved one is
 // bucketed by the path heuristic; a human-actionable warning is recorded.
 func TestLoadDegradedFallback(t *testing.T) {
-	t.Setenv("GOWORK", "off") // hermetic on machines using workspaces
+	t.Setenv("GOWORK", "off")  // hermetic on machines using workspaces
+	t.Setenv("GOPROXY", "off") // resolve the unresolvable external import offline (no network)
 
 	dir := t.TempDir()
 	write := func(rel, body string) {
@@ -164,9 +165,10 @@ func TestLoadDegradedFallback(t *testing.T) {
 		}
 	}
 	write("go.mod", "module example.com/deg\n\ngo 1.21\n")
-	// Package a imports stdlib (strings), a resolvable sibling (b), and an
-	// in-module path that does not exist — the unresolved import go list reports.
-	write("a/a.go", "package a\n\nimport (\n\t\"strings\"\n\n\t\"example.com/deg/b\"\n\t\"example.com/deg/missing\"\n)\n\nvar _ = strings.TrimSpace\nvar _ = b.V\nvar _ = missing.X\n")
+	// Package a imports stdlib (strings), a resolvable sibling (b), an in-module
+	// path that does not exist, and an undownloaded third-party dep — the two
+	// kinds of unresolved import go list reports.
+	write("a/a.go", "package a\n\nimport (\n\t\"strings\"\n\n\t\"example.com/deg/b\"\n\t\"example.com/deg/missing\"\n\t\"github.com/nope/dep\"\n)\n\nvar _ = strings.TrimSpace\nvar _ = b.V\nvar _ = missing.X\nvar _ = dep.X\n")
 	write("b/b.go", "package b\n\nvar V = 1\n")
 
 	g, err := (&Loader{Dir: dir}).Load(context.Background())
@@ -178,6 +180,11 @@ func TestLoadDegradedFallback(t *testing.T) {
 	}
 	if !strings.Contains(g.LoadWarnings[0], "go mod download") {
 		t.Errorf("warning is not actionable (no fix): %q", g.LoadWarnings[0])
+	}
+	// Both unresolved imports are counted (the count is the true total, not the
+	// 5-error display cap).
+	if !strings.Contains(g.LoadWarnings[0], "2 package load errors") {
+		t.Errorf("warning should report both load errors: %q", g.LoadWarnings[0])
 	}
 
 	byPath := make(map[string]core.Package, len(g.Packages))
@@ -202,8 +209,13 @@ func TestLoadDegradedFallback(t *testing.T) {
 	if i, ok := find("example.com/deg/b"); !ok || i.Class != core.ClassInModule {
 		t.Errorf("resolvable in-module edge missing/misclassified: %+v ok=%v", i, ok)
 	}
-	// The unresolved import survives, bucketed by the heuristic as in-module.
+	// The unresolved in-module import survives, bucketed by the heuristic as in-module.
 	if i, ok := find("example.com/deg/missing"); !ok || i.Class != core.ClassInModule || i.RelDir != "missing" {
 		t.Errorf("unresolved import missing/misclassified (want in-module RelDir=missing): %+v ok=%v", i, ok)
+	}
+	// The unresolved EXTERNAL import (an undownloaded third-party dep — the common
+	// real trigger) buckets as external via the dotted-first-segment heuristic.
+	if i, ok := find("github.com/nope/dep"); !ok || i.Class != core.ClassExternal {
+		t.Errorf("unresolved external import missing/misclassified (want external): %+v ok=%v", i, ok)
 	}
 }
