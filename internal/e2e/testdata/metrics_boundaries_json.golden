@@ -1,0 +1,29 @@
+{
+  "module": "boundaryfix",
+  "components": [
+    {
+      "component": "service-a",
+      "fan_in": 2,
+      "fan_out": 1,
+      "instability": 0.33
+    },
+    {
+      "component": "service-b",
+      "fan_in": 0,
+      "fan_out": 1,
+      "instability": 1
+    },
+    {
+      "component": "shared",
+      "fan_in": 1,
+      "fan_out": 1,
+      "instability": 0.5
+    }
+  ],
+  "totals": {
+    "components": 3,
+    "edges": 3,
+    "boundary_crossings": 2,
+    "cycles": 0
+  }
+}

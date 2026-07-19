@@ -214,6 +214,7 @@ reflects structural movement, not a config change.
 | `depdog check [packages]`                        | Evaluate every import edge against the rules                                                                                                       |
 | `depdog graph`                                   | Emit the dependency graph as DOT or Mermaid                                                                                                        |
 | `depdog diff --since <ref>`                      | Show how a change moved the architecture vs a git ref: cross-component edges added/removed, boundary crossings flagged (informational, exits `0`)   |
+| `depdog metrics`                                 | Report architecture-health numbers: per-component coupling (fan-in / fan-out) and instability, plus repo totals (edges, boundary crossings, cycles) — `text` or `json` (informational, exits `0`) |
 | `depdog explain <component-or-package> [import]` | Explain why something is red (rule/boundary that fired, with file:line), constraints, boundary membership etc.                                     |
 | `depdog config`                                  | Print the compiled rule set — components, patterns, inferred stances, boundaries, options — for debugging a config                                 |
 | `depdog lsp`                                     | LSP server over stdio: violations become inline editor diagnostics at their import lines ([editor setup](docs/editors.md) · [design](docs/lsp.md)) |

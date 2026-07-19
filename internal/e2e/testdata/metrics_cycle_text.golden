@@ -1,0 +1,7 @@
+depdog metrics — example.test/cycle
+
+COMPONENT  FAN-IN  FAN-OUT  INSTABILITY
+bar             1        1         0.50
+foo             1        1         0.50
+
+2 components · 2 cross-component edges · 0 boundary crossings · 1 cycle
