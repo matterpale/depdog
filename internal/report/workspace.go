@@ -94,7 +94,7 @@ func TextWorkspace(w io.Writer, mods []Module, skipped []Skipped, cross *CrossUn
 		fmt.Fprintf(w, " · %s", st.warn.Render(plural(totalWarnV, "warning")))
 	}
 	if totalW > 0 {
-		fmt.Fprintf(w, " · %s", plural(totalW, "warning"))
+		fmt.Fprintf(w, " · %s", advisoryCount(totalW))
 	}
 	fmt.Fprintf(w, " · %s · %s · checked in %s\n",
 		plural(totalP, "package"), plural(totalE, "edge"), elapsed.Round(time.Millisecond))

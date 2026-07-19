@@ -60,3 +60,21 @@ func TestTextWorkspaceErrorStillFails(t *testing.T) {
 		t.Errorf("error-severity aggregate run should mark ✗ with 1 violation:\n%s", s)
 	}
 }
+
+// TestTextSummaryDisambiguatesWarnFromAdvisory: a warn-severity violation and a
+// config-hygiene advisory in the same run read distinctly in the summary
+// ("1 warning" vs "1 advisory") rather than colliding as two "warning" counts.
+func TestTextSummaryDisambiguatesWarnFromAdvisory(t *testing.T) {
+	res := &core.Result{
+		ModulePath: "m",
+		Violations: []core.Violation{sevViolation(core.SeverityWarn)},
+		Warnings:   []core.Warning{{Kind: core.WarnUnassigned, Package: "m/z", RelDir: "z"}},
+	}
+	var buf bytes.Buffer
+	if err := Text(&buf, res, time.Second, "never"); err != nil {
+		t.Fatal(err)
+	}
+	if s := buf.String(); !strings.Contains(s, "1 warning · 1 advisory") {
+		t.Errorf("summary should distinguish the warn-severity violation from the advisory:\n%s", s)
+	}
+}

@@ -143,8 +143,10 @@ func Text(w io.Writer, res *core.Result, elapsed time.Duration, color string) er
 		// Only warn-severity violations remain, so the build stays clean (exit 0).
 		b.WriteString(st.warn.Render(plural(len(res.Violations), "warning")))
 	}
-	if len(res.Warnings) > 0 {
-		fmt.Fprintf(&b, " · %s", plural(len(res.Warnings), "warning"))
+	if n := len(res.Warnings); n > 0 {
+		// "advisory", not "warning", so these config-hygiene notes (unassigned
+		// packages, dead patterns) don't collide with warn-severity violations.
+		fmt.Fprintf(&b, " · %s", advisoryCount(n))
 	}
 	fmt.Fprintf(&b, " · %s · %s checked in %s\n",
 		plural(res.Stats.Packages, "package"),
@@ -160,4 +162,13 @@ func plural(n int, word string) string {
 		return fmt.Sprintf("1 %s", word)
 	}
 	return fmt.Sprintf("%d %ss", n, word)
+}
+
+// advisoryCount renders the count of advisory (never-fatal) notes with the
+// correct irregular plural — "1 advisory" / "N advisories".
+func advisoryCount(n int) string {
+	if n == 1 {
+		return "1 advisory"
+	}
+	return fmt.Sprintf("%d advisories", n)
 }
