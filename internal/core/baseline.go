@@ -23,6 +23,9 @@ func BaselineFrom(res *Result) *Baseline {
 	seen := make(map[BaselineEntry]bool, len(res.Violations))
 	b := &Baseline{}
 	for _, v := range res.Violations {
+		if v.Severity != SeverityError {
+			continue // warnings never fail the build, so there's nothing to baseline
+		}
 		e := BaselineEntry{FromPackage: v.FromPackage, Import: v.ImportPath}
 		if seen[e] {
 			continue

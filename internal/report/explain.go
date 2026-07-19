@@ -154,6 +154,9 @@ func explainComponent(w io.Writer, c core.Component, rs *core.RuleSet, res *core
 	fmt.Fprintf(&b, "component %s\n", c.Name)
 	fmt.Fprintf(&b, "  patterns: %s\n", strings.Join(c.Patterns, ", "))
 	fmt.Fprintf(&b, "  stance:   %s\n", stanceName(rs.Stance(c.Name)))
+	if c.Severity == core.SeverityWarn {
+		fmt.Fprintf(&b, "  severity: warn (violations are reported but do not fail the build)\n")
+	}
 
 	rule, ok := rs.Rules[c.Name]
 	switch {
@@ -202,7 +205,11 @@ func explainComponent(w io.Writer, c core.Component, rs *core.RuleSet, res *core
 	} else {
 		fmt.Fprintf(&b, "  violations (%d):\n", len(vs))
 		for _, v := range vs {
-			fmt.Fprintf(&b, "    %s → %s  (%s)\n", v.FromPackage, v.ImportPath, v.Rule)
+			tag := ""
+			if v.Severity == core.SeverityWarn {
+				tag = "  [warn]"
+			}
+			fmt.Fprintf(&b, "    %s → %s  (%s)%s\n", v.FromPackage, v.ImportPath, v.Rule, tag)
 		}
 	}
 	_, err := io.WriteString(w, b.String())

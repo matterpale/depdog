@@ -14,6 +14,9 @@ type Boundary struct {
 	Name    string
 	Members []BoundaryMember // sorted by label for determinism
 	Sealed  bool             // one-way wall: nothing outside all members may import in
+	// Severity grades the crossings this boundary denies. The zero value
+	// (SeverityError) fails the build.
+	Severity Severity
 }
 
 // BoundaryMember is one member of a boundary: a named component OR a path glob.

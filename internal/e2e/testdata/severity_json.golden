@@ -1,0 +1,49 @@
+{
+  "module": "example.test/severity",
+  "default": "allow",
+  "violations": [
+    {
+      "from_package": "example.test/severity/app",
+      "from_component": "app",
+      "import": "example.test/severity/lib",
+      "target": "lib",
+      "rule": "app: allow [std]",
+      "severity": "warn",
+      "test_only": false,
+      "explanation": "`example.test/severity/app` (component `app`) may import only `std`; `example.test/severity/lib` (component `lib`) is not among them. Fix: add `lib` to `app`'s allow list, or depend only on what `app` already allows.",
+      "positions": [
+        {
+          "file": "app/a.go",
+          "line": 6
+        }
+      ]
+    }
+  ],
+  "warnings": [],
+  "components": [
+    {
+      "name": "app",
+      "stance": "whitelist",
+      "allow": [
+        "std"
+      ],
+      "packages": 1,
+      "edges": 2,
+      "violations": 1
+    },
+    {
+      "name": "lib",
+      "stance": "blacklist",
+      "packages": 1,
+      "edges": 0,
+      "violations": 0
+    }
+  ],
+  "boundaries": [],
+  "cycles": [],
+  "stats": {
+    "packages": 2,
+    "edges": 2,
+    "duration_ms": 0
+  }
+}

@@ -8,6 +8,7 @@
       "import": "example.test/dirty/internal/repository",
       "target": "repository",
       "rule": "domain: allow [std]",
+      "severity": "error",
       "test_only": false,
       "explanation": "`example.test/dirty/internal/domain/pricing` (component `domain`) may import only `std`; `example.test/dirty/internal/repository` (component `repository`) is not among them. Fix: add `repository` to `domain`'s allow list, or depend only on what `domain` already allows.",
       "positions": [
@@ -27,6 +28,7 @@
       "import": "example.test/extlib",
       "target": "external",
       "rule": "domain: allow [std]",
+      "severity": "error",
       "test_only": false,
       "explanation": "`example.test/dirty/internal/domain/pricing` (component `domain`) may import only `std`; `example.test/extlib` (an external dependency) is not among them. Fix: add `example.test/extlib` to `domain`'s allow list, or depend only on what `domain` already allows.",
       "positions": [
@@ -42,6 +44,7 @@
       "import": "example.test/dirty/internal/repository",
       "target": "repository",
       "rule": "handler: allow [domain, std]",
+      "severity": "error",
       "test_only": true,
       "explanation": "`example.test/dirty/internal/handler/checkout` (component `handler`) may import only `domain`, `std`; `example.test/dirty/internal/repository` (component `repository`) is not among them. Fix: add `repository` to `handler`'s allow list, or depend only on what `handler` already allows.",
       "positions": [
@@ -57,6 +60,7 @@
       "import": "example.test/dirty/internal/service",
       "target": "service",
       "rule": "handler: allow [domain, std]",
+      "severity": "error",
       "test_only": false,
       "explanation": "`example.test/dirty/internal/handler/checkout` (component `handler`) may import only `domain`, `std`; `example.test/dirty/internal/service` (component `service`) is not among them. Fix: add `service` to `handler`'s allow list, or depend only on what `handler` already allows.",
       "positions": [

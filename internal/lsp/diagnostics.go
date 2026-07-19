@@ -9,11 +9,13 @@ import (
 	"github.com/matterpale/depdog/internal/core"
 )
 
-// LSP DiagnosticSeverity. Every depdog violation fails `depdog check`, so all
-// diagnostics are errors — including TestOnly ones: if the test_files policy
-// let a test-only edge through it never becomes a Violation, and if it didn't,
-// the edge fails the build like any other. docs/lsp.md records the choice.
-const severityError = 1
+// LSP DiagnosticSeverity values. A violation maps to Error (1) unless its source
+// component/boundary opted into `severity: warn`, which maps to Warning (2) —
+// mirroring the exit code, where only error-severity violations fail the build.
+const (
+	severityError   = 1
+	severityWarning = 2
+)
 
 type publishDiagnosticsParams struct {
 	URI         string       `json:"uri"`
@@ -80,6 +82,10 @@ func diagnosticsFor(res *core.Result, root, configURI string) []publishDiagnosti
 				Message:  "rule: " + v.Rule,
 			}}
 		}
+		severity := severityError
+		if v.Severity == core.SeverityWarn {
+			severity = severityWarning
+		}
 		for _, p := range v.Positions {
 			uri := fileURI(root, p.File)
 			byURI[uri] = append(byURI[uri], diagnostic{
@@ -87,7 +93,7 @@ func diagnosticsFor(res *core.Result, root, configURI string) []publishDiagnosti
 					Start: lspPosition{Line: p.Line - 1},
 					End:   lspPosition{Line: p.Line - 1},
 				},
-				Severity:           severityError,
+				Severity:           severity,
 				Code:               v.Rule,
 				Source:             "depdog",
 				Message:            msg,

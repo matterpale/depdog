@@ -8,6 +8,7 @@
       "import": "com.example.service.notify.Notifier",
       "target": "service",
       "rule": "domain: allow [std]",
+      "severity": "error",
       "test_only": false,
       "explanation": "`scaladirty/src/main/scala/com/example/domain` (component `domain`) may import only `std`; `com.example.service.notify.Notifier` (component `service`) is not among them. Fix: add `service` to `domain`'s allow list, or depend only on what `domain` already allows.",
       "positions": [
@@ -23,6 +24,7 @@
       "import": "com.example.domain.Order",
       "target": "domain",
       "rule": "handler: allow [service, std, external]",
+      "severity": "error",
       "test_only": false,
       "explanation": "`scaladirty/src/main/scala/com/example/handler` (component `handler`) may import only `service`, `std`, `external`; `com.example.domain.Order` (component `domain`) is not among them. Fix: add `domain` to `handler`'s allow list, or depend only on what `handler` already allows.",
       "positions": [

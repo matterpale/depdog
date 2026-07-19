@@ -28,6 +28,7 @@ type Violation struct {
 	Positions     []Position
 	Reason        ReasonKind // "" for ordinary rule violations; a boundary kind otherwise
 	Boundary      string     // boundary name when Reason is a boundary kind; "" otherwise
+	Severity      Severity   // SeverityError (fails the build) unless the source component/boundary opted into warn
 }
 
 // WarningKind distinguishes the advisory notes a check surfaces.
@@ -75,6 +76,19 @@ type Result struct {
 	Stats      Stats
 }
 
+// ErrorCount returns how many violations are error-severity — the count that
+// decides the exit code. A tree whose only violations are warnings has
+// ErrorCount() == 0 and so exits clean.
+func (r *Result) ErrorCount() int {
+	n := 0
+	for _, v := range r.Violations {
+		if v.Severity == SeverityError {
+			n++
+		}
+	}
+	return n
+}
+
 // Evaluate checks every import edge of the graph against the rule set.
 // Ordering is deterministic given a sorted graph.
 func Evaluate(g *Graph, rs *RuleSet) (*Result, error) {
@@ -83,8 +97,10 @@ func Evaluate(g *Graph, rs *RuleSet) (*Result, error) {
 	// One stat bucket per declared component (in rs.Components' sorted order),
 	// so even components with no matching packages still appear.
 	compStats := make(map[string]*ComponentStat, len(rs.Components))
+	sevByComp := make(map[string]Severity, len(rs.Components))
 	for _, c := range rs.Components {
 		compStats[c.Name] = &ComponentStat{Name: c.Name}
+		sevByComp[c.Name] = c.Severity
 	}
 
 	// Component adjacency, for detecting architecture-level import cycles that
@@ -239,7 +255,7 @@ func Evaluate(g *Graph, rs *RuleSet) (*Result, error) {
 
 			if hasRule && matchAny(rule.Deny, imp, targetComp) {
 				res.Violations = append(res.Violations,
-					violation(p, comp, imp, targetComp, ruleText(comp, "deny", rule.Deny)))
+					violation(p, comp, imp, targetComp, ruleText(comp, "deny", rule.Deny), sevByComp[comp]))
 				cs.Violations++
 				continue
 			}
@@ -253,7 +269,7 @@ func Evaluate(g *Graph, rs *RuleSet) (*Result, error) {
 			if hasRule && len(rule.Allow) > 0 {
 				text = ruleText(comp, "allow", rule.Allow)
 			}
-			res.Violations = append(res.Violations, violation(p, comp, imp, targetComp, text))
+			res.Violations = append(res.Violations, violation(p, comp, imp, targetComp, text, sevByComp[comp]))
 			cs.Violations++
 		}
 	}
@@ -308,7 +324,7 @@ func (rs *RuleSet) boundaryVerdict(p Package, imp Import, comp, targetComp strin
 			reason = ReasonBoundarySealed
 			rule = fmt.Sprintf("denied by boundary %q (sealed)", b.Name)
 		}
-		v := violation(p, comp, imp, targetComp, rule)
+		v := violation(p, comp, imp, targetComp, rule, b.Severity)
 		v.Reason = reason
 		v.Boundary = b.Name
 		return &v
@@ -316,7 +332,7 @@ func (rs *RuleSet) boundaryVerdict(p Package, imp Import, comp, targetComp strin
 	return nil
 }
 
-func violation(p Package, comp string, imp Import, targetComp, rule string) Violation {
+func violation(p Package, comp string, imp Import, targetComp, rule string, sev Severity) Violation {
 	target := targetComp
 	if imp.Class != ClassInModule {
 		target = imp.Class.String()
@@ -331,6 +347,7 @@ func violation(p Package, comp string, imp Import, targetComp, rule string) Viol
 		Rule:          rule,
 		TestOnly:      imp.TestOnly,
 		Positions:     imp.Positions,
+		Severity:      sev,
 	}
 }
 

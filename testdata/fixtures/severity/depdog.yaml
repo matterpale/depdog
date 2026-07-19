@@ -1,0 +1,9 @@
+version: 2
+
+# app may import only std; its import of lib is a violation — but graded warn,
+# so it is reported without failing the build (exit 0).
+components:
+  app: { path: "app/**", allow: [std], severity: warn }
+  lib: { path: "lib/**" }
+
+default: allow

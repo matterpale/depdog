@@ -30,7 +30,12 @@
         "properties": {
           "path": { "$ref": "#/definitions/patterns" },
           "allow": { "$ref": "#/definitions/refs" },
-          "deny": { "$ref": "#/definitions/refs" }
+          "deny": { "$ref": "#/definitions/refs" },
+          "severity": {
+            "type": "string",
+            "enum": ["warn", "error"],
+            "description": "Grades this component's violations. error (default) fails the build; warn is reported everywhere but never flips the exit code."
+          }
         }
       }
     },
@@ -54,7 +59,12 @@
             "required": ["members"],
             "properties": {
               "members": { "type": "array", "items": { "type": "string" } },
-              "sealed": { "type": "boolean" }
+              "sealed": { "type": "boolean" },
+              "severity": {
+                "type": "string",
+                "enum": ["warn", "error"],
+                "description": "Grades this boundary's crossings. error (default) fails the build; warn is reported everywhere but never flips the exit code."
+              }
             }
           }
         ]

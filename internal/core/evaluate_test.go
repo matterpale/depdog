@@ -727,3 +727,79 @@ func TestEvaluateNoRulePolicyDeny(t *testing.T) {
 		t.Fatalf("want default: deny violation, got %+v", res.Violations)
 	}
 }
+
+// TestEvaluateSeverityComponent: a warn-severity component's violation is
+// reported but excluded from ErrorCount, while an error component's counts.
+func TestEvaluateSeverityComponent(t *testing.T) {
+	rs := &RuleSet{
+		Policy: PolicyDeny, // default deny → any un-allowed cross-component import violates
+		Components: []Component{
+			{Name: "warnc", Patterns: []string{"warnc/**"}, Severity: SeverityWarn},
+			{Name: "errc", Patterns: []string{"errc/**"}}, // zero value = error
+			{Name: "lib", Patterns: []string{"lib/**"}},
+		},
+	}
+	g := &Graph{ModulePath: "m", Packages: []Package{
+		{ImportPath: "m/errc/b", RelDir: "errc/b", Imports: []Import{mkImport("m/lib/x", ClassInModule, "lib/x", false)}},
+		{ImportPath: "m/lib/x", RelDir: "lib/x"},
+		{ImportPath: "m/warnc/a", RelDir: "warnc/a", Imports: []Import{mkImport("m/lib/x", ClassInModule, "lib/x", false)}},
+	}}
+	res, err := Evaluate(g, rs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Violations) != 2 {
+		t.Fatalf("got %d violations, want 2: %+v", len(res.Violations), res.Violations)
+	}
+	if res.ErrorCount() != 1 {
+		t.Errorf("ErrorCount = %d, want 1 (only errc's counts)", res.ErrorCount())
+	}
+	sev := map[string]Severity{}
+	for _, v := range res.Violations {
+		sev[v.FromComponent] = v.Severity
+	}
+	if sev["warnc"] != SeverityWarn {
+		t.Errorf("warnc violation severity = %v, want warn", sev["warnc"])
+	}
+	if sev["errc"] != SeverityError {
+		t.Errorf("errc violation severity = %v, want error", sev["errc"])
+	}
+}
+
+// TestEvaluateSeverityBoundary: a warn-severity boundary's crossing is reported
+// but does not fail the build (ErrorCount 0).
+func TestEvaluateSeverityBoundary(t *testing.T) {
+	rs := &RuleSet{
+		Policy: PolicyAllow, // only the boundary denies
+		Components: []Component{
+			{Name: "a", Patterns: []string{"a/**"}},
+			{Name: "b", Patterns: []string{"b/**"}},
+		},
+		Boundaries: []Boundary{{
+			Name:     "wall",
+			Severity: SeverityWarn,
+			Members: []BoundaryMember{
+				{Component: "a", Patterns: []string{"a/**"}, Label: "a"},
+				{Component: "b", Patterns: []string{"b/**"}, Label: "b"},
+			},
+		}},
+	}
+	g := &Graph{ModulePath: "m", Packages: []Package{
+		{ImportPath: "m/a/x", RelDir: "a/x", Imports: []Import{mkImport("m/b/y", ClassInModule, "b/y", false)}},
+		{ImportPath: "m/b/y", RelDir: "b/y"},
+	}}
+	res, err := Evaluate(g, rs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Violations) != 1 {
+		t.Fatalf("got %d violations, want 1 (a→b crosses the wall): %+v", len(res.Violations), res.Violations)
+	}
+	v := res.Violations[0]
+	if v.Reason != ReasonBoundary || v.Severity != SeverityWarn {
+		t.Errorf("boundary violation = reason %q severity %v, want boundary/warn", v.Reason, v.Severity)
+	}
+	if res.ErrorCount() != 0 {
+		t.Errorf("ErrorCount = %d, want 0 (a warn boundary never fails the build)", res.ErrorCount())
+	}
+}

@@ -37,9 +37,10 @@ type file struct {
 // component claims plus, inline, the rule saying who it may (allow) or must
 // not (deny) import.
 type componentYAML struct {
-	Path  stringList `yaml:"path"`
-	Allow []string   `yaml:"allow"`
-	Deny  []string   `yaml:"deny"`
+	Path     stringList `yaml:"path"`
+	Allow    []string   `yaml:"allow"`
+	Deny     []string   `yaml:"deny"`
+	Severity string     `yaml:"severity"` // "" (default) / "error" / "warn"
 }
 
 type optionsYAML struct {
@@ -74,8 +75,9 @@ func (s *stringList) UnmarshalYAML(n *yaml.Node) error {
 // boundaryYAML accepts both boundary forms: a bare list of members (shorthand,
 // symmetric and not sealed) or an expanded mapping {members, sealed}.
 type boundaryYAML struct {
-	Members stringList `yaml:"members"`
-	Sealed  bool       `yaml:"sealed"`
+	Members  stringList `yaml:"members"`
+	Sealed   bool       `yaml:"sealed"`
+	Severity string     `yaml:"severity"` // "" (default) / "error" / "warn"
 }
 
 func (b *boundaryYAML) UnmarshalYAML(n *yaml.Node) error {
@@ -94,14 +96,16 @@ func (b *boundaryYAML) UnmarshalYAML(n *yaml.Node) error {
 		// KnownFields(true), so reject unknown sub-keys here to keep the
 		// actionable-error-on-typo convention (e.g. `seald: true`).
 		var aux struct {
-			Members stringList `yaml:"members"`
-			Sealed  bool       `yaml:"sealed"`
+			Members  stringList `yaml:"members"`
+			Sealed   bool       `yaml:"sealed"`
+			Severity string     `yaml:"severity"`
 		}
 		if err := decodeKnownFields(n, &aux); err != nil {
 			return err
 		}
 		b.Members = aux.Members
 		b.Sealed = aux.Sealed
+		b.Severity = aux.Severity
 		return nil
 	default:
 		return fmt.Errorf("line %d: expected a list of members or {members, sealed}", n.Line)
@@ -126,6 +130,20 @@ func decodeKnownFields(n *yaml.Node, v any) error {
 		return err
 	}
 	return nil
+}
+
+// parseSeverity maps a config `severity:` string to a core.Severity. Empty is
+// the default (error, so the field is purely additive); an unknown value is an
+// actionable config error, in the style of the `default`/`test_files` checks.
+func parseSeverity(where, s string) (core.Severity, error) {
+	switch s {
+	case "", "error":
+		return core.SeverityError, nil
+	case "warn":
+		return core.SeverityWarn, nil
+	default:
+		return core.SeverityError, fmt.Errorf("%s severity %q must be \"warn\" or \"error\"", where, s)
+	}
 }
 
 // Load reads and compiles the config file at path.
@@ -214,7 +232,11 @@ func Parse(data []byte) (*core.RuleSet, error) {
 				return nil, fmt.Errorf("component %q: %w", name, err)
 			}
 		}
-		rs.Components = append(rs.Components, core.Component{Name: name, Patterns: patterns})
+		sev, err := parseSeverity(fmt.Sprintf("component %q", name), f.Components[name].Severity)
+		if err != nil {
+			return nil, err
+		}
+		rs.Components = append(rs.Components, core.Component{Name: name, Patterns: patterns, Severity: sev})
 	}
 
 	switch f.Default {
@@ -387,7 +409,11 @@ func parseBoundaries(raw map[string]boundaryYAML, known map[string]bool, compone
 			}
 		}
 		sort.Slice(members, func(i, j int) bool { return members[i].Label < members[j].Label })
-		boundaries = append(boundaries, core.Boundary{Name: name, Members: members, Sealed: by.Sealed})
+		sev, err := parseSeverity(fmt.Sprintf("boundary %q", name), by.Severity)
+		if err != nil {
+			return nil, err
+		}
+		boundaries = append(boundaries, core.Boundary{Name: name, Members: members, Sealed: by.Sealed, Severity: sev})
 	}
 	return boundaries, nil
 }
