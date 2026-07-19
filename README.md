@@ -96,6 +96,10 @@ depdog check     # check against the rules; exit 1 on violations
 proposes a component mapping you refine interactively — drop, rename, or
 re-path components. Or accept all as-is with `--yes`.
 
+For a tight local loop, `depdog check --watch` re-runs the check whenever a file
+changes (text output; Ctrl-C to stop) — the terminal-first counterpart to the
+[editor LSP](#lsp-setup), catching a broken boundary as you edit rather than in CI.
+
 > [!TIP]
 Alternatively, ask a coding agent to get you started with the dedicated [skill](skills/depdog/SKILL.md).
 
