@@ -3,6 +3,7 @@ package e2e
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -33,8 +34,12 @@ func TestInstallHook(t *testing.T) {
 	if !strings.Contains(string(body), "depdog check") {
 		t.Errorf("hook does not run depdog check:\n%s", body)
 	}
-	if fi, _ := os.Stat(hookPath); fi.Mode()&0o111 == 0 {
-		t.Errorf("hook is not executable: %v", fi.Mode())
+	// Windows has no Unix executable bit (Go always reports -rw-rw-rw-), and git
+	// runs pre-commit hooks via sh there regardless, so only assert it off Windows.
+	if runtime.GOOS != "windows" {
+		if fi, _ := os.Stat(hookPath); fi.Mode()&0o111 == 0 {
+			t.Errorf("hook is not executable: %v", fi.Mode())
+		}
 	}
 
 	// Idempotent: re-running succeeds and keeps our hook.
