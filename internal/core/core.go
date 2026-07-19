@@ -55,4 +55,10 @@ type Package struct {
 type Graph struct {
 	ModulePath string
 	Packages   []Package
+	// LoadWarnings are advisory notes from the adapter's load step — e.g. the Go
+	// adapter degraded to approximate classification because `go list` could not
+	// resolve every import (a dependency isn't downloaded, or the code is
+	// mid-refactor). They never fail a check; the CLI surfaces them to stderr so
+	// machine output on stdout stays clean.
+	LoadWarnings []string
 }

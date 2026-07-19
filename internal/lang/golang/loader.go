@@ -46,6 +46,13 @@ func (l *Loader) Load(ctx context.Context, patterns ...string) (*core.Graph, err
 	if err != nil {
 		return nil, fmt.Errorf("loading packages: %w", err)
 	}
+	// Per-package load errors (an unresolved import, a missing dependency, code
+	// that is mid-refactor) do NOT abort: `go list` still returns the packages it
+	// could resolve, and imports it could not resolve fall through to
+	// classifyFallback's path heuristic below. We degrade to a best-effort graph
+	// and record a warning so the "works on code that doesn't compile yet"
+	// property holds for Go too, matching the pure-static adapters. A hard error
+	// from packages.Load itself (not-a-module, no toolchain) is still fatal above.
 	var loadErrs []string
 	packages.Visit(pkgs, nil, func(p *packages.Package) {
 		for _, e := range p.Errors {
@@ -54,9 +61,6 @@ func (l *Loader) Load(ctx context.Context, patterns ...string) (*core.Graph, err
 			}
 		}
 	})
-	if loadErrs != nil {
-		return nil, fmt.Errorf("the Go toolchain reported errors:\n  %s", strings.Join(loadErrs, "\n  "))
-	}
 
 	// Classification index over everything reachable, so imports can be
 	// bucketed without a second load.
@@ -71,11 +75,19 @@ func (l *Loader) Load(ctx context.Context, patterns ...string) (*core.Graph, err
 		}
 		t := target{class: core.ClassExternal}
 		switch {
-		case p.Module == nil:
-			t.class = core.ClassStd
-		case p.Module.Path == modPath:
-			t.class = core.ClassInModule
-			t.relDir = relDir(modPath, p.PkgPath)
+		case p.Module != nil:
+			if p.Module.Path == modPath {
+				t.class = core.ClassInModule
+				t.relDir = relDir(modPath, p.PkgPath)
+			}
+			// else: a dependency module — external (the init default).
+		default:
+			// Module-less: the standard library, or — in degraded mode, when
+			// go list could not attribute the package — an unresolved import.
+			// classifyFallback's path heuristic keeps an unresolved in-module
+			// path from being mislabeled std (std is never under the module
+			// path) while still classifying real std packages as std.
+			t.class, t.relDir = classifyFallback(modPath, p.PkgPath)
 		}
 		index[p.PkgPath] = t
 		return true
@@ -133,6 +145,9 @@ func (l *Loader) Load(ctx context.Context, patterns ...string) (*core.Graph, err
 	}
 	fset := token.NewFileSet()
 	graph := &core.Graph{ModulePath: modPath}
+	if len(loadErrs) > 0 {
+		graph.LoadWarnings = []string{degradedWarning(loadErrs)}
+	}
 	for _, e := range entries {
 		imports := make(map[string]*impAgg)
 		for file, isTest := range e.files {
@@ -198,6 +213,29 @@ func relDir(modPath, pkgPath string) string {
 		return "."
 	}
 	return strings.TrimPrefix(pkgPath, modPath+"/")
+}
+
+// degradedWarning describes the best-effort fallback the loader takes when
+// `go list` cannot fully resolve the module: packages it failed to resolve are
+// bucketed by classifyFallback's path heuristic (std vs external) instead of the
+// toolchain's exact module metadata, so build-tag / replace / vendor resolution
+// may be off. It is human-actionable — it names the fix.
+func degradedWarning(loadErrs []string) string {
+	noun := "error"
+	if len(loadErrs) != 1 {
+		noun = "errors"
+	}
+	var b strings.Builder
+	fmt.Fprintf(&b, "go list could not fully resolve this module (%d package load %s); "+
+		"import classification is approximate — unresolved packages are bucketed by a path "+
+		"heuristic (std vs external) and build-tag/replace/vendor resolution may be off. "+
+		"Fix: run `go mod download` (or `go mod tidy`) and re-run for exact results.",
+		len(loadErrs), noun)
+	b.WriteString("\n  first load errors:")
+	for _, e := range loadErrs {
+		b.WriteString("\n    " + e)
+	}
+	return b.String()
 }
 
 // classifyFallback covers import paths the metadata load did not resolve;

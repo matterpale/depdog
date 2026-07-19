@@ -344,6 +344,15 @@ monorepo.
   the host's `GOOS`/`GOARCH` and default build tags; imports guarded by other
   build constraints (e.g. `//go:build windows` on a non-Windows machine) aren't
   seen.
+- **Go adapter — resolves via `go list`, but degrades gracefully.** The Go
+  adapter loads the package graph through `go list` for exact module / stdlib /
+  `replace` classification. When `go list` can't resolve every import — a
+  dependency isn't downloaded, or the code is mid-refactor — depdog does **not**
+  abort: it falls back to a best-effort static scan (parsed imports + a path
+  heuristic), prints a `depdog: warning:` to stderr that classification is
+  approximate, and still checks the edges it can see. So `depdog check` runs on
+  Go code that doesn't compile yet, like the pure-static adapters; run
+  `go mod download` for exact results.
 - <a id="monorepos"></a>**Monorepos — per-unit fan-out; cross-unit rules are
   opt-in.** depdog checks a monorepo by fanning out over its **units**, each
   checked independently against its own `depdog.yaml`, via two discovery kinds:

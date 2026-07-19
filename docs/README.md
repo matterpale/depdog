@@ -29,7 +29,11 @@ package-loader-based linters (e.g.
 [go-arch-lint](https://github.com/fe3dback/go-arch-lint)) need the language's
 own toolchain to load your packages first. The one exception is the Go adapter
 itself, which resolves the package graph through `go list` metadata (no
-type-checking) — a Go project has the Go toolchain by definition.
+type-checking) — a Go project has the Go toolchain by definition. When `go list`
+can't resolve every import (a missing dependency, or code mid-refactor) it
+degrades to the same best-effort static scan the other adapters use — parsed
+imports plus a path heuristic, with a `depdog: warning:` on stderr — rather than
+failing, so the "works mid-refactor" property holds for Go too.
 
 The same language-neutral core is what enables the
 [cross-language layer](cross-language.md): one `depdog.work.yaml` at the repo
