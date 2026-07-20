@@ -24,7 +24,7 @@ topic.
 Every adapter is a pure-Go static import scanner: it reads source text
 (comment- and string-aware) and extracts the import statements — **no language
 toolchain, no build**. That is why depdog works mid-refactor, on code that
-doesn't compile yet, and on nine languages from one binary — where
+doesn't compile yet, and on many languages from one binary — where
 package-loader-based linters (e.g.
 [go-arch-lint](https://github.com/fe3dback/go-arch-lint)) need the language's
 own toolchain to load your packages first. The one exception is the Go adapter

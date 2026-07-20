@@ -10,7 +10,11 @@ inputs:
     required: false
     default: latest
   args:
-    description: 'Arguments passed to depdog (e.g. "check --all --format github").'
+    description: >-
+      Arguments passed to depdog (e.g. "check --all --format github"). Split on
+      whitespace into separate arguments, so an argument cannot itself contain a
+      space, and shell glob characters (* ? [) are expanded against the
+      working directory.
     required: false
     default: check
   working-directory:
@@ -32,9 +36,16 @@ runs:
         # Resolve the tag. "latest" follows the releases/latest redirect (no token
         # needed for a public repo); a bare "0.6.0" is normalized to the
         # "v"-prefixed tag depdog actually publishes.
+        # curl retries cover transient network errors and 5xx/429 (rate limits);
+        # a genuine 4xx (e.g. no such release) is not retried, so a real error
+        # still fails fast.
+        retry=(--retry 3 --retry-delay 2 --retry-connrefused)
+
         tag="$DEPDOG_VERSION"
+        pinned=true  # an explicit tag was requested; "latest" is resolved below
         if [ "$tag" = "latest" ]; then
-          eff="$(curl -fsSLI -o /dev/null -w '%{url_effective}' "https://github.com/$repo/releases/latest")" || eff=""
+          pinned=false
+          eff="$(curl -fsSLI "${retry[@]}" -o /dev/null -w '%{url_effective}' "https://github.com/$repo/releases/latest")" || eff=""
           tag="${eff##*/tag/}"
           if [ -z "$eff" ] || [ "$tag" = "$eff" ]; then
             echo "::error::depdog action: could not resolve the latest release tag from github.com/$repo — set version: to a specific tag like v0.6.0."
@@ -60,21 +71,29 @@ runs:
         ext=tar.gz
         [ "$os" = windows ] && ext=zip
 
+        # Asset name mirrors goreleaser's default archive name_template
+        # ({{.ProjectName}}_{{.Version}}_{{.Os}}_{{.Arch}}) — keep this in lock-step
+        # with archives: in .goreleaser.yaml; a custom template there breaks this.
         asset="depdog_${ver}_${os}_${arch}.${ext}"
         url="https://github.com/$repo/releases/download/${tag}/${asset}"
         echo "depdog action: downloading $url"
 
         dir="$(mktemp -d)"
-        if ! curl -fsSL "$url" -o "$dir/$asset"; then
+        if ! curl -fsSL "${retry[@]}" "$url" -o "$dir/$asset"; then
           echo "::error::depdog action: could not download $url — check that release $tag publishes an asset for ${os}/${arch} (see github.com/$repo/releases)."
           exit 1
         fi
 
         # Verify the download against the release checksums.txt (goreleaser
-        # publishes one per release). A mismatch or a missing entry is fatal
-        # (a tampered/served-wrong binary); an unreachable checksums.txt only
-        # warns, so a transient network hiccup on the sidecar file doesn't block.
-        if curl -fsSL "https://github.com/$repo/releases/download/${tag}/checksums.txt" -o "$dir/checksums.txt"; then
+        # publishes one per release). This guards against a corrupted, truncated,
+        # or wrong-asset download — not a determined attacker, since the asset and
+        # checksums.txt share one origin with no signature (real provenance would
+        # need signed checksums or build attestation). A mismatch or a missing
+        # entry is always fatal. An unreachable checksums.txt is fatal for a
+        # pinned version (a published release always ships one, so its absence is
+        # suspicious) but only warns for "latest", where reproducibility is already
+        # not promised and a transient sidecar hiccup shouldn't block.
+        if curl -fsSL "${retry[@]}" "https://github.com/$repo/releases/download/${tag}/checksums.txt" -o "$dir/checksums.txt"; then
           if command -v sha256sum >/dev/null 2>&1; then
             have="$(sha256sum "$dir/$asset" | awk '{print $1}')"
           else
@@ -86,11 +105,14 @@ runs:
             exit 1
           fi
           if [ "$have" != "$want" ]; then
-            echo "::error::depdog action: checksum mismatch for $asset (want $want, got $have) — refusing to run a tampered download."
+            echo "::error::depdog action: checksum mismatch for $asset (want $want, got $have) — refusing to run a corrupted or wrong download."
             exit 1
           fi
+        elif [ "$pinned" = true ]; then
+          echo "::error::depdog action: could not fetch checksums.txt for $tag — refusing to run an unverified pinned download. Retry, or confirm the release publishes checksums.txt."
+          exit 1
         else
-          echo "::warning::depdog action: could not fetch checksums.txt for $tag; skipping integrity verification."
+          echo "::warning::depdog action: could not fetch checksums.txt for $tag; skipping integrity verification (version: latest)."
         fi
 
         # `tar -xf` handles both formats: gzip is auto-detected for .tar.gz, and
