@@ -302,21 +302,6 @@ func TestLoadIndexFilesAndSeparator(t *testing.T) {
 	}
 }
 
-func TestLoadNameIndexModeNotYetSupported(t *testing.T) {
-	sp := &Spec{
-		Name:       "x",
-		Markers:    []string{"x.toml"},
-		Extensions: []string{".x"},
-		Imports:    []Surface{{Keyword: "use", Capture: CaptureString}},
-		Resolve:    Resolve{Mode: ModeNameIndex},
-	}
-	root := setupProject(t, map[string]string{"x.toml": "", "a.x": "use \"y\"\n"})
-	_, err := (&Loader{Spec: sp, Dir: root}).Load(context.Background())
-	if err == nil || !strings.Contains(err.Error(), "not yet supported") {
-		t.Errorf("name-index mode should error 'not yet supported', got %v", err)
-	}
-}
-
 // --- helpers ---
 
 func relDirsOf(g *core.Graph) []string {

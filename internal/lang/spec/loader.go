@@ -41,48 +41,110 @@ func (l *Loader) Load(_ context.Context, patterns ...string) (*core.Graph, error
 	switch l.Spec.Resolve.mode() {
 	case ModePath:
 		return l.loadPath(root, modPath, files)
+	case ModeNameIndex:
+		return l.loadNameIndex(root, modPath, files)
 	default:
-		// Name-index resolution (C#, Elm) lands in M5; path mode is the only
-		// resolver shipped so far.
-		return nil, fmt.Errorf("adapter %q: resolve.mode %q is not yet supported", l.Spec.Name, l.Spec.Resolve.mode())
+		return nil, fmt.Errorf("adapter %q: unknown resolve.mode %q", l.Spec.Name, l.Spec.Resolve.mode())
 	}
 }
 
-// loadPath builds the graph using path-mode resolution: each file's imports are
-// classified independently against the on-disk layout.
-func (l *Loader) loadPath(root, modPath string, files []string) (*core.Graph, error) {
-	rs := newResolver(l.Spec, root)
-	gb := newGraphBuilder()
-	dropSelf := l.Spec.Resolve.DropSelfEdges
+// scannedFile is one file's extraction plus the metadata every resolution mode
+// needs.
+type scannedFile struct {
+	relFile string
+	nodeDir string
+	fromDir string
+	isTest  bool
+	x       extraction
+}
 
+// scanFiles reads and scans every file once, so a two-pass resolution mode works
+// from a single extraction rather than re-reading source.
+func (l *Loader) scanFiles(root string, files []string) ([]scannedFile, error) {
+	out := make([]scannedFile, 0, len(files))
 	for _, abs := range files {
 		relFile, err := filepath.Rel(root, abs)
 		if err != nil {
 			return nil, fmt.Errorf("resolving %s relative to project root: %w", abs, err)
 		}
 		relFile = filepath.ToSlash(relFile)
-		nodeDir := relDirOf(root, filepath.Dir(abs))
-		fromDir := filepath.Dir(abs)
-		isTest := l.isTestFile(relFile)
-
 		data, err := os.ReadFile(abs)
 		if err != nil {
 			return nil, fmt.Errorf("reading %s: run depdog where its source files are readable: %w", relFile, err)
 		}
+		out = append(out, scannedFile{
+			relFile: relFile,
+			nodeDir: relDirOf(root, filepath.Dir(abs)),
+			fromDir: filepath.Dir(abs),
+			isTest:  l.isTestFile(relFile),
+			x:       extract(l.Spec, data),
+		})
+	}
+	return out, nil
+}
 
-		for _, r := range extract(l.Spec, data).imports {
-			c := rs.classify(r, fromDir)
+// loadPath builds the graph using path-mode resolution: each file's imports are
+// classified independently against the on-disk layout.
+func (l *Loader) loadPath(root, modPath string, files []string) (*core.Graph, error) {
+	scanned, err := l.scanFiles(root, files)
+	if err != nil {
+		return nil, err
+	}
+	rs := newResolver(l.Spec, root)
+	gb := newGraphBuilder()
+	dropSelf := l.Spec.Resolve.DropSelfEdges
+
+	for _, sf := range scanned {
+		for _, r := range sf.x.imports {
+			c := rs.classify(r, sf.fromDir)
 			if !c.ok {
 				continue
 			}
-			if dropSelf && c.class == core.ClassInModule && c.relDir == nodeDir {
+			if dropSelf && c.class == core.ClassInModule && c.relDir == sf.nodeDir {
 				continue // a self-edge carries no direction
 			}
-			gb.add(nodeDir, c, core.Position{File: relFile, Line: r.Line}, isTest)
+			gb.add(sf.nodeDir, c, core.Position{File: sf.relFile, Line: r.Line}, sf.isTest)
 		}
-		gb.touch(nodeDir) // a file with no imports still contributes its node
+		gb.touch(sf.nodeDir) // a file with no imports still contributes its node
+	}
+	return gb.graph(modPath), nil
+}
+
+// loadNameIndex builds the graph using name-index resolution (C#, Elm). A first
+// pass records every name a file declares via the provides surface — mapping a
+// declared name to the first (sorted) directory that declares it — and a second
+// pass classifies each import against that index.
+func (l *Loader) loadNameIndex(root, modPath string, files []string) (*core.Graph, error) {
+	scanned, err := l.scanFiles(root, files)
+	if err != nil {
+		return nil, err
+	}
+	declared := make(map[string]string)
+	for _, sf := range scanned {
+		for _, p := range sf.x.provides {
+			if _, seen := declared[p.Specifier]; !seen {
+				declared[p.Specifier] = sf.nodeDir
+			}
+		}
 	}
 
+	stdSet := sliceSet(l.Spec.Stdlib.Modules)
+	gb := newGraphBuilder()
+	dropSelf := l.Spec.Resolve.DropSelfEdges
+
+	for _, sf := range scanned {
+		for _, r := range sf.x.imports {
+			c := classifyNameIndex(l.Spec, stdSet, r, declared)
+			if !c.ok {
+				continue
+			}
+			if dropSelf && c.class == core.ClassInModule && c.relDir == sf.nodeDir {
+				continue // a self-edge carries no direction
+			}
+			gb.add(sf.nodeDir, c, core.Position{File: sf.relFile, Line: r.Line}, sf.isTest)
+		}
+		gb.touch(sf.nodeDir)
+	}
 	return gb.graph(modPath), nil
 }
 

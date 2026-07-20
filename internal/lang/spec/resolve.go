@@ -127,20 +127,27 @@ func (rs *resolver) resolveFile(target string) (dir string, ok bool) {
 	return "", false
 }
 
-// isStd reports whether a specifier is standard-library. It matches the whole
-// specifier, then (Match=head) the head segment before the first separator (Ruby
-// net/http -> net), then any configured namespace prefix (C# System -> System.Text).
+// isStd reports whether a specifier is standard-library, using the resolver's
+// precomputed table.
 func (rs *resolver) isStd(specifier string) bool {
-	if rs.stdSet[specifier] {
+	return matchStd(&rs.spec.Stdlib, rs.stdSet, specifier)
+}
+
+// matchStd reports whether a specifier is standard-library per a Stdlib config
+// and its precomputed module set. It matches the whole specifier, then
+// (Match=head) the head segment before the first separator (Ruby net/http ->
+// net), then any configured namespace prefix (C# System -> System.Text). Shared
+// by both resolution modes.
+func matchStd(st *Stdlib, set map[string]bool, specifier string) bool {
+	if set[specifier] {
 		return true
 	}
-	st := &rs.spec.Stdlib
 	if st.Match == MatchHead && st.Separator != "" {
 		head := specifier
 		if i := strings.Index(specifier, st.Separator); i >= 0 {
 			head = specifier[:i]
 		}
-		if rs.stdSet[head] {
+		if set[head] {
 			return true
 		}
 	}
@@ -150,6 +157,22 @@ func (rs *resolver) isStd(specifier string) bool {
 		}
 	}
 	return false
+}
+
+// classifyNameIndex buckets one ref in the name-index family (C#, Elm): the
+// specifier is a declared name matched against the set of names the project's
+// files declare (via the provides surface). An exactly-declared name is
+// in-module (pointing at the first — sorted — directory that declares it); else
+// stdlib; else external.
+func classifyNameIndex(sp *Spec, stdSet map[string]bool, r ref, declared map[string]string) classified {
+	display := r.Specifier
+	if dir, found := declared[r.Specifier]; found {
+		return classified{core.ClassInModule, dir, display, true}
+	}
+	if matchStd(&sp.Stdlib, stdSet, r.Specifier) {
+		return classified{core.ClassStd, "", display, true}
+	}
+	return classified{core.ClassExternal, "", display, true}
 }
 
 // specToPath maps a specifier written with the spec's separator to a

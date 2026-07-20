@@ -1,0 +1,56 @@
+# C# expressed as a declarative adapter spec — the M5 end-to-end proof that a real
+# new language ships purely via a spec (no C#-specific Go). C# resolves by
+# NAMESPACE, not by file path: `using System.Text;` imports a namespace, and an
+# import is in-module when some project file DECLARES that namespace via
+# `namespace Foo.Bar`. Hence resolve.mode=name-index fed by the `provides` surface.
+name: cs
+markers: ["*.csproj", "*.sln", Directory.Build.props, global.json]
+extensions: [".cs"]
+skipDirs: [bin, obj, packages, node_modules]
+
+comments:
+  line: ["//"]
+  block:
+    - { open: "/*", close: "*/" } # C# block comments do NOT nest
+
+strings:
+  # Order matters: more specific openers first (the lexer tries forms in order).
+  - { kind: raw-run, quote: "\"", minRun: 3 }                            # C# 11 raw strings """ ... """
+  - { open: "$@\"", close: "\"", quoteDoubling: true, multiline: true }  # interpolated verbatim
+  - { open: "@$\"", close: "\"", quoteDoubling: true, multiline: true }  # interpolated verbatim (other order)
+  - { open: "@\"",  close: "\"", quoteDoubling: true, multiline: true }  # verbatim: "" is a literal quote
+  - { open: "$\"",  escape: "\\" }                                       # interpolated
+  - { open: "\"",   escape: "\\" }                                       # normal
+  - { kind: char, open: "'", escape: "\\" }                              # char literal
+
+imports:
+  # `using System.Text;` / `global using System;` / `using static System.Math;`
+  # / `using Alias = System.Bar;`. strictTerminator keeps using *statements*
+  # (`using (res)`, `using var x = e`) from being read as directives.
+  - keyword: using
+    capture: path-token
+    separator: "."
+    terminator: semicolon
+    prefixKeywords: [global]
+    skipKeywords: [static]
+    alias: "="
+    strictTerminator: true
+    kind: plain
+
+provides:
+  # `namespace Foo.Bar { ... }` (block) or `namespace Foo.Bar;` (file-scoped).
+  keyword: namespace
+  capture: path-token
+  separator: "."
+  terminator: brace
+
+resolve:
+  mode: name-index
+
+stdlib:
+  # The BCL lives under the System namespace. Microsoft.* is mostly NuGet
+  # (external) these days, so it is deliberately NOT treated as std.
+  prefixes: [System]
+
+module:
+  label: dir-basename

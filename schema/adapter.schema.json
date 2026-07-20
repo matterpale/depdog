@@ -105,7 +105,20 @@
           "prefixKeywords": {
             "type": "array",
             "items": { "type": "string" },
-            "description": "Optional modifier words allowed between... e.g. C# \"global\"/\"static\" before/after \"using\"."
+            "description": "Modifier words that may appear immediately BEFORE the keyword (C# `global using`). The surface still matches when the current word is one of these and the keyword follows."
+          },
+          "skipKeywords": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "Modifier words that may appear immediately AFTER the keyword and are skipped before the specifier (C# `using static X`)."
+          },
+          "alias": {
+            "type": "string",
+            "description": "path-token: a separator token (e.g. \"=\"). When it follows the first token, the specifier captured is the token AFTER it (C# `using X = Y` depends on Y)."
+          },
+          "strictTerminator": {
+            "type": "boolean",
+            "description": "path-token: reject the match unless the captured token is immediately followed by the terminator, so a using *statement* (`using (res)`, `using var x = e`) is not read as a directive."
           }
         }
       }

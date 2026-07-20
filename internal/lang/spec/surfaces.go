@@ -59,24 +59,38 @@ func (e *extractor) onWord(l *lexer) bool {
 		return e.matchProvides(l, p, word)
 	}
 	for i := range e.spec.Imports {
-		if surf := &e.spec.Imports[i]; word == surf.Keyword {
-			return e.matchImport(l, surf, word)
+		surf := &e.spec.Imports[i]
+		switch {
+		case word == surf.Keyword:
+			line := l.line
+			l.pos += len(word)
+			e.consumeImport(l, surf, line)
+			return true
+		case len(surf.PrefixKeywords) > 0 && contains(surf.PrefixKeywords, word):
+			// A modifier such as `global` may precede the keyword (`global using X`).
+			line := l.line
+			save := l.pos
+			l.pos += len(word)
+			l.skipInlineSpace()
+			if l.peekWord() == surf.Keyword {
+				l.pos += len(surf.Keyword)
+				e.consumeImport(l, surf, line)
+				return true
+			}
+			l.pos = save
 		}
 	}
 	return false
 }
 
-// matchImport consumes an import surface whose keyword matched. Like the
-// hand-written scanners, it returns true (the keyword is consumed) even when no
-// specifier is captured — a dynamic argument such as `require File.join(...)` is
-// correctly ignored, not re-interpreted.
-func (e *extractor) matchImport(l *lexer, surf *Surface, word string) bool {
-	line := l.line
-	l.pos += len(word)
+// consumeImport reads and records an import surface whose keyword was just
+// consumed. Like the hand-written scanners it always consumes the keyword (the
+// caller returns true) even when no specifier is captured — a dynamic argument
+// such as `require File.join(...)` is ignored, not re-interpreted.
+func (e *extractor) consumeImport(l *lexer, surf *Surface, line int) {
 	if spec, ok := e.capture(l, surf); ok {
 		e.imports = append(e.imports, ref{Specifier: spec, Kind: surf.kindOf(), Line: line})
 	}
-	return true
 }
 
 // matchProvides consumes a declaration surface (namespace Foo.Bar), recording the
@@ -100,13 +114,70 @@ func (e *extractor) capture(l *lexer, surf *Surface) (string, bool) {
 	case CaptureSkipToString:
 		return e.captureSkipToString(l, surf.SkipTo)
 	case CapturePathToken:
-		spec, ok := e.capturePathToken(l, surf.Separator)
-		if ok {
-			l.skipToTerminator(surf.Terminator)
-		}
-		return spec, ok
+		return e.capturePath(l, surf)
 	}
 	return "", false
+}
+
+// capturePath reads a path-token specifier with the optional modifiers a
+// directive keyword may carry:
+//
+//   - SkipKeywords after the keyword (C# `using static X` skips `static`);
+//   - an Alias whose right-hand side is the real dependency (C# `using X = Y`
+//     depends on Y);
+//   - StrictTerminator, which rejects the match unless the captured token is
+//     immediately followed by the terminator, so a using *statement*
+//     (`using (res)`, `using var x = e`) is not read as a directive.
+//
+// It always consumes to the terminator so the statement tail is not re-scanned.
+func (e *extractor) capturePath(l *lexer, surf *Surface) (string, bool) {
+	l.skipInlineSpace()
+	for len(surf.SkipKeywords) > 0 {
+		w := l.peekWord()
+		if w == "" || !contains(surf.SkipKeywords, w) {
+			break
+		}
+		l.pos += len(w)
+		l.skipInlineSpace()
+	}
+
+	tok, ok := e.capturePathToken(l, surf.Separator)
+	if !ok {
+		// No path token (e.g. `using (` — a using statement). Consume nothing more
+		// so run() rescans the tail normally rather than over-running to a distant ';'.
+		return "", false
+	}
+	if surf.Alias != "" {
+		l.skipInlineSpace()
+		if l.has(surf.Alias) {
+			l.pos += len(surf.Alias)
+			rhs, ok2 := e.capturePathToken(l, surf.Separator)
+			if !ok2 {
+				return "", false
+			}
+			tok = rhs
+		}
+	}
+	if surf.StrictTerminator {
+		l.skipInlineSpace()
+		if !l.atTerminator(surf.Terminator) {
+			// Not a directive (`using var x = e`, `using T v = e`); leave the tail
+			// for run() rather than over-running to the terminator.
+			return "", false
+		}
+	}
+	l.skipToTerminator(surf.Terminator)
+	return tok, true
+}
+
+// contains reports whether xs holds x.
+func contains(xs []string, x string) bool {
+	for _, s := range xs {
+		if s == x {
+			return true
+		}
+	}
+	return false
 }
 
 // captureString reads `[(] "arg"` — an optional opening paren then a single
@@ -250,6 +321,22 @@ func (l *lexer) skipToTerminator(t Terminator) {
 		for l.pos < len(l.src) && l.src[l.pos] != '\n' {
 			l.pos++
 		}
+	}
+}
+
+// atTerminator reports whether pos sits at the surface's terminator (used by the
+// strict-terminator guard). EOF counts as a terminator.
+func (l *lexer) atTerminator(t Terminator) bool {
+	if l.pos >= len(l.src) {
+		return true
+	}
+	switch t {
+	case TermSemicolon:
+		return l.src[l.pos] == ';'
+	case TermBrace:
+		return l.src[l.pos] == '{' || l.src[l.pos] == ';'
+	default:
+		return l.src[l.pos] == '\n'
 	}
 }
 

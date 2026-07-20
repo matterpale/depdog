@@ -112,9 +112,21 @@ type Surface struct {
 	// SkipTo is the delimiter skipped before reading a string for
 	// CaptureSkipToString (Ruby autoload's ",").
 	SkipTo string `yaml:"skipTo"`
-	// PrefixKeywords are optional modifier words allowed with the keyword
-	// (C# "global"/"static" with "using").
+	// PrefixKeywords are optional modifier words that may appear immediately
+	// before the keyword (C# `global using`). When the current word is one of
+	// these and the keyword follows, the surface still matches.
 	PrefixKeywords []string `yaml:"prefixKeywords"`
+	// SkipKeywords are optional modifier words that may appear immediately after
+	// the keyword and are skipped before the specifier (C# `using static X`).
+	SkipKeywords []string `yaml:"skipKeywords"`
+	// Alias is a separator token (e.g. "=") for CapturePathToken: when it follows
+	// the first token, the specifier is the token AFTER it (C# `using X = Y`
+	// depends on Y, the alias target).
+	Alias string `yaml:"alias"`
+	// StrictTerminator, for CapturePathToken, rejects the match unless the
+	// captured token is immediately followed by the terminator — so a C# using
+	// *statement* (`using (res)`, `using var x = e`) is not read as a directive.
+	StrictTerminator bool `yaml:"strictTerminator"`
 }
 
 // Capture is how a surface reads its specifier.
@@ -320,18 +332,25 @@ func (sf *StringForm) validate(name string, i int) error {
 	default:
 		return fmt.Errorf("adapter spec %q: strings[%d].kind = %q is not one of quoted, char, raw-hash, raw-run", name, i, sf.Kind)
 	}
-	if sf.Open == "" {
-		return fmt.Errorf("adapter spec %q: strings[%d].open is required", name, i)
-	}
-	if sf.Kind == KindRawHash && (sf.Hash == "" || sf.Quote == "") {
-		return fmt.Errorf("adapter spec %q: strings[%d] kind=raw-hash needs `hash` and `quote`", name, i)
-	}
-	if sf.Kind == KindRawRun {
+	switch sf.kind() {
+	case KindRawRun:
+		// A raw-run opens on a run of Quote (C# """), so it needs no Open prefix.
 		if sf.Quote == "" {
 			return fmt.Errorf("adapter spec %q: strings[%d] kind=raw-run needs `quote`", name, i)
 		}
 		if sf.MinRun < 1 {
 			return fmt.Errorf("adapter spec %q: strings[%d] kind=raw-run needs minRun >= 1", name, i)
+		}
+	case KindRawHash:
+		if sf.Open == "" {
+			return fmt.Errorf("adapter spec %q: strings[%d].open (the raw-string prefix) is required", name, i)
+		}
+		if sf.Hash == "" || sf.Quote == "" {
+			return fmt.Errorf("adapter spec %q: strings[%d] kind=raw-hash needs `hash` and `quote`", name, i)
+		}
+	default: // KindQuoted, KindChar
+		if sf.Open == "" {
+			return fmt.Errorf("adapter spec %q: strings[%d].open is required", name, i)
 		}
 	}
 	return nil
