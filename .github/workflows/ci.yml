@@ -42,6 +42,12 @@ jobs:
           go-version-file: go.mod
       - uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9.3.0
         with:
-          # Pin the linter version so CI matches the v2-schema .golangci.yml (and
-          # the local toolchain) rather than drifting with the action's default.
+          # Match the local toolchain (v2.1.6) exactly. install-mode: goinstall
+          # builds golangci-lint from source with the runner's Go (1.26.2, via
+          # setup-go from go.mod) instead of downloading the prebuilt release
+          # binary — the prebuilt v2.1.6 was built with Go 1.24 and refuses to lint
+          # a module targeting a newer Go ("the Go language version used to build
+          # golangci-lint is lower than the targeted Go version"). Building it here
+          # keeps CI identical to `golangci-lint run` locally.
           version: v2.1.6
+          install-mode: goinstall
