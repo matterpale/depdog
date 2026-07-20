@@ -96,10 +96,18 @@ func ExplainEdge(w io.Writer, from, to string, rs *core.RuleSet, views []core.Pa
 		if isModule {
 			imp = to
 		}
-		b.WriteString("  " + explainEdgeProse(rs, core.Violation{
+		v := core.Violation{
 			FromPackage: pv.ImportPath, FromComponent: pv.Component,
 			ImportPath: imp, Target: target,
-		}) + "\n")
+		}
+		// When the module-wide deny list is what denied the edge, tag the prose so
+		// it explains the global ban rather than mis-attributing it to the
+		// component's own rule (the verdict line above already named the global
+		// deny, via Decide/DecideModule).
+		if _, gok := rs.GloballyDenied(target, isModule, to); gok {
+			v.Reason = core.ReasonGlobalDeny
+		}
+		b.WriteString("  " + explainEdgeProse(rs, v) + "\n")
 	}
 	_, werr := io.WriteString(w, b.String())
 	return werr

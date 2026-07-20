@@ -161,6 +161,36 @@ func TestCheckExternalModuleDeny(t *testing.T) {
 	golden(t, "extdeny_text.golden", reTextDur.ReplaceAllString(out, "checked in X"))
 }
 
+// TestCheckGlobalDeny exercises the module-wide top-level `deny`: two
+// independently-ruled components (api, web) each allow any external module, yet
+// the banned example.test/extlib is flagged in BOTH — the case a component-level
+// deny or a `path: "**"` catch-all cannot cover. The permitted example.test/goodlib
+// passes, so the ban is targeted rather than a blanket external block.
+func TestCheckGlobalDeny(t *testing.T) {
+	out, _, exit := run(t, fixture("extdeny-global"), "check")
+	if exit != 1 {
+		t.Fatalf("exit %d, want 1\n%s", exit, out)
+	}
+	if strings.Count(out, "example.test/extlib") < 2 {
+		t.Errorf("extlib should be flagged in both api and web:\n%s", out)
+	}
+	if strings.Contains(out, "example.test/goodlib") {
+		t.Errorf("permitted module example.test/goodlib must not be flagged:\n%s", out)
+	}
+	golden(t, "extdeny_global_text.golden", reTextDur.ReplaceAllString(out, "checked in X"))
+}
+
+// TestExplainGlobalDeny locks in that `explain` reports a globally-denied edge
+// through the same Decide path check uses: the verdict names the global deny and
+// the prose points at the top-level list, not the component's own rule.
+func TestExplainGlobalDeny(t *testing.T) {
+	out, stderr, exit := run(t, fixture("extdeny-global"), "explain", "internal/api", "example.test/extlib")
+	if exit != 0 {
+		t.Fatalf("exit %d\nstderr:\n%s", exit, stderr)
+	}
+	golden(t, "extdeny_global_explain.golden", out)
+}
+
 func TestCheckBadFormat(t *testing.T) {
 	_, stderr, exit := run(t, fixture("dirty"), "check", "--format", "toml")
 	if exit != 2 {

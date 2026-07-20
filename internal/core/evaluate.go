@@ -15,6 +15,7 @@ const (
 	ReasonRule           ReasonKind = ""                // ordinary component allow/deny/stance
 	ReasonBoundary       ReasonKind = "boundary"        // a cross-member boundary crossing
 	ReasonBoundarySealed ReasonKind = "boundary-sealed" // ungrouped source → in-member target under sealed
+	ReasonGlobalDeny     ReasonKind = "global-deny"     // module-wide top-level deny — bans a dependency everywhere
 )
 
 // Violation is one import edge that breaks a rule.
@@ -210,6 +211,23 @@ func Evaluate(g *Graph, rs *RuleSet) (*Result, error) {
 				if targetComp, err = assign(imp.RelDir); err != nil {
 					return nil, err
 				}
+			}
+
+			// Global deny is an absolute, module-wide ban: it applies to every
+			// source (component-assigned or not), ignores the test_files relaxation,
+			// and wins over component allow and boundary rules, so a banned
+			// dependency can never appear anywhere in the graph — tests included. An
+			// import within the source's own component is not a "dependency on" that
+			// component, so it is exempt (mirroring the within-component rule below).
+			withinComponent := imp.Class == ClassInModule && targetComp == comp
+			if len(rs.GlobalDeny) > 0 && !withinComponent && matchAny(rs.GlobalDeny, imp, targetComp) {
+				v := violation(p, comp, imp, targetComp, globalDenyText(rs.GlobalDeny), SeverityError)
+				v.Reason = ReasonGlobalDeny
+				res.Violations = append(res.Violations, v)
+				if cs != nil {
+					cs.Violations++
+				}
+				continue
 			}
 
 			// The boundary gate runs for every source (component-assigned or

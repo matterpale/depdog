@@ -39,6 +39,42 @@ under `default: allow` (the default) a rule-less component may import anything
 `default: deny` to make unruled components fail closed (`init` asks which
 stance you want).
 
+## Module-wide `deny` — a project-level ban
+
+A **top-level** `deny` (a sibling of `components`, not nested inside one) bans a
+dependency across the *entire* module, regardless of which component a package
+belongs to:
+
+```yaml
+version: 2
+deny: [ github.com/evil/pkg ]     # no package anywhere may import this
+components:
+  api: { path: "internal/api/**", allow: [ external, std ] }
+  web: { path: "internal/web/**", allow: [ external, std ] }
+```
+
+It takes the same entries as a component list (an external-module prefix is the
+common one; component and group names work too) and is the right tool for a
+security or license ban that must hold everywhere — `api` and `web` above may
+import any *other* external module, but never `github.com/evil/pkg`.
+
+Why not just a component `deny`, or a `path: "**"` catch-all component? Because
+each package is owned by exactly **one** component (the most specific path
+pattern wins), and a rule only governs its owner's packages. A `**` catch-all is
+the *least* specific pattern, so it only owns the packages no real component
+claims — it never sees the imports made from inside `api` or `web`. A component
+`deny` works but must be repeated on every component that allows external and
+re-added each time you add one. The top-level `deny` states the ban once and
+applies it to all.
+
+Precedence: a global `deny` is absolute. It **wins over any component `allow`**,
+applies even to test-only imports (a banned dependency must not appear anywhere,
+`options.test_files` notwithstanding), and covers packages no component claims.
+An import *within* a package's own component is never treated as a dependency on
+that component, so it is exempt. `depdog check` reports a global-deny violation
+under a `global deny [...]` heading, and `depdog explain <pkg> <module>` names it
+as the deciding rule.
+
 ## Severity — warn vs error
 
 A component or a boundary can carry a `severity`:

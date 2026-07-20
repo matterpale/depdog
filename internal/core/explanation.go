@@ -34,6 +34,10 @@ type Explain struct {
 	Allow []Ref
 	Deny  []Ref
 
+	// GlobalDeny is the module-wide deny list, set only for the ReasonGlobalDeny
+	// kind, so the prose can name the banned ref the top-level `deny` list carries.
+	GlobalDeny []Ref
+
 	// Stance is the source component's inferred fallback: PolicyDeny =
 	// whitelist (only listed imports pass), PolicyAllow = blacklist (everything
 	// passes except what is listed). It disambiguates the ReasonRule phrasings.
@@ -87,6 +91,9 @@ func ExplainViolation(v Violation, rs *RuleSet) Explain {
 	if v.Reason == ReasonBoundary || v.Reason == ReasonBoundarySealed {
 		e.Peers = rs.boundaryPeers(v.Boundary)
 	}
+	if v.Reason == ReasonGlobalDeny {
+		e.GlobalDeny = rs.GlobalDeny
+	}
 	return e
 }
 
@@ -130,9 +137,23 @@ func Explanation(e Explain) string {
 		return crossUnitBoundarySealedExplanation(e)
 	case ReasonCrossUnitSurface:
 		return crossUnitSurfaceExplanation(e)
+	case ReasonGlobalDeny:
+		return globalDenyExplanation(e)
 	default:
 		return ruleExplanation(e)
 	}
+}
+
+// globalDenyExplanation phrases a module-wide ban: the destination is denied
+// everywhere by the top-level `deny` list, regardless of the source component's
+// own allow rule, so the fix is to drop the import or lift the ban — never to
+// edit the component's allow list (which cannot override a global deny).
+func globalDenyExplanation(e Explain) string {
+	ref := e.globallyDeniedBy()
+	return fmt.Sprintf(
+		"`%s` is denied everywhere by the top-level `deny` list (which names `%s`), so no package — including `%s` (component `%s`) — may import it. "+
+			"Fix: drop the import, or remove `%s` from the top-level `deny` list if the dependency is intended (a component allow list cannot override a global deny).",
+		e.To, ref, e.From, e.FromComponent, ref)
 }
 
 // ruleExplanation phrases an ordinary component allow/deny/stance denial,
@@ -301,6 +322,22 @@ func (e Explain) deniedBy() (string, bool) {
 		}
 	}
 	return "", false
+}
+
+// globallyDeniedBy names the module-wide deny entry that covers this edge's
+// destination, so a global-deny explanation can point at the concrete ref. It
+// falls back to the first entry (and finally a generic phrase) so the prose
+// always names something even if the covering ref cannot be pinpointed.
+func (e Explain) globallyDeniedBy() string {
+	for _, r := range e.GlobalDeny {
+		if e.refCoversTarget(r) {
+			return e.denyRefName(r)
+		}
+	}
+	if len(e.GlobalDeny) > 0 {
+		return e.denyRefName(e.GlobalDeny[0])
+	}
+	return e.targetRef()
 }
 
 // refCoversTarget reports whether ref r covers this edge's destination, given

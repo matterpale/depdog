@@ -294,13 +294,28 @@ func verdictFor(rs *core.RuleSet, fromRelDir string, imp core.Import) (edgeVerdi
 		}
 	}
 
+	var (
+		target   = v.Target
+		isModule bool
+	)
 	switch imp.Class {
 	case core.ClassStd:
-		v.Allowed, v.Reason = rs.Decide(comp, "std")
+		target = "std"
 	case core.ClassExternal:
-		v.Allowed, v.Reason = rs.DecideModule(comp, imp.Path)
-	default:
-		v.Allowed, v.Reason = rs.Decide(comp, v.Target)
+		target, isModule = imp.Path, true
+	}
+	if isModule {
+		v.Allowed, v.Reason = rs.DecideModule(comp, target)
+	} else {
+		v.Allowed, v.Reason = rs.Decide(comp, target)
+	}
+	// A module-wide deny is decided before the component rule (as check does), so
+	// tag the kind — otherwise the hover prose would mis-explain it as a component
+	// rule denial rather than the global ban.
+	if !v.Allowed {
+		if _, gok := rs.GloballyDenied(target, isModule, target); gok {
+			v.Kind = core.ReasonGlobalDeny
+		}
 	}
 	return v, nil
 }

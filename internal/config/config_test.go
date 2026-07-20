@@ -171,6 +171,48 @@ func TestParseExternalModuleRef(t *testing.T) {
 	}
 }
 
+func TestParseGlobalDeny(t *testing.T) {
+	// A top-level deny compiles into RuleSet.GlobalDeny using the same ref
+	// vocabulary as a component rule: a module path becomes an external-module
+	// ref, a component name a component ref.
+	rs, err := Parse([]byte("version: 2\ncomponents: {a: {path: \"x/**\", allow: [external]}}\ndeny: [\"github.com/evil/pkg\", a]\ndefault: deny\n"))
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	if len(rs.GlobalDeny) != 2 {
+		t.Fatalf("GlobalDeny = %+v, want 2 refs", rs.GlobalDeny)
+	}
+	if rs.GlobalDeny[0].Kind != core.RefExternalModule || rs.GlobalDeny[0].Name != "github.com/evil/pkg" {
+		t.Errorf("first global-deny ref = %+v, want external-module github.com/evil/pkg", rs.GlobalDeny[0])
+	}
+	if rs.GlobalDeny[1].Kind != core.RefComponent || rs.GlobalDeny[1].Name != "a" {
+		t.Errorf("second global-deny ref = %+v, want component a", rs.GlobalDeny[1])
+	}
+}
+
+func TestParseGlobalDenyAbsent(t *testing.T) {
+	// No top-level deny means no module-wide ban.
+	rs, err := Parse([]byte("version: 2\ncomponents: {a: {path: \"x/**\"}}\ndefault: deny\n"))
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	if len(rs.GlobalDeny) != 0 {
+		t.Errorf("GlobalDeny = %+v, want empty", rs.GlobalDeny)
+	}
+}
+
+func TestParseGlobalDenyUnknownRef(t *testing.T) {
+	// A bare word that is neither a known component/group nor a module path is an
+	// error, and the message names the top-level deny (not a phantom component).
+	_, err := Parse([]byte("version: 2\ncomponents: {a: {path: \"x/**\"}}\ndeny: [nope]\ndefault: deny\n"))
+	if err == nil {
+		t.Fatal("expected an error for an unresolvable top-level deny ref")
+	}
+	if !strings.Contains(err.Error(), "top-level deny") {
+		t.Errorf("error should name the top-level deny: %v", err)
+	}
+}
+
 func TestParseScalarPattern(t *testing.T) {
 	// path accepts a bare scalar as well as a list.
 	rs, err := Parse([]byte("version: 2\ncomponents:\n  main: { path: cmd/** }\ndefault: deny\n"))

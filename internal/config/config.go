@@ -30,7 +30,12 @@ type file struct {
 	Groups     map[string]stringList    `yaml:"groups"`
 	Boundaries map[string]boundaryYAML  `yaml:"boundaries"`
 	Default    string                   `yaml:"default"`
-	Options    optionsYAML              `yaml:"options"`
+	// Deny is the module-wide deny list: refs (typically external-module prefixes)
+	// that no package anywhere may import, regardless of its component. It is a
+	// hard, global ban that wins over any component allow — for security/license
+	// bans that must hold across the whole project, not one layer.
+	Deny    []string    `yaml:"deny"`
+	Options optionsYAML `yaml:"options"`
 }
 
 // componentYAML is one entry of the merged components block: the patterns a
@@ -263,11 +268,12 @@ func Parse(data []byte) (*core.RuleSet, error) {
 
 	for _, name := range names {
 		c := f.Components[name]
-		allow, err := parseRefs(name, c.Allow, known, groups)
+		subject := fmt.Sprintf("component %q", name)
+		allow, err := parseRefs(subject, c.Allow, known, groups)
 		if err != nil {
 			return nil, err
 		}
-		deny, err := parseRefs(name, c.Deny, known, groups)
+		deny, err := parseRefs(subject, c.Deny, known, groups)
 		if err != nil {
 			return nil, err
 		}
@@ -275,6 +281,14 @@ func Parse(data []byte) (*core.RuleSet, error) {
 			rs.Rules[name] = core.Rule{Allow: allow, Deny: deny}
 		}
 	}
+
+	// The top-level deny is the module-wide ban. It uses the same ref vocabulary
+	// as a component rule but belongs to no component, so it is parsed once here.
+	globalDeny, err := parseRefs("top-level deny", f.Deny, known, groups)
+	if err != nil {
+		return nil, err
+	}
+	rs.GlobalDeny = globalDeny
 
 	boundaries, err := parseBoundaries(f.Boundaries, known, names, rs.Components)
 	if err != nil {
@@ -418,7 +432,11 @@ func parseBoundaries(raw map[string]boundaryYAML, known map[string]bool, compone
 	return boundaries, nil
 }
 
-func parseRefs(comp string, entries []string, known map[string]bool, groups map[string][]string) ([]core.Ref, error) {
+// parseRefs compiles a list of allow/deny entries into refs. subject is the
+// already-formatted owner named in error messages (e.g. `component "api"` or
+// `top-level deny`), so the same routine serves both component rules and the
+// module-wide deny list.
+func parseRefs(subject string, entries []string, known map[string]bool, groups map[string][]string) ([]core.Ref, error) {
 	refs := make([]core.Ref, 0, len(entries))
 	for _, e := range entries {
 		switch e {
@@ -447,7 +465,7 @@ func parseRefs(comp string, entries []string, known map[string]bool, groups map[
 				refs = append(refs, core.Ref{Kind: core.RefExternalModule, Name: e})
 				continue
 			}
-			return nil, fmt.Errorf("component %q refers to unknown component or group %q", comp, e)
+			return nil, fmt.Errorf("%s refers to unknown component or group %q", subject, e)
 		}
 	}
 	return refs, nil
