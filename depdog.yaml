@@ -22,7 +22,7 @@ components:
   lsp:    { path: "internal/lsp/**",         allow: [core, std] } # hand-rolled JSON-RPC: stdlib only, like core
   mcp:    { path: "internal/mcp/**",         allow: [core, std] } # hand-rolled JSON-RPC: stdlib only, like lsp
   tui:    { path: "internal/tui/**",         allow: [core, std, external] } # bubbletea view over core
-  cli:    { path: "internal/cli/**",         allow: [core, config, lang, golang, typescript, python, ruby, rust, java, kotlin, scala, elm, report, wizard, lsp, mcp, tui, std, external] }
+  cli:    { path: "internal/cli/**",         allow: [core, config, lang, golang, typescript, python, ruby, rust, java, kotlin, scala, elm, spec, report, wizard, lsp, mcp, tui, std, external] }
   e2e:    { path: "internal/e2e/**",         allow: [std] }
 
 default: deny

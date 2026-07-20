@@ -1,0 +1,7 @@
+depdog check — cs-dirty
+
+✗ services: allow [domain, std]  (1 violation)
+    cs-dirty/Services
+      → Newtonsoft.Json  Services/OrderService.cs:5
+
+1 violation · 2 packages · 4 edges checked in X

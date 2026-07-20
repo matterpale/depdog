@@ -2,7 +2,6 @@ package spec
 
 import (
 	"context"
-	"os"
 	"path/filepath"
 	"reflect"
 	"testing"
@@ -10,17 +9,45 @@ import (
 	"github.com/matterpale/depdog/internal/core"
 )
 
+// csharpSpec returns the SHIPPED (embedded) C# spec, so the tests exercise what
+// depdog actually registers.
 func csharpSpec(t *testing.T) *Spec {
 	t.Helper()
-	data, err := os.ReadFile(filepath.Join("testdata", "csharp.yaml"))
+	bs, err := Builtins()
 	if err != nil {
-		t.Fatalf("reading csharp.yaml: %v", err)
+		t.Fatalf("Builtins: %v", err)
 	}
-	sp, err := Load(data)
+	for _, sp := range bs {
+		if sp.Name == "cs" {
+			return sp
+		}
+	}
+	t.Fatal("built-in adapter \"cs\" not found")
+	return nil
+}
+
+func TestBuiltinsLoadAndValidate(t *testing.T) {
+	bs, err := Builtins()
 	if err != nil {
-		t.Fatalf("Load(csharp.yaml): %v", err)
+		t.Fatalf("Builtins: %v", err)
 	}
-	return sp
+	if len(bs) == 0 {
+		t.Fatal("no built-in specs embedded")
+	}
+	// Every built-in must be a validated, named spec (Load validates).
+	names := map[string]bool{}
+	for _, sp := range bs {
+		if sp.Name == "" {
+			t.Errorf("built-in spec has no name")
+		}
+		if names[sp.Name] {
+			t.Errorf("duplicate built-in name %q", sp.Name)
+		}
+		names[sp.Name] = true
+	}
+	if !names["cs"] {
+		t.Errorf("expected a built-in \"cs\" adapter, got %v", names)
+	}
 }
 
 // TestCsharpLexerHidesUsings proves the C# string/comment forms — including

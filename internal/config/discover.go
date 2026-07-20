@@ -143,11 +143,35 @@ func relSlash(base, target string) (string, error) {
 // hasAnyMarker reports whether dir directly contains any of the marker files.
 func hasAnyMarker(dir string, markerSet map[string]bool) bool {
 	for m := range markerSet {
-		if exists(filepath.Join(dir, m)) {
+		if MarkerMatch(dir, m) {
 			return true
 		}
 	}
 	return false
+}
+
+// MarkerMatch reports whether dir directly contains the marker: an exact file
+// when marker is a plain name (go.mod, Gemfile), or any non-directory entry
+// matching the glob when marker contains '*' (e.g. "*.csproj" for a declarative
+// C# adapter). Shared by the unit-discovery walk and the CLI adapter registry so
+// both agree on what a marker is.
+func MarkerMatch(dir, marker string) bool {
+	if strings.ContainsRune(marker, '*') {
+		entries, err := os.ReadDir(dir)
+		if err != nil {
+			return false
+		}
+		for _, e := range entries {
+			if e.IsDir() {
+				continue
+			}
+			if ok, _ := filepath.Match(marker, e.Name()); ok {
+				return true
+			}
+		}
+		return false
+	}
+	return exists(filepath.Join(dir, marker))
 }
 
 // disjointFromUnits reports whether the marker dir markerRel has no unit that

@@ -1,8 +1,11 @@
 # Language selection — auto-detection and the `--lang` override
 
-depdog checks nine languages through a pluggable adapter registry; the
+depdog checks many languages through a pluggable adapter registry; the
 [README](../README.md#multi-language-support) lists them and the marker files
-each is detected by. This page covers how depdog *chooses* an adapter for a run.
+each is detected by. Most are hand-written; some (e.g. C#) are **declarative**
+adapters defined by a YAML spec, and you can add your own — see
+[adapters.md](adapters.md). This page covers how depdog *chooses* an adapter for
+a run, which is identical for hand-written and declarative adapters.
 
 ## Auto-detection
 

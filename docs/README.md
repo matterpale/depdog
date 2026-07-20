@@ -12,6 +12,7 @@ topic.
 | [configuration.md](configuration.md)   | The complete `depdog.yaml` reference: component matching and precedence, the full `allow`/`deny` vocabulary, groups, the non-blocking signals, test-file handling |
 | [boundaries.md](boundaries.md)         | The orthogonal mutual-exclusion axis: members (components or path globs), the verdict table, `sealed` one-way walls |
 | [languages.md](languages.md)           | Adapter auto-detection from marker files, the `--lang` override, the `lang:` config key, two-language ambiguity |
+| [adapters.md](adapters.md)             | Add a language *declaratively* with a YAML spec (built-in or `.depdog/adapters/*.yaml`) — the engine, the two resolution families, the spec reference |
 | [monorepo.md](monorepo.md)             | The per-unit fan-out: `go.work` mode, `--all` polyglot discovery, `--unit`/`--module` narrowing, advisory skips |
 | [cross-language.md](cross-language.md) | `depdog.work.yaml`: governing dependency edges *between* units, across languages — units, rules, boundaries, surfaces |
 | [editors.md](editors.md)               | Wiring `depdog lsp` into Neovim, Helix, VS Code, Zed, GoLand/JetBrains, Emacs |

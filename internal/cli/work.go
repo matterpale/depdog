@@ -143,7 +143,7 @@ func adapterForWorkUnit(dir string, u *core.WorkUnit, cfgLang string) (lang.Adap
 		return a, nil
 	}
 	var matched []lang.Adapter
-	for _, a := range languages {
+	for _, a := range registry() {
 		if hasAnyMarker(dir, a.Markers) {
 			matched = append(matched, a)
 		}
