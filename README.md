@@ -252,6 +252,19 @@ The "before" graph is the ref materialized in a throwaway git worktree; both
 graphs are mapped to components under the *current* `depdog.yaml`, so the diff
 reflects structural movement, not a config change.
 
+### Trend your architecture over time
+
+Where `diff` shows a single PR's movement, `depdog trend --since <ref>` samples
+commits from a ref to HEAD and plots how the health metrics moved — so you catch
+architecture *drifting* before it becomes violations. Each sampled commit is
+scanned in a throwaway worktree under the *current* `depdog.yaml`, so the trend
+is about the code, not config churn.
+
+```bash
+depdog trend --since v1.0.0        # a table + first→last delta; --max caps the samples
+depdog trend --since v1.0.0 --format json | jq '.delta'
+```
+
 ## Commands
 
 | Command                                          | What it does                                                                                                                                       |
@@ -261,6 +274,7 @@ reflects structural movement, not a config change.
 | `depdog graph`                                   | Emit the dependency graph as DOT or Mermaid                                                                                                        |
 | `depdog diff --since <ref>`                      | Show how a change moved the architecture vs a git ref: cross-component edges added/removed, boundary crossings flagged (informational, exits `0`)   |
 | `depdog metrics`                                 | Report architecture-health numbers: per-component coupling (fan-in / fan-out) and instability, plus repo totals (edges, boundary crossings, cycles) — `text` or `json` (informational, exits `0`) |
+| `depdog trend --since <ref>`                     | Trend those metrics over git history (samples up to `--max` commits from a ref to HEAD) so drift shows up before it becomes violations — `text` or `json` (informational, exits `0`) |
 | `depdog explain <component-or-package> [import]` | Explain why something is red (rule/boundary that fired, with file:line), constraints, boundary membership etc.                                     |
 | `depdog config`                                  | Print the compiled rule set — components, patterns, inferred stances, boundaries, options — for debugging a config                                 |
 | `depdog lsp`                                     | LSP server over stdio: violations become inline editor diagnostics at their import lines ([editor setup](docs/editors.md) · [design](docs/lsp.md)) |

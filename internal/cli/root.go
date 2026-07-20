@@ -43,6 +43,7 @@ Run bare, depdog evaluates the check (like ` + "`depdog check`" + `) and exits
 	root.AddCommand(explainCmd())
 	root.AddCommand(diffCmd())
 	root.AddCommand(metricsCmd())
+	root.AddCommand(trendCmd())
 	root.AddCommand(lspCmd())
 	root.AddCommand(mcpCmd())
 	root.AddCommand(tuiCmd())
