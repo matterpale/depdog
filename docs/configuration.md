@@ -67,13 +67,17 @@ claims — it never sees the imports made from inside `api` or `web`. A componen
 re-added each time you add one. The top-level `deny` states the ban once and
 applies it to all.
 
-Precedence: a global `deny` is absolute. It **wins over any component `allow`**,
-applies even to test-only imports (a banned dependency must not appear anywhere,
+Precedence: a global `deny` **wins over any component `allow`**, applies even to
+test-only imports (a banned dependency must not appear anywhere,
 `options.test_files` notwithstanding), and covers packages no component claims.
 An import *within* a package's own component is never treated as a dependency on
-that component, so it is exempt. `depdog check` reports a global-deny violation
-under a `global deny [...]` heading, and `depdog explain <pkg> <module>` names it
-as the deciding rule.
+that component, so it is exempt. A global `deny` always fails the build (error
+severity) and takes no `severity` key — unlike a component or boundary, there is
+no `warn` global ban. When an edge both crosses a `boundary` and is globally
+denied (only possible for a component ref, since boundaries are in-module), the
+boundary is reported, matching what `explain` shows. `depdog check` reports a
+global-deny violation under a `global deny [...]` heading, and
+`depdog explain <pkg> <module>` names it as the deciding rule.
 
 ## Severity — warn vs error
 

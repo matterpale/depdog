@@ -213,23 +213,6 @@ func Evaluate(g *Graph, rs *RuleSet) (*Result, error) {
 				}
 			}
 
-			// Global deny is an absolute, module-wide ban: it applies to every
-			// source (component-assigned or not), ignores the test_files relaxation,
-			// and wins over component allow and boundary rules, so a banned
-			// dependency can never appear anywhere in the graph — tests included. An
-			// import within the source's own component is not a "dependency on" that
-			// component, so it is exempt (mirroring the within-component rule below).
-			withinComponent := imp.Class == ClassInModule && targetComp == comp
-			if len(rs.GlobalDeny) > 0 && !withinComponent && matchAny(rs.GlobalDeny, imp, targetComp) {
-				v := violation(p, comp, imp, targetComp, globalDenyText(rs.GlobalDeny), SeverityError)
-				v.Reason = ReasonGlobalDeny
-				res.Violations = append(res.Violations, v)
-				if cs != nil {
-					cs.Violations++
-				}
-				continue
-			}
-
 			// The boundary gate runs for every source (component-assigned or
 			// not), honouring the same test_files relaxation as component rules.
 			testExempt := false
@@ -254,12 +237,35 @@ func Evaluate(g *Graph, rs *RuleSet) (*Result, error) {
 				}
 			}
 
+			// An import within the source's own component is never a dependency on
+			// that component, so it is exempt from both the global deny and the
+			// component rules below. Only a real component is its own peer: two
+			// distinct unassigned packages (comp == targetComp == "") are not.
+			withinComponent := imp.Class == ClassInModule && comp != "" && targetComp == comp
+
+			// Global deny is a module-wide ban: it applies to every source
+			// (component-assigned or not), ignores the test_files relaxation, and
+			// wins over component allow and the default stance, so a banned
+			// dependency can never appear anywhere — tests included. It is checked
+			// after the boundary gate because a boundary crossing is also a hard
+			// deny and every explain surface reports boundary first; checking it
+			// here keeps `check` and `explain` in lock-step.
+			if len(rs.GlobalDeny) > 0 && !withinComponent && matchAny(rs.GlobalDeny, imp, targetComp) {
+				v := violation(p, comp, imp, targetComp, globalDenyText(rs.GlobalDeny), SeverityError)
+				v.Reason = ReasonGlobalDeny
+				res.Violations = append(res.Violations, v)
+				if cs != nil {
+					cs.Violations++
+				}
+				continue
+			}
+
 			// Component rules only apply to a component-assigned source.
 			if unassigned {
 				continue
 			}
 
-			if imp.Class == ClassInModule && targetComp == comp {
+			if withinComponent {
 				continue // imports within a component are always fine
 			}
 			if targetComp != "" {

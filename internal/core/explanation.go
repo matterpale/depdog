@@ -334,9 +334,9 @@ func (e Explain) globallyDeniedBy() string {
 			return e.denyRefName(r)
 		}
 	}
-	if len(e.GlobalDeny) > 0 {
-		return e.denyRefName(e.GlobalDeny[0])
-	}
+	// No entry pinpointed the destination — name the destination itself rather
+	// than an arbitrary list entry, which in a security-ban context would be
+	// actively misleading (naming a module that did not ban this edge).
 	return e.targetRef()
 }
 

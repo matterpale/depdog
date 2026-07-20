@@ -269,9 +269,11 @@ func (rs *RuleSet) fallback(component string, rule Rule, hasRule bool) (bool, st
 // be filtered by the caller (as Decide's same-component short-circuit does).
 func (rs *RuleSet) GloballyDenied(target string, isModule bool, module string) (string, bool) {
 	for _, r := range rs.GlobalDeny {
-		match := refMatchesTarget(r, target)
+		var match bool
 		if isModule {
 			match = moduleRefMatches(r, module)
+		} else {
+			match = refMatchesTarget(r, target)
 		}
 		if match {
 			return globalDenyText(rs.GlobalDeny), true

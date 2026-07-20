@@ -342,6 +342,54 @@ func TestEvaluateGlobalDenyWins(t *testing.T) {
 	}
 }
 
+func TestEvaluateGlobalDenyUnassignedTarget(t *testing.T) {
+	// deny: [unassigned] bans imports of any package no component claims. Two
+	// DISTINCT unassigned packages are not "the same component", so the edge
+	// between them must fire — the within-component exemption applies only to a
+	// real shared component (comp == targetComp == "" is not one).
+	rs := &RuleSet{
+		Components: []Component{{Name: "api", Patterns: []string{"internal/api/**"}}},
+		GlobalDeny: []Ref{{Kind: RefUnassigned}},
+		Policy:     PolicyAllow,
+	}
+	g := &Graph{ModulePath: "m", Packages: []Package{
+		{ImportPath: "m/orphanA", RelDir: "orphanA", Imports: []Import{
+			mkImport("m/orphanB", ClassInModule, "orphanB", false), // unassigned → unassigned
+		}},
+	}}
+	res := evaluate(t, g, rs)
+	if len(res.Violations) != 1 || res.Violations[0].Reason != ReasonGlobalDeny {
+		t.Fatalf("unassigned → unassigned must be a global-deny violation: %+v", res.Violations)
+	}
+}
+
+func TestEvaluateGlobalDenyBoundaryReportsBoundary(t *testing.T) {
+	// When an edge is BOTH a boundary crossing AND named in the global deny (only
+	// possible for a component ref, since boundaries are in-module), the boundary
+	// is reported — matching every explain surface, which decides boundary first.
+	rs := &RuleSet{
+		Policy:    PolicyAllow,
+		TestFiles: TestHybrid,
+		Components: []Component{
+			{Name: "service-a", Patterns: []string{"cmd/service-a/**"}},
+			{Name: "service-b", Patterns: []string{"cmd/service-b/**"}},
+		},
+		GlobalDeny: []Ref{{Kind: RefComponent, Name: "service-a"}},
+		Boundaries: []Boundary{{
+			Name: "cmd-services",
+			Members: []BoundaryMember{
+				{Patterns: []string{"cmd/service-a/**"}, Label: "cmd/service-a/**"},
+				{Patterns: []string{"cmd/service-b/**"}, Label: "cmd/service-b/**"},
+			},
+		}},
+	}
+	g := boundaryEdge("m/cmd/service-b/x", "cmd/service-b/x", "m/cmd/service-a/y", "cmd/service-a/y", false)
+	res := evaluate(t, g, rs)
+	if len(res.Violations) != 1 || res.Violations[0].Reason != ReasonBoundary {
+		t.Fatalf("a boundary crossing that is also globally denied is reported as boundary: %+v", res.Violations)
+	}
+}
+
 func TestEvaluateBlacklist(t *testing.T) {
 	rs := &RuleSet{
 		Components: []Component{
