@@ -1,4 +1,4 @@
-name: depdog
+name: Run depdog
 description: Enforce your depdog.yaml architecture rules in CI — check import edges across any language.
 branding:
   icon: shield
