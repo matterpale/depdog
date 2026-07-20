@@ -141,6 +141,26 @@ func TestCheckDirtySARIF(t *testing.T) {
 	golden(t, "dirty_sarif.golden", out)
 }
 
+// TestCheckExternalModuleDeny exercises a deny-list over external dependencies:
+// the app component allows any third-party module (allow: [external]) but denies
+// example.test/extlib by name. Deny wins over the broad external allow, so the
+// extlib import is flagged while its sibling example.test/goodlib passes. The
+// substring assertions pin the semantic invariant so a stray golden -update
+// can't silently start (or stop) flagging the wrong module.
+func TestCheckExternalModuleDeny(t *testing.T) {
+	out, _, exit := run(t, fixture("extdeny"), "check")
+	if exit != 1 {
+		t.Fatalf("exit %d, want 1\n%s", exit, out)
+	}
+	if !strings.Contains(out, "example.test/extlib") {
+		t.Errorf("denied module example.test/extlib not reported:\n%s", out)
+	}
+	if strings.Contains(out, "example.test/goodlib") {
+		t.Errorf("allowed module example.test/goodlib should not be flagged:\n%s", out)
+	}
+	golden(t, "extdeny_text.golden", reTextDur.ReplaceAllString(out, "checked in X"))
+}
+
 func TestCheckBadFormat(t *testing.T) {
 	_, stderr, exit := run(t, fixture("dirty"), "check", "--format", "toml")
 	if exit != 2 {
