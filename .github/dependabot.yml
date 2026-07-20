@@ -1,0 +1,13 @@
+# Keeps the SHA-pinned GitHub Actions current. This is what makes SHA-pinning
+# sustainable: Dependabot bumps both the pinned commit SHA and the `# vX.Y.Z`
+# comment on each `uses:` line, so the pins stay fresh instead of silently rotting.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    # One grouped PR for the action bumps rather than one per action.
+    groups:
+      actions:
+        patterns: ["*"]
