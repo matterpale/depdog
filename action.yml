@@ -115,14 +115,31 @@ runs:
           echo "::warning::depdog action: could not fetch checksums.txt for $tag; skipping integrity verification (version: latest)."
         fi
 
-        # `tar -xf` handles both formats: gzip is auto-detected for .tar.gz, and
-        # bsdtar (the tar on Windows runners) also extracts .zip — so there is no
-        # dependency on `unzip` being present.
-        if ! tar -xf "$dir/$asset" -C "$dir"; then
+        # Extract into $dir. Linux/macOS ship .tar.gz (GNU tar auto-detects the
+        # gzip). Windows ships .zip, and Git Bash's bundled tar is GNU tar, which
+        # cannot read zip — so extract those with PowerShell's Expand-Archive
+        # (always present on Windows runners); cygpath maps the MSYS temp paths to
+        # the Windows paths PowerShell expects.
+        if [ "$os" = windows ]; then
+          win_asset="$(cygpath -w "$dir/$asset")"
+          win_dir="$(cygpath -w "$dir")"
+          if ! powershell -NoProfile -NonInteractive -Command "\$ErrorActionPreference='Stop'; Expand-Archive -LiteralPath '$win_asset' -DestinationPath '$win_dir' -Force"; then
+            echo "::error::depdog action: could not extract $asset."
+            exit 1
+          fi
+        elif ! tar -xf "$dir/$asset" -C "$dir"; then
           echo "::error::depdog action: could not extract $asset."
           exit 1
         fi
-        echo "$dir" >> "$GITHUB_PATH"
+
+        # GITHUB_PATH needs the runner's native path form so the next step's shell
+        # resolves the binary: a Windows path on Windows (Git Bash converts it back
+        # and finds depdog.exe), the POSIX path elsewhere.
+        if [ "$os" = windows ]; then
+          cygpath -w "$dir" >> "$GITHUB_PATH"
+        else
+          echo "$dir" >> "$GITHUB_PATH"
+        fi
 
     - name: Run depdog
       shell: bash

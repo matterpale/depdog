@@ -5,7 +5,8 @@ name: action-smoke
 # downloads a *published* release, so it only makes sense once one exists and
 # would otherwise make ordinary PR CI depend on the network. It runs after each
 # release (verifying the freshly published assets install everywhere), on demand,
-# and when the action or release config changes on main.
+# on a PR that touches the action (so action changes are validated before merge),
+# and when the action or release config lands on main.
 on:
   release:
     types: [published]
@@ -15,6 +16,11 @@ on:
         description: depdog version to smoke-test (a tag like v0.6.0, or latest)
         required: false
         default: latest
+  pull_request:
+    paths:
+      - action.yml
+      - .goreleaser.yaml
+      - .github/workflows/action-smoke.yml
   push:
     branches: [main]
     paths:
