@@ -75,6 +75,10 @@
       "enum": ["allow", "deny"],
       "description": "Fallback stance for a component with no allow/deny rule: allow (open — may import anything) or deny (strict whitelist — may import nothing). Optional; defaults to allow."
     },
+    "deny": {
+      "$ref": "#/definitions/refs",
+      "description": "Module-wide deny list: refs (typically external-module prefixes like github.com/evil/pkg) that NO package may import, regardless of its component. A hard, global ban that wins over any component allow — for security/license bans that must hold across the whole project, not one layer. Optional."
+    },
     "options": {
       "type": "object",
       "additionalProperties": false,

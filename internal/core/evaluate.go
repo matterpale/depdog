@@ -15,6 +15,7 @@ const (
 	ReasonRule           ReasonKind = ""                // ordinary component allow/deny/stance
 	ReasonBoundary       ReasonKind = "boundary"        // a cross-member boundary crossing
 	ReasonBoundarySealed ReasonKind = "boundary-sealed" // ungrouped source → in-member target under sealed
+	ReasonGlobalDeny     ReasonKind = "global-deny"     // module-wide top-level deny — bans a dependency everywhere
 )
 
 // Violation is one import edge that breaks a rule.
@@ -236,12 +237,35 @@ func Evaluate(g *Graph, rs *RuleSet) (*Result, error) {
 				}
 			}
 
+			// An import within the source's own component is never a dependency on
+			// that component, so it is exempt from both the global deny and the
+			// component rules below. Only a real component is its own peer: two
+			// distinct unassigned packages (comp == targetComp == "") are not.
+			withinComponent := imp.Class == ClassInModule && comp != "" && targetComp == comp
+
+			// Global deny is a module-wide ban: it applies to every source
+			// (component-assigned or not), ignores the test_files relaxation, and
+			// wins over component allow and the default stance, so a banned
+			// dependency can never appear anywhere — tests included. It is checked
+			// after the boundary gate because a boundary crossing is also a hard
+			// deny and every explain surface reports boundary first; checking it
+			// here keeps `check` and `explain` in lock-step.
+			if len(rs.GlobalDeny) > 0 && !withinComponent && matchAny(rs.GlobalDeny, imp, targetComp) {
+				v := violation(p, comp, imp, targetComp, globalDenyText(rs.GlobalDeny), SeverityError)
+				v.Reason = ReasonGlobalDeny
+				res.Violations = append(res.Violations, v)
+				if cs != nil {
+					cs.Violations++
+				}
+				continue
+			}
+
 			// Component rules only apply to a component-assigned source.
 			if unassigned {
 				continue
 			}
 
-			if imp.Class == ClassInModule && targetComp == comp {
+			if withinComponent {
 				continue // imports within a component are always fine
 			}
 			if targetComp != "" {

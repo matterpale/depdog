@@ -223,10 +223,17 @@ func (h *mcpHandler) Explain(_ context.Context, from, to string) ([]byte, error)
 		if isModule {
 			imp = to
 		}
-		out.Explanation = core.Explanation(core.ExplainViolation(core.Violation{
+		v := core.Violation{
 			FromPackage: pv.ImportPath, FromComponent: fromComp,
 			ImportPath: imp, Target: target,
-		}, ev.Rules))
+		}
+		// A module-wide deny is decided before the component rule (as check does),
+		// so label and explain it as a global deny, not a component rule.
+		if _, gok := ev.Rules.GloballyDenied(target, isModule, to); gok {
+			out.DecidedBy = "global-deny"
+			v.Reason = core.ReasonGlobalDeny
+		}
+		out.Explanation = core.Explanation(core.ExplainViolation(v, ev.Rules))
 	}
 	// Positions only exist for an edge that is actually in the graph.
 	if tpv, ok := findPackageView(views, to, ev.Result.ModulePath); ok {
@@ -296,10 +303,15 @@ func (h *mcpHandler) CanImport(_ context.Context, from, to string) ([]byte, erro
 		if isModule {
 			imp = to
 		}
-		out.Explanation = core.Explanation(core.ExplainViolation(core.Violation{
+		v := core.Violation{
 			FromPackage: from, FromComponent: fromComp,
 			ImportPath: imp, Target: target,
-		}, rs))
+		}
+		if _, gok := rs.GloballyDenied(target, isModule, to); gok {
+			out.DecidedBy = "global-deny"
+			v.Reason = core.ReasonGlobalDeny
+		}
+		out.Explanation = core.Explanation(core.ExplainViolation(v, rs))
 	}
 	return marshalIndent(out)
 }

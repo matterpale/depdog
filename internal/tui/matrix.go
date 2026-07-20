@@ -41,16 +41,21 @@ func (m Model) matrixModules() []string {
 	}
 	seen := map[string]bool{}
 	var mods []string
-	for _, rule := range m.rules.Rules {
-		for _, refs := range [][]core.Ref{rule.Allow, rule.Deny} {
-			for _, r := range refs {
-				if r.Kind == core.RefExternalModule && !seen[r.Name] {
-					seen[r.Name] = true
-					mods = append(mods, r.Name)
-				}
+	collect := func(refs []core.Ref) {
+		for _, r := range refs {
+			if r.Kind == core.RefExternalModule && !seen[r.Name] {
+				seen[r.Name] = true
+				mods = append(mods, r.Name)
 			}
 		}
 	}
+	for _, rule := range m.rules.Rules {
+		collect(rule.Allow)
+		collect(rule.Deny)
+	}
+	// Modules named only in the top-level deny still get a column, so a
+	// module-wide ban is visible in the grid (every cell reads as a hard deny).
+	collect(m.rules.GlobalDeny)
 	sort.Strings(mods)
 	return mods
 }
@@ -190,6 +195,12 @@ func cellVerdict(rs *core.RuleSet, from, target string) cellKind {
 	if from == target {
 		return cellSelf
 	}
+	// A module-wide deny wins over the source component's own allow, so it is
+	// checked first — otherwise the cell would read allow while `check` flags the
+	// edge (both consult the same rs.GloballyDenied that Decide does).
+	if _, ok := rs.GloballyDenied(target, false, ""); ok {
+		return cellDeny
+	}
 	rule := rs.Rules[from]
 	switch {
 	case anyRefMatches(rule.Deny, target):
@@ -306,6 +317,12 @@ func (m Model) verdictAt(from string, col int) cellKind {
 // broader prefix ref or the external bucket) falls to DecideModule, the same
 // path `explain <from> <module>` reports.
 func moduleCellVerdict(rs *core.RuleSet, from, mod string) cellKind {
+	// A module-wide deny wins over any component allow (even an exact module
+	// allow), so it is checked before the component rule — keeping the cell in
+	// step with `check`/`explain`, which decide the global ban first.
+	if _, ok := rs.GloballyDenied("", true, mod); ok {
+		return cellDeny
+	}
 	rule := rs.Rules[from]
 	switch {
 	case hasExactModuleRef(rule.Deny, mod):

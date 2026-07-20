@@ -1,0 +1,15 @@
+# Module-wide deny. No package anywhere may import example.test/extlib, even
+# though every component's own rule allows any external module. A component-level
+# deny would have to be repeated on each component, and a `path: "**"` catch-all
+# could NOT express this at all — the catch-all only owns packages no other
+# component claims, so it never sees imports made from inside api or web. The
+# top-level `deny` bans the dependency across the whole project in one line.
+version: 2
+
+components:
+  api: { path: "internal/api/**", allow: [external, std] }
+  web: { path: "internal/web/**", allow: [external, std] }
+
+deny: [example.test/extlib]
+
+default: deny

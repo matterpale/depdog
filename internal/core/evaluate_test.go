@@ -278,6 +278,118 @@ func TestEvaluateExternalModuleDenyWins(t *testing.T) {
 	}
 }
 
+func TestEvaluateGlobalDenyWins(t *testing.T) {
+	// A module-wide deny bans example.com/evil everywhere: it must fire even
+	// where a component's own rule would allow the import (api allows external),
+	// even for a test-only import (which test_files: hybrid would otherwise
+	// exempt), even by prefix, and even for a package no component claims. A
+	// different external module (example.com/ok) still passes.
+	rs := &RuleSet{
+		Components: []Component{
+			{Name: "api", Patterns: []string{"internal/api/**"}},
+			{Name: "web", Patterns: []string{"internal/web/**"}},
+		},
+		Rules: map[string]Rule{
+			"api": {Allow: []Ref{{Kind: RefExternal}, {Kind: RefStd}}},
+			"web": {Allow: []Ref{{Kind: RefExternal}, {Kind: RefStd}}},
+		},
+		GlobalDeny: []Ref{{Kind: RefExternalModule, Name: "example.com/evil"}},
+		Policy:     PolicyDeny,
+		TestFiles:  TestHybrid,
+	}
+	g := &Graph{ModulePath: "m", Packages: []Package{
+		{ImportPath: "m/internal/api", RelDir: "internal/api", Imports: []Import{
+			mkImport("example.com/evil", ClassExternal, "", false),    // banned, though api allows external
+			mkImport("example.com/ok", ClassExternal, "", false),      // allowed by external
+			mkImport("example.com/evil/sub", ClassExternal, "", true), // banned by prefix, even test-only
+		}},
+		{ImportPath: "m/internal/web", RelDir: "internal/web", Imports: []Import{
+			mkImport("example.com/evil", ClassExternal, "", false), // banned in a second component too
+		}},
+		{ImportPath: "m/orphan", RelDir: "orphan", Imports: []Import{
+			mkImport("example.com/evil", ClassExternal, "", false), // banned even in an unassigned package
+		}},
+	}}
+	res := evaluate(t, g, rs)
+
+	type edge struct{ from, imp string }
+	got := map[edge]bool{}
+	for _, v := range res.Violations {
+		got[edge{v.FromPackage, v.ImportPath}] = true
+		if v.Reason != ReasonGlobalDeny {
+			t.Errorf("%s → %s: reason = %q, want %q", v.FromPackage, v.ImportPath, v.Reason, ReasonGlobalDeny)
+		}
+		if v.Rule != "global deny [example.com/evil]" {
+			t.Errorf("%s → %s: rule = %q, want global-deny text", v.FromPackage, v.ImportPath, v.Rule)
+		}
+		if v.ImportPath == "example.com/ok" {
+			t.Errorf("example.com/ok is not banned and must not be flagged")
+		}
+	}
+	want := []edge{
+		{"m/internal/api", "example.com/evil"},
+		{"m/internal/api", "example.com/evil/sub"},
+		{"m/internal/web", "example.com/evil"},
+		{"m/orphan", "example.com/evil"},
+	}
+	if len(res.Violations) != len(want) {
+		t.Fatalf("got %d violations, want %d: %+v", len(res.Violations), len(want), res.Violations)
+	}
+	for _, w := range want {
+		if !got[w] {
+			t.Errorf("missing global-deny violation for %s → %s", w.from, w.imp)
+		}
+	}
+}
+
+func TestEvaluateGlobalDenyUnassignedTarget(t *testing.T) {
+	// deny: [unassigned] bans imports of any package no component claims. Two
+	// DISTINCT unassigned packages are not "the same component", so the edge
+	// between them must fire — the within-component exemption applies only to a
+	// real shared component (comp == targetComp == "" is not one).
+	rs := &RuleSet{
+		Components: []Component{{Name: "api", Patterns: []string{"internal/api/**"}}},
+		GlobalDeny: []Ref{{Kind: RefUnassigned}},
+		Policy:     PolicyAllow,
+	}
+	g := &Graph{ModulePath: "m", Packages: []Package{
+		{ImportPath: "m/orphanA", RelDir: "orphanA", Imports: []Import{
+			mkImport("m/orphanB", ClassInModule, "orphanB", false), // unassigned → unassigned
+		}},
+	}}
+	res := evaluate(t, g, rs)
+	if len(res.Violations) != 1 || res.Violations[0].Reason != ReasonGlobalDeny {
+		t.Fatalf("unassigned → unassigned must be a global-deny violation: %+v", res.Violations)
+	}
+}
+
+func TestEvaluateGlobalDenyBoundaryReportsBoundary(t *testing.T) {
+	// When an edge is BOTH a boundary crossing AND named in the global deny (only
+	// possible for a component ref, since boundaries are in-module), the boundary
+	// is reported — matching every explain surface, which decides boundary first.
+	rs := &RuleSet{
+		Policy:    PolicyAllow,
+		TestFiles: TestHybrid,
+		Components: []Component{
+			{Name: "service-a", Patterns: []string{"cmd/service-a/**"}},
+			{Name: "service-b", Patterns: []string{"cmd/service-b/**"}},
+		},
+		GlobalDeny: []Ref{{Kind: RefComponent, Name: "service-a"}},
+		Boundaries: []Boundary{{
+			Name: "cmd-services",
+			Members: []BoundaryMember{
+				{Patterns: []string{"cmd/service-a/**"}, Label: "cmd/service-a/**"},
+				{Patterns: []string{"cmd/service-b/**"}, Label: "cmd/service-b/**"},
+			},
+		}},
+	}
+	g := boundaryEdge("m/cmd/service-b/x", "cmd/service-b/x", "m/cmd/service-a/y", "cmd/service-a/y", false)
+	res := evaluate(t, g, rs)
+	if len(res.Violations) != 1 || res.Violations[0].Reason != ReasonBoundary {
+		t.Fatalf("a boundary crossing that is also globally denied is reported as boundary: %+v", res.Violations)
+	}
+}
+
 func TestEvaluateBlacklist(t *testing.T) {
 	rs := &RuleSet{
 		Components: []Component{

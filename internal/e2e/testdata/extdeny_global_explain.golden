@@ -1,0 +1,3 @@
+example.test/extdeny-global/internal/api (api) → example.test/extlib (external module)
+  denied by global deny [example.test/extlib]
+  `example.test/extlib` is denied everywhere by the top-level `deny` list (which names `example.test/extlib`), so no package — including `example.test/extdeny-global/internal/api` (component `api`) — may import it. Fix: drop the import, or remove `example.test/extlib` from the top-level `deny` list if the dependency is intended (a component allow list cannot override a global deny).

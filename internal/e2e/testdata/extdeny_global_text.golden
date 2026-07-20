@@ -1,0 +1,9 @@
+depdog check — example.test/extdeny-global
+
+✗ global deny [example.test/extlib]  (2 violations)
+    example.test/extdeny-global/internal/api
+      → example.test/extlib  internal/api/api.go:9
+    example.test/extdeny-global/internal/web
+      → example.test/extlib  internal/web/web.go:10
+
+2 violations · 2 packages · 5 edges checked in X
