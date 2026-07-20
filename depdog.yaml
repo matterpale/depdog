@@ -15,6 +15,7 @@ components:
   kotlin: { path: "internal/lang/kotlin/**", allow: [core, lang, std] } # pure scanner: stdlib only
   scala:  { path: "internal/lang/scala/**",  allow: [core, lang, std] } # pure scanner: stdlib only
   elm:    { path: "internal/lang/elm/**",    allow: [core, lang, std] } # pure scanner: stdlib only
+  spec:   { path: "internal/lang/spec/**",   allow: [core, lang, std, external] } # declarative-adapter engine: YAML specs (external) -> core graph; not itself an adapter
   report: { path: "internal/report/**",      allow: [core, std, external] } # lipgloss styles the human output
   wizard: { path: "internal/wizard/**",      allow: [core, std] } # pure heuristics: engine matcher + std only
   lsp:    { path: "internal/lsp/**",         allow: [core, std] } # hand-rolled JSON-RPC: stdlib only, like core
