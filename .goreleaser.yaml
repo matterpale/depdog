@@ -20,6 +20,9 @@ builds:
     mod_timestamp: "{{ .CommitTimestamp }}"
 
 archives:
+  # The default name_template ({{.ProjectName}}_{{.Version}}_{{.Os}}_{{.Arch}})
+  # is reconstructed by hand in action.yml to build the download URL. Keep the two
+  # in lock-step: setting a custom name_template here breaks the GitHub Action.
   - formats: [tar.gz]
     format_overrides:
       - goos: windows

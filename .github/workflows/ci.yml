@@ -5,6 +5,15 @@ on:
     branches: [main]
   pull_request:
 
+# Least privilege: the build/test/lint jobs only read the checkout.
+permissions:
+  contents: read
+
+# Cancel superseded runs on the same ref (a new push to a PR supersedes the old).
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   test:
     strategy:
@@ -32,3 +41,7 @@ jobs:
         with:
           go-version-file: go.mod
       - uses: golangci/golangci-lint-action@v9
+        with:
+          # Pin the linter version so CI matches the v2-schema .golangci.yml (and
+          # the local toolchain) rather than drifting with the action's default.
+          version: v2.1.6
