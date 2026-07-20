@@ -150,7 +150,7 @@ An editor JSON Schema ships at
 validation (a test keeps it in lockstep with the parser).
 
 **Full reference — [docs/configuration.md](docs/configuration.md):** component
-matching and precedence, the complete `allow`/`deny` vocabulary, groups, the
+matching and precedence, the complete `allow`/`deny` vocabulary, aliases, the
 non-blocking signals (unmapped packages, dead patterns, component cycles), and
 test-file handling. Boundaries have their own page —
 [docs/boundaries.md](docs/boundaries.md).

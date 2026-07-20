@@ -11,13 +11,13 @@ import (
 )
 
 // RenameComponent renames a component and every reference to it — its own key,
-// allow/deny refs in any component, group entries, and boundary members — in an
+// allow/deny refs in any component, alias entries, and boundary members — in an
 // existing depdog.yaml, returning the new bytes. Only the exact name tokens
 // change; every other byte (comments, alignment, blank lines) is preserved, and
 // the result is validated with Parse. Path globs are deliberately left alone, so
 // a path that happens to equal the name is not touched.
 //
-// It refuses, naming the fix, when: newName already names a component or group;
+// It refuses, naming the fix, when: newName already names a component or alias;
 // oldName is unknown; the file uses anchors/aliases; or a reference token is
 // quoted or shifted (a positional splice can't safely rewrite it).
 func RenameComponent(data []byte, oldName, newName string) ([]byte, error) {
@@ -44,7 +44,7 @@ func RenameComponent(data []byte, oldName, newName string) ([]byte, error) {
 		return nil, fmt.Errorf("component %q is not in the config", oldName)
 	}
 	if names, err := DeclaredNames(data); err == nil && slices.Contains(names, newName) {
-		return nil, fmt.Errorf("%q already names a component or group — pick another name", newName)
+		return nil, fmt.Errorf("%q already names a component or alias — pick another name", newName)
 	}
 
 	// Group the reference positions by line, then rewrite each line right-to-left
@@ -85,7 +85,7 @@ type refPos struct{ line, col int }
 
 // renameRefs collects the position of every scalar equal to name that is a
 // component reference: the component's own key, allow/deny refs (in any
-// component), group entries, and boundary members (shorthand list or expanded
+// component), alias entries, and boundary members (shorthand list or expanded
 // `members`). It never visits `path` values or other scalars, so a glob equal to
 // the name is not collected.
 func renameRefs(root *yaml.Node, name string) []refPos {
@@ -116,9 +116,13 @@ func renameRefs(root *yaml.Node, name string) []refPos {
 			}
 		}
 	}
-	if _, groups := mappingPair(root, "groups"); groups != nil {
-		for i := 1; i < len(groups.Content); i += 2 {
-			seq(groups.Content[i])
+	// Both the current `aliases` key and its deprecated `groups` synonym hold
+	// name references that a rename must carry through.
+	for _, key := range []string{"aliases", "groups"} {
+		if _, block := mappingPair(root, key); block != nil {
+			for i := 1; i < len(block.Content); i += 2 {
+				seq(block.Content[i])
+			}
 		}
 	}
 	if _, bounds := mappingPair(root, "boundaries"); bounds != nil {

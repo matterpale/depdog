@@ -211,7 +211,7 @@ func TestMergeComponentsQuotesOddNames(t *testing.T) {
 }
 
 func TestDeclaredNames(t *testing.T) {
-	in := "version: 2\ncomponents:\n  b: { path: \"b/**\" }\n  a: { path: \"a/**\" }\ngroups:\n  edges: [a, b]\n"
+	in := "version: 2\ncomponents:\n  b: { path: \"b/**\" }\n  a: { path: \"a/**\" }\naliases:\n  edges: [a, b]\n"
 	got, err := DeclaredNames([]byte(in))
 	if err != nil {
 		t.Fatalf("DeclaredNames: %v", err)

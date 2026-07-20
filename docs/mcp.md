@@ -91,7 +91,7 @@ explain`: the verdict, the deciding rule or boundary, and — because `explain`
 already exists in the tree. `from` must be a **package** (a module-relative dir
 or its trailing path segment), exactly as `depdog explain` requires — a bare
 component name is not accepted here (use `can_import` for a component-level
-question). `to` may be a package, component, group, `std`, `external`, or a
+question). `to` may be a package, component, alias, `std`, `external`, or a
 module ref.
 
 ```json
