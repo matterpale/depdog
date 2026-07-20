@@ -297,7 +297,7 @@ Exit codes are a [contract](docs/compatibility.md):
 
 ## Multi-language support
 
-depdog checks **nine** languages with the *same* `depdog.yaml`, the *same*
+depdog checks **many** languages with the *same* `depdog.yaml`, the *same*
 commands, and the *same* engine.
 
 Only a thin language adapter differs; the rule format is neutral — component
@@ -365,7 +365,7 @@ depdog's bet is different: one rule model, one engine, thin adapters.
 
 |                                            | depdog                     | go-arch-lint     | dependency-cruiser                 | deptrac                                  |
 |--------------------------------------------|----------------------------|------------------|------------------------------------|------------------------------------------|
-| Languages                                  | nine, one rule format      | Go               | JS/TS (+ Vue, Svelte)              | PHP                                      |
+| Languages                                  | many, one rule format      | Go               | JS/TS (+ Vue, Svelte)              | PHP                                      |
 | Needs                                      | one static binary*         | the Go toolchain | Node + the project's own compilers | PHP ≥ 8.2                                |
 | Baseline ratchet                           | ✓                          | —                | ✓                                  | ✓                                        |
 | CI formats                                 | GitHub annotations · SARIF | JSON             | Markdown · TeamCity · Azure DevOps | GitHub annotations · JUnit · CodeClimate |
@@ -384,7 +384,7 @@ your dependencies must resolve. The payoff is real — deepscan traces
 dependency injection through interfaces, catching inversions no import scan
 can see. depdog deliberately stays at the import layer: scan source text,
 never build — so it runs mid-refactor, on code that doesn't compile yet, and
-the identical engine covers eight more languages. On top of that layer depdog
+the identical engine covers many more languages. On top of that layer depdog
 adds what go-arch-lint doesn't have: the baseline ratchet, SARIF, an LSP, an
 MCP server, and per-PR architecture diffs.
 

@@ -237,10 +237,10 @@ that exact edge.
   Neovim ≥0.10 and Helix ≥23.10 all support dynamic watcher registration).
 - **lsp-05 (shipped)** — editor packaging: [docs/editors.md](editors.md), a
   per-editor setup guide (Neovim ≥0.10, Helix ≥23.10, VS Code, Zed, Emacs
-  eglot) covering all seven adapter languages, every snippet explicitly
+  eglot) covering all of depdog's adapter languages, every snippet explicitly
   marked validated (and how) or untested; plus `editors/vscode/`, a thin
   **unpublished** VS Code extension scaffold (~40-line `extension.js` around
-  `vscode-languageclient`, document selector for the seven languages, a
+  `vscode-languageclient`, document selector for the adapter languages, a
   `depdog.yaml` watcher as belt-and-braces beside lsp-04's dynamic
   registration) verified to build locally (`npm install`, `node --check`,
   `npx @vscode/vsce package` → `.vsix`; artifacts gitignored).
