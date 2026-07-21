@@ -61,6 +61,7 @@ type scannedFile struct {
 // scanFiles reads and scans every file once, so a two-pass resolution mode works
 // from a single extraction rather than re-reading source.
 func (l *Loader) scanFiles(root string, files []string) ([]scannedFile, error) {
+	testDirs := sliceSet(l.Spec.Tests.Dirs) // constant for the whole load
 	out := make([]scannedFile, 0, len(files))
 	for _, abs := range files {
 		relFile, err := filepath.Rel(root, abs)
@@ -76,7 +77,7 @@ func (l *Loader) scanFiles(root string, files []string) ([]scannedFile, error) {
 			relFile: relFile,
 			nodeDir: relDirOf(root, filepath.Dir(abs)),
 			fromDir: filepath.Dir(abs),
-			isTest:  l.isTestFile(relFile),
+			isTest:  l.isTestFile(relFile, testDirs),
 			x:       extract(l.Spec, data),
 		})
 	}
@@ -91,23 +92,9 @@ func (l *Loader) loadPath(root, modPath string, files []string) (*core.Graph, er
 		return nil, err
 	}
 	rs := newResolver(l.Spec, root)
-	gb := newGraphBuilder()
-	dropSelf := l.Spec.Resolve.DropSelfEdges
-
-	for _, sf := range scanned {
-		for _, r := range sf.x.imports {
-			c := rs.classify(r, sf.fromDir)
-			if !c.ok {
-				continue
-			}
-			if dropSelf && c.class == core.ClassInModule && c.relDir == sf.nodeDir {
-				continue // a self-edge carries no direction
-			}
-			gb.add(sf.nodeDir, c, core.Position{File: sf.relFile, Line: r.Line}, sf.isTest)
-		}
-		gb.touch(sf.nodeDir) // a file with no imports still contributes its node
-	}
-	return gb.graph(modPath), nil
+	return l.buildGraph(scanned, modPath, func(r ref, sf scannedFile) classified {
+		return rs.classify(r, sf.fromDir)
+	}), nil
 }
 
 // loadNameIndex builds the graph using name-index resolution (C#, Elm). A first
@@ -127,14 +114,21 @@ func (l *Loader) loadNameIndex(root, modPath string, files []string) (*core.Grap
 			}
 		}
 	}
-
 	stdSet := sliceSet(l.Spec.Stdlib.Modules)
+	return l.buildGraph(scanned, modPath, func(r ref, _ scannedFile) classified {
+		return classifyNameIndex(l.Spec, stdSet, r, declared)
+	}), nil
+}
+
+// buildGraph runs the per-file → per-import classification loop (shared by every
+// resolution mode) and assembles a deterministic graph. classify maps one ref
+// found in file sf to its classification; each mode supplies its own.
+func (l *Loader) buildGraph(scanned []scannedFile, modPath string, classify func(r ref, sf scannedFile) classified) *core.Graph {
 	gb := newGraphBuilder()
 	dropSelf := l.Spec.Resolve.DropSelfEdges
-
 	for _, sf := range scanned {
 		for _, r := range sf.x.imports {
-			c := classifyNameIndex(l.Spec, stdSet, r, declared)
+			c := classify(r, sf)
 			if !c.ok {
 				continue
 			}
@@ -143,9 +137,9 @@ func (l *Loader) loadNameIndex(root, modPath string, files []string) (*core.Grap
 			}
 			gb.add(sf.nodeDir, c, core.Position{File: sf.relFile, Line: r.Line}, sf.isTest)
 		}
-		gb.touch(sf.nodeDir)
+		gb.touch(sf.nodeDir) // a file with no imports still contributes its node
 	}
-	return gb.graph(modPath), nil
+	return gb.graph(modPath)
 }
 
 // projectRoot walks up from Dir to the nearest directory holding one of the
@@ -277,7 +271,8 @@ func matchesAnyPattern(rel string, patterns []string) bool {
 
 // isTestFile reports whether a module-relative file is a test file per the spec's
 // tests config: a stem suffix (_test, _spec) or a path segment (spec, test).
-func (l *Loader) isTestFile(relFile string) bool {
+// testDirs is the precomputed Tests.Dirs set (constant across a load).
+func (l *Loader) isTestFile(relFile string, testDirs map[string]bool) bool {
 	base := filepath.Base(relFile)
 	stem := base
 	if ext := filepath.Ext(base); ext != "" {
@@ -288,10 +283,9 @@ func (l *Loader) isTestFile(relFile string) bool {
 			return true
 		}
 	}
-	if len(l.Spec.Tests.Dirs) > 0 {
-		dirSet := sliceSet(l.Spec.Tests.Dirs)
+	if len(testDirs) > 0 {
 		for _, seg := range strings.Split(filepath.ToSlash(relFile), "/") {
-			if dirSet[seg] {
+			if testDirs[seg] {
 				return true
 			}
 		}

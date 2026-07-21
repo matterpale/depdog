@@ -128,6 +128,9 @@ func languageFlag(cmd *cobra.Command) (string, error) {
 	if language == "" {
 		return "", nil
 	}
+	if err := registryError(); err != nil {
+		return "", err // a malformed .depdog/adapters spec, surfaced actionably
+	}
 	if _, ok := adapterByName(language); !ok {
 		return "", unknownLangError(language)
 	}

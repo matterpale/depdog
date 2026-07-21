@@ -143,6 +143,9 @@ func buildRegistry() {
 		return
 	}
 	for _, sp := range builtins {
+		if handWritten[sp.Name] {
+			continue // a built-in never shadows a hand-written adapter (would double-register)
+		}
 		declarative[sp.Name] = specAdapter(sp)
 	}
 
@@ -151,12 +154,12 @@ func buildRegistry() {
 		if uerr != nil {
 			registryErr = uerr
 		}
-		for _, sp := range user {
-			if handWritten[sp.Name] {
-				registryErr = fmt.Errorf("%s/%s.yaml: a user spec may not override the built-in %q adapter", userAdaptersDir, sp.Name, sp.Name)
+		for _, us := range user {
+			if handWritten[us.spec.Name] {
+				registryErr = fmt.Errorf("%s: adapter name %q is reserved by a hand-written adapter and cannot be redefined by a user spec", us.file, us.spec.Name)
 				continue
 			}
-			declarative[sp.Name] = specAdapter(sp) // overrides a same-named built-in
+			declarative[us.spec.Name] = specAdapter(us.spec) // overrides a same-named built-in
 		}
 	}
 
@@ -182,11 +185,18 @@ func specAdapter(sp *spec.Spec) lang.Adapter {
 	}
 }
 
+// userSpec is a loaded user adapter spec plus the file it came from, so registry
+// errors can name the offending file.
+type userSpec struct {
+	file string
+	spec *spec.Spec
+}
+
 // discoverUserSpecs loads adapter specs from the nearest .depdog/adapters
 // directory found walking up from startDir. Each *.yaml/*.yml is a Spec; a
 // malformed one is a human-actionable error naming the file.
-func discoverUserSpecs(startDir string) ([]*spec.Spec, error) {
-	dir := findUpDir(startDir, userAdaptersDir)
+func discoverUserSpecs(startDir string) ([]userSpec, error) {
+	dir := findAdaptersDir(startDir)
 	if dir == "" {
 		return nil, nil
 	}
@@ -205,7 +215,7 @@ func discoverUserSpecs(startDir string) ([]*spec.Spec, error) {
 	}
 	sort.Strings(names)
 
-	var specs []*spec.Spec
+	var specs []userSpec
 	for _, name := range names {
 		p := filepath.Join(dir, name)
 		data, err := os.ReadFile(p)
@@ -216,29 +226,39 @@ func discoverUserSpecs(startDir string) ([]*spec.Spec, error) {
 		if err != nil {
 			return nil, fmt.Errorf("%s: %w", p, err)
 		}
-		specs = append(specs, sp)
+		specs = append(specs, userSpec{file: p, spec: sp})
 	}
 	return specs, nil
 }
 
-// findUpDir walks up from startDir and returns the first ancestor that contains
-// the given relative subpath as a directory, or "" if none.
-func findUpDir(startDir, rel string) string {
+// findAdaptersDir returns the nearest .depdog/adapters directory walking up from
+// startDir, bounded by the repository root: the walk stops at the directory that
+// holds a .git entry, so a stray .depdog/adapters in an unrelated ancestor (a
+// parent repo, or $HOME) never leaks into this repo.
+func findAdaptersDir(startDir string) string {
 	abs, err := filepath.Abs(startDir)
 	if err != nil {
 		return ""
 	}
 	for d := abs; ; {
-		cand := filepath.Join(d, filepath.FromSlash(rel))
-		if fi, err := os.Stat(cand); err == nil && fi.IsDir() {
+		if cand := filepath.Join(d, filepath.FromSlash(userAdaptersDir)); dirExists(cand) {
 			return cand
+		}
+		if fileExists(filepath.Join(d, ".git")) {
+			return "" // repo root reached without a match; do not cross it
 		}
 		parent := filepath.Dir(d)
 		if parent == d {
-			return ""
+			return "" // filesystem root
 		}
 		d = parent
 	}
+}
+
+// dirExists reports whether p is an existing directory.
+func dirExists(p string) bool {
+	fi, err := os.Stat(p)
+	return err == nil && fi.IsDir()
 }
 
 // languageNames lists the registered --lang values, for flag help and errors.

@@ -68,7 +68,7 @@
             "enum": ["quoted", "char", "raw-hash", "raw-run"],
             "description": "quoted: a normal \"...\"/'...'/\"\"\"...\"\"\" literal. char: a single-glyph 'x' literal. raw-hash: Rust r#\"...\"# with a matched hash level. raw-run: C# raw string of N>=minRun quotes closed by N quotes. Default: quoted."
           },
-          "open": { "type": "string", "description": "Opening delimiter, e.g. \"\\\"\", \"'\", \"\\\"\\\"\\\"\". For raw-hash this is the leading prefix (e.g. \"r\")." },
+          "open": { "type": "string", "description": "Opening delimiter, e.g. \"\\\"\", \"'\". For raw-hash this is the leading prefix (e.g. \"r\"); for raw-run it is an optional prefix before the quote run (e.g. \"$\" for C# $\"\"\"...\"\"\", omit for bare \"\"\"...\"\"\")." },
           "close": { "type": "string", "description": "Closing delimiter; defaults to open." },
           "escape": { "type": "string", "description": "Escape character (usually \"\\\\\"); empty means no escapes." },
           "multiline": { "type": "boolean", "description": "The literal may span newlines (triple-quoted, verbatim)." },

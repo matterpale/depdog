@@ -24,6 +24,9 @@ func evaluateWorkMode(cmd *cobra.Command, workPath, cwd string, o checkOptions, 
 	if err != nil {
 		return nil, err
 	}
+	if err := registryError(); err != nil {
+		return nil, err // a malformed .depdog/adapters spec, surfaced actionably
+	}
 	for i := range w.Units {
 		u := &w.Units[i]
 		if u.Lang != "" {

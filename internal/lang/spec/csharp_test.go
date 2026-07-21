@@ -65,7 +65,14 @@ func TestCsharpLexerHidesUsings(t *testing.T) {
 		{"normal string", "var s = \"using Fake;\";\nusing Real.X;\n", []string{"using@2"}},
 		{"verbatim string with doubled quote", "var s = @\"using \"\"Fake\"\";\";\nusing Real.X;\n", []string{"using@2"}},
 		{"interpolated string", "var s = $\"using {x} Fake\";\nusing Real.X;\n", []string{"using@2"}},
+		// Regression: an interpolated string must close on a single " and NOT swallow
+		// the rest of its line (a real `using` after it on the same line).
+		{"interpolated string does not swallow trailing code", "var s = $\"hi\"; using Real.X;\n", []string{"using@1"}},
 		{"raw string spans lines", "var s = \"\"\"\nusing Fake.X;\n\"\"\";\nusing Real.X;\n", []string{"using@4"}},
+		// Regression: a raw *interpolated* string ($"""…""") must be recognised as a
+		// raw string, not $" + a stray """ that runs to EOF and loses later usings.
+		{"raw interpolated string spans lines", "var q = $\"\"\"\nusing Fake.X;\n\"\"\";\nusing Real.X;\n", []string{"using@4"}},
+		{"double-dollar raw interpolated string", "var q = $$\"\"\"\nusing Fake.X;\n\"\"\";\nusing Real.X;\n", []string{"using@4"}},
 		{"char literal holding a quote", "var c = '\"';\nusing Real.X;\n", []string{"using@2"}},
 		{"identifier prefixed with using", "usings.Add(x);\nusing Real.X;\n", []string{"using@2"}},
 	}
@@ -93,6 +100,7 @@ func TestCsharpUsingForms(t *testing.T) {
 		{"global using", "global using System;\n", []string{"plain:System"}},
 		{"using static", "using static System.Math;\n", []string{"plain:System.Math"}},
 		{"using alias captures the target", "using Json = System.Text.Json;\n", []string{"plain:System.Text.Json"}},
+		{"block comment between keyword and namespace", "using /* pin */ System.Text;\n", []string{"plain:System.Text"}},
 		{"several usings", "using System;\nusing App.Svc;\n", []string{"plain:System", "plain:App.Svc"}},
 		{"using resource statement is not a directive", "using (var x = Open()) { Work(); }\n", nil},
 		{"using var declaration is not a directive", "using var f = Open();\n", nil},

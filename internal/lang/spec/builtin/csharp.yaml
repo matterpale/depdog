@@ -15,11 +15,15 @@ comments:
 
 strings:
   # Order matters: more specific openers first (the lexer tries forms in order).
+  # The raw-run forms (interpolated first: longer prefix wins) must precede the
+  # single-quote forms so $"""...""" is not mis-read as an empty $"" then a stray """.
+  - { kind: raw-run, open: "$$", quote: "\"", minRun: 3 }                # $$"""...""" interpolated raw (double-$)
+  - { kind: raw-run, open: "$",  quote: "\"", minRun: 3 }                # $"""...""" interpolated raw
   - { kind: raw-run, quote: "\"", minRun: 3 }                            # C# 11 raw strings """ ... """
   - { open: "$@\"", close: "\"", quoteDoubling: true, multiline: true }  # interpolated verbatim
   - { open: "@$\"", close: "\"", quoteDoubling: true, multiline: true }  # interpolated verbatim (other order)
   - { open: "@\"",  close: "\"", quoteDoubling: true, multiline: true }  # verbatim: "" is a literal quote
-  - { open: "$\"",  escape: "\\" }                                       # interpolated
+  - { open: "$\"",  close: "\"", escape: "\\" }                          # interpolated (close is a single ")
   - { open: "\"",   escape: "\\" }                                       # normal
   - { kind: char, open: "'", escape: "\\" }                              # char literal
 

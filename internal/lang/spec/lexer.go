@@ -288,22 +288,31 @@ func (l *lexer) skipRawHash(sf *StringForm) bool {
 	return true
 }
 
-// skipRawRun consumes a C# 11 raw string literal: an opening run of N>=MinRun
-// quotes closed by a run of at least N quotes. Returns false when the run at pos
-// is too short to open one.
+// skipRawRun consumes a raw string literal that opens on a run of N>=MinRun
+// quotes and closes on a run of at least N quotes (C# 11 """…"""). An optional
+// Open prefix precedes the run so interpolated raw strings are distinguished
+// ($"""…""", $$"""…"""). Returns false when the prefix is absent or the run at
+// pos is too short to open one.
 func (l *lexer) skipRawRun(sf *StringForm) bool {
+	start := l.pos
+	if sf.Open != "" {
+		if !l.has(sf.Open) {
+			return false
+		}
+		start += len(sf.Open)
+	}
 	q := sf.Quote[0]
-	if l.pos >= len(l.src) || l.src[l.pos] != q {
+	if start >= len(l.src) || l.src[start] != q {
 		return false
 	}
 	n := 0
-	for l.pos+n < len(l.src) && l.src[l.pos+n] == q {
+	for start+n < len(l.src) && l.src[start+n] == q {
 		n++
 	}
 	if n < sf.MinRun {
 		return false
 	}
-	p := l.pos + n
+	p := start + n
 	for p < len(l.src) {
 		if l.src[p] == '\n' {
 			l.line++

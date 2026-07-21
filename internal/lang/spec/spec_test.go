@@ -166,6 +166,11 @@ func TestLoadRejectsBadSpecs(t *testing.T) {
 			yaml: "name: r\nmarkers: [x]\nextensions: [\".r\"]\nimports: [{keyword: require, capture: string}]\nstrings: [{kind: raw-hash, open: r, quote: \"\\\"\"}]\n",
 			want: "needs `hash` and `quote`",
 		},
+		{
+			name: "string capture without a quoted string form",
+			yaml: "name: r\nmarkers: [x]\nextensions: [\".r\"]\nimports: [{keyword: require, capture: string}]\n",
+			want: "captures a string but no `strings` entry is a quoted form",
+		},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {

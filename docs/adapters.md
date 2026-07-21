@@ -87,6 +87,26 @@ verbatim/interpolated/raw string forms. In-module C# edges point at the
 directory that declares the namespace (the first, sorted, when a namespace spans
 several).
 
+### Known approximations (C#)
+
+depdog is a static approximator, so a few C# constructs are handled loosely (all
+are rare in practice; none crash or corrupt the graph):
+
+- **Preprocessor is not evaluated.** A `using` inside `#if false … #endif` is
+  still counted as an edge — like every depdog adapter, conditional code is not
+  interpreted. (`#region` text is safe: a directive needs a trailing `;`.)
+- **Exact namespace match.** `using A.B;` resolves in-module only if some file
+  declares exactly `namespace A.B`; declaring only `namespace A.B.C` does not
+  imply `A.B`. Nested *block* namespaces record the inner name unqualified.
+- **Aliases capture a plain dotted path.** `using X = A.B.C;` works; an alias
+  whose target uses `global::`, generics (`List<int>`), or a tuple is dropped.
+- **Interpolation holes aren't parsed**, so a string nested inside a hole
+  (`$"{d["k"]}"`) can mis-tokenize. Import directives are top-level, so this does
+  not produce false edges in practice.
+
+A project that needs any of these precisely is a candidate for a hand-written
+adapter.
+
 ## Spec reference (summary)
 
 The full contract — with every field documented — is the JSON schema at

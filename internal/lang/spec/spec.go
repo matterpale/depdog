@@ -298,7 +298,35 @@ func (s *Spec) validate() error {
 	if ff := s.Module.FromFile; ff != nil && (ff.Glob == "" || ff.Key == "") {
 		return fmt.Errorf("adapter spec %q: module.fromFile needs both `glob` and `key`", s.Name)
 	}
+	// A string-capturing surface reads from a quoted string form; without one it
+	// would silently capture nothing, so require the pairing. Checked last so
+	// field-specific errors above surface first.
+	if s.capturesString() && !s.hasQuotedStringForm() {
+		return fmt.Errorf("adapter spec %q: an import surface captures a string but no `strings` entry is a quoted form; add e.g. strings: [{ open: %q }]", s.Name, "\"")
+	}
 	return nil
+}
+
+// capturesString reports whether any import surface reads a quoted-string
+// specifier (capture string or skip-to-string).
+func (s *Spec) capturesString() bool {
+	for i := range s.Imports {
+		if c := s.Imports[i].Capture; c == CaptureString || c == CaptureSkipToString {
+			return true
+		}
+	}
+	return false
+}
+
+// hasQuotedStringForm reports whether the spec declares at least one quoted
+// string form (the only kind readStringLiteral can read a specifier from).
+func (s *Spec) hasQuotedStringForm() bool {
+	for i := range s.Strings {
+		if s.Strings[i].kind() == KindQuoted {
+			return true
+		}
+	}
+	return false
 }
 
 func (surf *Surface) validate(name, where string) error {

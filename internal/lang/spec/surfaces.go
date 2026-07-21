@@ -131,14 +131,14 @@ func (e *extractor) capture(l *lexer, surf *Surface) (string, bool) {
 //
 // It always consumes to the terminator so the statement tail is not re-scanned.
 func (e *extractor) capturePath(l *lexer, surf *Surface) (string, bool) {
-	l.skipInlineSpace()
+	l.skipInlineSpaceAndComments()
 	for len(surf.SkipKeywords) > 0 {
 		w := l.peekWord()
 		if w == "" || !contains(surf.SkipKeywords, w) {
 			break
 		}
 		l.pos += len(w)
-		l.skipInlineSpace()
+		l.skipInlineSpaceAndComments()
 	}
 
 	tok, ok := e.capturePathToken(l, surf.Separator)
@@ -148,7 +148,7 @@ func (e *extractor) capturePath(l *lexer, surf *Surface) (string, bool) {
 		return "", false
 	}
 	if surf.Alias != "" {
-		l.skipInlineSpace()
+		l.skipInlineSpaceAndComments()
 		if l.has(surf.Alias) {
 			l.pos += len(surf.Alias)
 			rhs, ok2 := e.capturePathToken(l, surf.Separator)
@@ -159,7 +159,7 @@ func (e *extractor) capturePath(l *lexer, surf *Surface) (string, bool) {
 		}
 	}
 	if surf.StrictTerminator {
-		l.skipInlineSpace()
+		l.skipInlineSpaceAndComments()
 		if !l.atTerminator(surf.Terminator) {
 			// Not a directive (`using var x = e`, `using T v = e`); leave the tail
 			// for run() rather than over-running to the terminator.
@@ -185,10 +185,10 @@ func contains(xs []string, x string) bool {
 // token after the keyword is not a string (a dynamic argument), leaving that
 // token unconsumed, exactly like Ruby's readStringArg.
 func (e *extractor) captureString(l *lexer) (string, bool) {
-	l.skipInlineSpace()
+	l.skipInlineSpaceAndComments()
 	if l.pos < len(l.src) && l.src[l.pos] == '(' {
 		l.pos++
-		l.skipInlineSpace()
+		l.skipInlineSpaceAndComments()
 	}
 	return e.readStringLiteral(l)
 }
@@ -197,10 +197,10 @@ func (e *extractor) captureString(l *lexer) (string, bool) {
 // everything up to the skipTo delimiter, then a string (Ruby autoload :C, "x").
 // Bails if the line ends before the delimiter or the argument is not a string.
 func (e *extractor) captureSkipToString(l *lexer, skipTo string) (string, bool) {
-	l.skipInlineSpace()
+	l.skipInlineSpaceAndComments()
 	if l.pos < len(l.src) && l.src[l.pos] == '(' {
 		l.pos++
-		l.skipInlineSpace()
+		l.skipInlineSpaceAndComments()
 	}
 	delim := byte(0)
 	if skipTo != "" {
@@ -216,7 +216,7 @@ func (e *extractor) captureSkipToString(l *lexer, skipTo string) (string, bool) 
 			break
 		}
 	}
-	l.skipInlineSpace()
+	l.skipInlineSpaceAndComments()
 	return e.readStringLiteral(l)
 }
 
@@ -224,7 +224,7 @@ func (e *extractor) captureSkipToString(l *lexer, skipTo string) (string, bool) 
 // tolerating whitespace around the separator. Returns the chain re-joined with the
 // separator, or ("", false) when no identifier follows.
 func (e *extractor) capturePathToken(l *lexer, sep string) (string, bool) {
-	l.skipInlineSpace()
+	l.skipInlineSpaceAndComments()
 	var segs []string
 	for {
 		w := l.peekWord()
@@ -233,10 +233,10 @@ func (e *extractor) capturePathToken(l *lexer, sep string) (string, bool) {
 		}
 		l.pos += len(w)
 		segs = append(segs, w)
-		l.skipInlineSpace()
+		l.skipInlineSpaceAndComments()
 		if sep != "" && l.has(sep) {
 			l.pos += len(sep)
-			l.skipInlineSpace()
+			l.skipInlineSpaceAndComments()
 			continue
 		}
 		break
@@ -283,6 +283,11 @@ func (l *lexer) readQuotedContents(sf *StringForm) (string, bool) {
 				l.pos++
 			}
 		case l.has(closeD):
+			if sf.QuoteDoubling && len(closeD) == 1 && l.pos+1 < len(l.src) && l.src[l.pos+1] == closeD[0] {
+				buf = append(buf, closeD[0]) // a doubled delimiter is a literal delimiter
+				l.pos += 2
+				continue
+			}
 			l.pos += len(closeD)
 			return string(buf), true
 		case c == '\n':
@@ -347,6 +352,25 @@ func (l *lexer) skipInlineSpace() {
 		case ' ', '\t', '\r', '\f':
 			l.pos++
 		default:
+			return
+		}
+	}
+}
+
+// skipInlineSpaceAndComments skips spaces/tabs plus block comments that may sit
+// between an import keyword and its specifier (C# `using /* x */ System.Text;`),
+// matching the hand-written scanners' behavior. It does not cross a newline or
+// consume line comments — a comment-to-end-of-line there would put the specifier
+// on another line, which the surface captures do not span.
+func (l *lexer) skipInlineSpaceAndComments() {
+	for l.pos < len(l.src) {
+		switch l.src[l.pos] {
+		case ' ', '\t', '\r', '\f':
+			l.pos++
+		default:
+			if l.tryBlockComment() {
+				continue
+			}
 			return
 		}
 	}
