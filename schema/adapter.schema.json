@@ -1,0 +1,248 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://github.com/matterpale/depdog/schema/adapter.schema.json",
+  "title": "depdog language-adapter spec",
+  "description": "Declares a language's import syntax and module-resolution rules so depdog can analyze it without a hand-written Go adapter. A spec drives a generic comment/string-aware lexer (the same correctness bar as the hand-written scanners), an import-surface extractor, and a common-case resolver that produces the language-neutral core.Graph. Built-in specs ship embedded; user specs are discovered at .depdog/adapters/<name>.yaml.",
+  "type": "object",
+  "required": ["name", "markers", "extensions", "imports"],
+  "additionalProperties": false,
+  "properties": {
+    "name": {
+      "type": "string",
+      "description": "The adapter identifier — the --lang value and the label in errors, e.g. \"cs\" or \"lua\"."
+    },
+    "markers": {
+      "type": "array",
+      "items": { "type": "string" },
+      "minItems": 1,
+      "description": "Project-root marker files, in priority order. An entry containing '*' is a glob matched against a directory's entries (e.g. \"*.csproj\"). The nearest ancestor directory holding a marker is the project root."
+    },
+    "extensions": {
+      "type": "array",
+      "items": { "type": "string" },
+      "minItems": 1,
+      "description": "Source-file extensions to scan, including the dot, e.g. [\".rb\"] or [\".cs\"]."
+    },
+    "skipDirs": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Directory names pruned from the file walk (in addition to dotdirs, which are always pruned), e.g. [\"vendor\", \"node_modules\", \"bin\", \"obj\"]."
+    },
+    "comments": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "The language's comment syntaxes. The lexer never mistakes an import-looking substring inside a comment for an import.",
+      "properties": {
+        "line": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Line-comment prefixes, e.g. [\"#\"], [\"//\"], [\"--\"]."
+        },
+        "block": {
+          "type": "array",
+          "description": "Block-comment forms.",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["open", "close"],
+            "properties": {
+              "open": { "type": "string", "description": "Opening delimiter, e.g. \"/*\", \"=begin\", \"{-\"." },
+              "close": { "type": "string", "description": "Closing delimiter, e.g. \"*/\", \"=end\", \"-}\"." },
+              "nesting": { "type": "boolean", "description": "The comment nests (Rust /* */, Elm {- -}): an inner open must be matched before the outer close." },
+              "lineAnchored": { "type": "boolean", "description": "Open/close are only recognised at the very start of a line (Ruby =begin/=end)." }
+            }
+          }
+        }
+      }
+    },
+    "strings": {
+      "type": "array",
+      "description": "The language's string/char literal syntaxes. The lexer never mistakes an import-looking substring inside a string for an import.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["open"],
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": ["quoted", "char", "raw-hash", "raw-run"],
+            "description": "quoted: a normal \"...\"/'...'/\"\"\"...\"\"\" literal. char: a single-glyph 'x' literal. raw-hash: Rust r#\"...\"# with a matched hash level. raw-run: C# raw string of N>=minRun quotes closed by N quotes. Default: quoted."
+          },
+          "open": { "type": "string", "description": "Opening delimiter, e.g. \"\\\"\", \"'\". For raw-hash this is the leading prefix (e.g. \"r\"); for raw-run it is an optional prefix before the quote run (e.g. \"$\" for C# $\"\"\"...\"\"\", omit for bare \"\"\"...\"\"\")." },
+          "close": { "type": "string", "description": "Closing delimiter; defaults to open." },
+          "escape": { "type": "string", "description": "Escape character (usually \"\\\\\"); empty means no escapes." },
+          "multiline": { "type": "boolean", "description": "The literal may span newlines (triple-quoted, verbatim)." },
+          "quoteDoubling": { "type": "boolean", "description": "A doubled delimiter is a literal delimiter, not a close (C# @\"...\"\"...\")." },
+          "quote": { "type": "string", "description": "raw-hash/raw-run: the quote character delimiting the body (e.g. \"\\\"\")." },
+          "hash": { "type": "string", "description": "raw-hash: the repeatable level character (e.g. \"#\")." },
+          "minRun": { "type": "integer", "description": "raw-run: minimum delimiter run length that opens the literal (C# raw strings: 3)." }
+        }
+      }
+    },
+    "imports": {
+      "type": "array",
+      "minItems": 1,
+      "description": "The import surfaces to extract. Each is matched at a word start (like the hand-written scanners' tryRequire).",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["keyword", "capture"],
+        "properties": {
+          "keyword": { "type": "string", "description": "The leading keyword, e.g. \"require\", \"using\", \"import\", \"use\"." },
+          "capture": {
+            "type": "string",
+            "enum": ["string", "path-token", "skip-to-string"],
+            "description": "How to read the specifier after the keyword. string: a quoted string literal (require \"x\"). path-token: a dotted/namespaced identifier chain up to a terminator (using a.b.c;). skip-to-string: skip to a delimiter, then read a string (autoload :C, \"x\")."
+          },
+          "kind": { "type": "string", "description": "A label attached to captured refs, referenced by resolve.relativeKinds (e.g. \"plain\", \"relative\"). Default: \"plain\"." },
+          "separator": { "type": "string", "description": "path-token: the segment separator (\".\", \"::\"). The captured specifier is normalised to this separator." },
+          "terminator": {
+            "type": "string",
+            "enum": ["semicolon", "newline"],
+            "description": "path-token: where the statement ends. Default: newline."
+          },
+          "skipTo": { "type": "string", "description": "skip-to-string: the delimiter to skip past before reading the string (\",\" for Ruby autoload)." },
+          "prefixKeywords": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "Modifier words that may appear immediately BEFORE the keyword (C# `global using`). The surface still matches when the current word is one of these and the keyword follows."
+          },
+          "skipKeywords": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "Modifier words that may appear immediately AFTER the keyword and are skipped before the specifier (C# `using static X`)."
+          },
+          "alias": {
+            "type": "string",
+            "description": "path-token: a separator token (e.g. \"=\"). When it follows the first token, the specifier captured is the token AFTER it (C# `using X = Y` depends on Y)."
+          },
+          "strictTerminator": {
+            "type": "boolean",
+            "description": "path-token: reject the match unless the captured token is immediately followed by the terminator, so a using *statement* (`using (res)`, `using var x = e`) is not read as a directive."
+          }
+        }
+      }
+    },
+    "provides": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["keyword", "capture"],
+      "description": "A declaration surface that names what a file contributes to the project's name-index (resolve.mode=name-index). E.g. C# `namespace Foo.Bar` declares that this file's directory provides the Foo.Bar namespace.",
+      "properties": {
+        "keyword": { "type": "string", "description": "The declaration keyword, e.g. \"namespace\"." },
+        "capture": { "type": "string", "enum": ["path-token"], "description": "How to read the declared name." },
+        "separator": { "type": "string", "description": "The name separator (\".\")." },
+        "terminator": { "type": "string", "enum": ["semicolon", "newline", "brace"], "description": "Where the declaration name ends (\";\" file-scoped, \"{\" block-scoped)." }
+      }
+    },
+    "resolve": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "How a captured specifier is classified (in-module / std / external) and, for in-module, mapped to a graph node directory.",
+      "properties": {
+        "mode": {
+          "type": "string",
+          "enum": ["path", "name-index"],
+          "description": "path: the specifier is a file path resolved against roots + extensions + index files (Ruby, Lua). name-index: the specifier is a name matched against the set of names project files declare via `provides` (C#, Elm-style). Default: path."
+        },
+        "separator": { "type": "string", "description": "The separator in the specifier that maps to a path separator (\"/\", \".\", \"::\"). Default: \"/\"." },
+        "relativeKinds": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "path mode: import surface kinds that resolve against the importing file's directory rather than the roots (Ruby \"relative\")."
+        },
+        "roots": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "path mode: project-relative directories a non-relative specifier is resolved against, in order. \".\" is the project root. Default: [\".\"]."
+        },
+        "rootsIfExist": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "path mode: additional roots tried only when they exist on disk (Ruby's conventional \"lib\" load path)."
+        },
+        "extensions": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "path mode: file extensions appended to a specifier when it lacks one, e.g. [\".rb\"]. Default: the top-level extensions."
+        },
+        "indexFiles": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "path mode: index-file basenames that make a directory itself importable (Python __init__.py, Lua init.lua)."
+        },
+        "dropSelfEdges": {
+          "type": "boolean",
+          "description": "Drop an in-module edge that resolves to the importing file's own directory (Elm). Ruby keeps self-edges. Default: false."
+        }
+      }
+    },
+    "stdlib": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "The standard-library classification table. A specifier that does not resolve in-module and is (or whose head is) in this table classifies as std; anything else is external.",
+      "properties": {
+        "match": {
+          "type": "string",
+          "enum": ["full", "head"],
+          "description": "full: match the whole specifier. head: match the whole specifier, else the head segment before the first separator (Ruby net/http -> net). Default: full."
+        },
+        "separator": { "type": "string", "description": "head match: the separator whose first segment is the head (\"/\")." },
+        "modules": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "The std feature/module names."
+        },
+        "prefixes": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Dotted namespace prefixes counted as std (C# \"System\", \"Microsoft\" match System.Text, Microsoft.Extensions.*)."
+        },
+        "builtin": {
+          "type": "string",
+          "description": "Reference a std table bundled with depdog by name, instead of (or in addition to) an inline `modules` list."
+        }
+      }
+    },
+    "tests": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "How test-only source is recognised, so an import seen only in tests is marked TestOnly.",
+      "properties": {
+        "stemSuffixes": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "File-name stem suffixes marking a test file (Ruby [\"_test\", \"_spec\"])."
+        },
+        "dirs": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Directory names anywhere in a file's path marking it a test file (Ruby [\"spec\", \"test\"])."
+        }
+      }
+    },
+    "module": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "How the graph's ModulePath (the display prefix of every node) is derived.",
+      "properties": {
+        "label": {
+          "type": "string",
+          "enum": ["dir-basename"],
+          "description": "Fallback strategy when no manifest name is found. dir-basename: the project root's directory name. Default: dir-basename."
+        },
+        "fromFile": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "Read the module name from a manifest by an assignment: find `<recv>.<key> = \"value\"` (Ruby gemspec spec.name).",
+          "required": ["glob", "key"],
+          "properties": {
+            "glob": { "type": "string", "description": "Glob of the manifest file in the project root, e.g. \"*.gemspec\"." },
+            "key": { "type": "string", "description": "The assignment attribute to read, e.g. \"name\"." },
+            "commentPrefix": { "type": "string", "description": "Line-comment prefix to ignore in the manifest. Default: \"#\"." }
+          }
+        }
+      }
+    }
+  }
+}

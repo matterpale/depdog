@@ -140,14 +140,61 @@ func relSlash(base, target string) (string, error) {
 	return filepath.ToSlash(rel), nil
 }
 
-// hasAnyMarker reports whether dir directly contains any of the marker files.
+// hasAnyMarker reports whether dir directly contains any of the marker files. It
+// reads the directory once and tests every marker against that single listing, so
+// a full-tree DiscoverUnits walk does not Stat/ReadDir per marker per directory.
 func hasAnyMarker(dir string, markerSet map[string]bool) bool {
-	for m := range markerSet {
-		if exists(filepath.Join(dir, m)) {
-			return true
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return false
+	}
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+		name := e.Name()
+		for m := range markerSet {
+			if markerNameMatches(m, name) {
+				return true
+			}
 		}
 	}
 	return false
+}
+
+// markerNameMatches reports whether a directory entry name satisfies a marker: a
+// glob match when marker contains '*', else an exact name match.
+func markerNameMatches(marker, name string) bool {
+	if strings.ContainsRune(marker, '*') {
+		ok, _ := filepath.Match(marker, name)
+		return ok
+	}
+	return marker == name
+}
+
+// MarkerMatch reports whether dir directly contains the marker as a regular
+// (non-directory) file: an exact name when marker is plain (go.mod, Gemfile), or
+// any file matching the glob when marker contains '*' (e.g. "*.csproj" for a
+// declarative C# adapter). Shared by the CLI adapter registry so it agrees with
+// the unit-discovery walk on what a marker is.
+func MarkerMatch(dir, marker string) bool {
+	if strings.ContainsRune(marker, '*') {
+		entries, err := os.ReadDir(dir)
+		if err != nil {
+			return false
+		}
+		for _, e := range entries {
+			if e.IsDir() {
+				continue
+			}
+			if ok, _ := filepath.Match(marker, e.Name()); ok {
+				return true
+			}
+		}
+		return false
+	}
+	fi, err := os.Stat(filepath.Join(dir, marker))
+	return err == nil && !fi.IsDir()
 }
 
 // disjointFromUnits reports whether the marker dir markerRel has no unit that

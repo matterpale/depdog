@@ -1,0 +1,9 @@
+# A C# project analysed by depdog's declarative adapter (internal/lang/spec),
+# auto-detected via the *.csproj marker. `using` resolves by namespace: App.Domain
+# is in-module (some file declares `namespace App.Domain`), System.* is std, and
+# Newtonsoft.Json is an external NuGet package.
+version: 2
+components:
+  domain:   { path: "Domain/**",   allow: [std] }
+  services: { path: "Services/**", allow: [domain, std, external] }
+default: deny

@@ -1,0 +1,127 @@
+# Ruby expressed as a declarative adapter spec. This is NOT a shipped adapter —
+# Ruby stays hand-written (D1). It is the M4 validation target: the engine driven
+# by this spec must reproduce internal/lang/ruby byte-for-byte on that adapter's
+# own fixtures. Keep it faithful to internal/lang/ruby/{scan,resolve,stdlib}.go.
+name: rb
+markers: [Gemfile, .ruby-version, Rakefile, "*.gemspec"]
+extensions: [".rb"]
+skipDirs: [vendor, tmp, node_modules, log, coverage]
+
+comments:
+  line: ["#"]
+  block:
+    - { open: "=begin", close: "=end", lineAnchored: true }
+
+strings:
+  - { open: "\"", escape: "\\", multiline: true }
+  - { open: "'", escape: "\\", multiline: true }
+
+imports:
+  - { keyword: require,          capture: string,         kind: plain }
+  - { keyword: require_relative, capture: string,         kind: relative }
+  - { keyword: autoload,         capture: skip-to-string, skipTo: ",", kind: plain }
+
+resolve:
+  mode: path
+  separator: "/"
+  relativeKinds: [relative]
+  roots: ["."]
+  rootsIfExist: [lib]
+  extensions: [".rb"]
+  dropSelfEdges: false
+
+stdlib:
+  match: head
+  separator: "/"
+  modules:
+    # Flat, always-shipped features.
+    - abbrev
+    - base64
+    - benchmark
+    - bigdecimal
+    - cgi
+    - coverage
+    - csv
+    - date
+    - delegate
+    - digest
+    - drb
+    - english
+    - erb
+    - etc
+    - expect
+    - fcntl
+    - fiddle
+    - fileutils
+    - find
+    - forwardable
+    - getoptlong
+    - io
+    - ipaddr
+    - irb
+    - json
+    - logger
+    - matrix
+    - mkmf
+    - monitor
+    - mutex_m
+    - objspace
+    - observer
+    - open3
+    - openssl
+    - optparse
+    - ostruct
+    - pathname
+    - pp
+    - prettyprint
+    - prime
+    - pstore
+    - psych
+    - pty
+    - racc
+    - random
+    - readline
+    - resolv
+    - ripper
+    - rss
+    - securerandom
+    - set
+    - shellwords
+    - singleton
+    - socket
+    - stringio
+    - strscan
+    - syslog
+    - tempfile
+    - time
+    - timeout
+    - tmpdir
+    - tracer
+    - tsort
+    - un
+    - uri
+    - weakref
+    - yaml
+    - zlib
+    # Nested features whose head is not itself a standalone requirable name.
+    - net
+    - net/http
+    - net/https
+    - net/ftp
+    - net/imap
+    - net/pop
+    - net/smtp
+    - net/telnet
+    - rexml
+    - rexml/document
+    - rinda
+    - rinda/tuplespace
+    - rubygems
+
+tests:
+  stemSuffixes: [_test, _spec]
+  dirs: [spec, test]
+
+module:
+  label: dir-basename
+  fromFile: { glob: "*.gemspec", key: name, commentPrefix: "#" }

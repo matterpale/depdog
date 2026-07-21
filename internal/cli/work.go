@@ -24,6 +24,9 @@ func evaluateWorkMode(cmd *cobra.Command, workPath, cwd string, o checkOptions, 
 	if err != nil {
 		return nil, err
 	}
+	if err := registryError(); err != nil {
+		return nil, err // a malformed .depdog/adapters spec, surfaced actionably
+	}
 	for i := range w.Units {
 		u := &w.Units[i]
 		if u.Lang != "" {
@@ -143,7 +146,7 @@ func adapterForWorkUnit(dir string, u *core.WorkUnit, cfgLang string) (lang.Adap
 		return a, nil
 	}
 	var matched []lang.Adapter
-	for _, a := range languages {
+	for _, a := range registry() {
 		if hasAnyMarker(dir, a.Markers) {
 			matched = append(matched, a)
 		}

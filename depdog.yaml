@@ -15,12 +15,14 @@ components:
   kotlin: { path: "internal/lang/kotlin/**", allow: [core, lang, std] } # pure scanner: stdlib only
   scala:  { path: "internal/lang/scala/**",  allow: [core, lang, std] } # pure scanner: stdlib only
   elm:    { path: "internal/lang/elm/**",    allow: [core, lang, std] } # pure scanner: stdlib only
+  spec:   { path: "internal/lang/spec/**",   allow: [core, lang, std, external] } # declarative-adapter engine: YAML specs (external) -> core graph; not itself an adapter
+  parity: { path: "internal/lang/spec/parity/**", allow: [core, ruby, spec, std] } # M4 trust-gate test only: imports BOTH the spec engine and the ruby adapter to prove byte-parity; a deeper pattern than `spec`, so it wins
   report: { path: "internal/report/**",      allow: [core, std, external] } # lipgloss styles the human output
   wizard: { path: "internal/wizard/**",      allow: [core, std] } # pure heuristics: engine matcher + std only
   lsp:    { path: "internal/lsp/**",         allow: [core, std] } # hand-rolled JSON-RPC: stdlib only, like core
   mcp:    { path: "internal/mcp/**",         allow: [core, std] } # hand-rolled JSON-RPC: stdlib only, like lsp
   tui:    { path: "internal/tui/**",         allow: [core, std, external] } # bubbletea view over core
-  cli:    { path: "internal/cli/**",         allow: [core, config, lang, golang, typescript, python, ruby, rust, java, kotlin, scala, elm, report, wizard, lsp, mcp, tui, std, external] }
+  cli:    { path: "internal/cli/**",         allow: [core, config, lang, golang, typescript, python, ruby, rust, java, kotlin, scala, elm, spec, report, wizard, lsp, mcp, tui, std, external] }
   e2e:    { path: "internal/e2e/**",         allow: [std] }
 
 default: deny

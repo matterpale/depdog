@@ -1,0 +1,7 @@
+# Same project, but Services is forbidden from importing external packages, so the
+# using Newtonsoft.Json directive is a violation.
+version: 2
+components:
+  domain:   { path: "Domain/**",   allow: [std] }
+  services: { path: "Services/**", allow: [domain, std] }
+default: deny

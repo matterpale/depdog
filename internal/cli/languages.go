@@ -5,7 +5,9 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
+	"sync"
 
 	"github.com/matterpale/depdog/internal/config"
 	"github.com/matterpale/depdog/internal/lang"
@@ -17,6 +19,7 @@ import (
 	"github.com/matterpale/depdog/internal/lang/ruby"
 	"github.com/matterpale/depdog/internal/lang/rust"
 	"github.com/matterpale/depdog/internal/lang/scala"
+	"github.com/matterpale/depdog/internal/lang/spec"
 	"github.com/matterpale/depdog/internal/lang/typescript"
 )
 
@@ -27,10 +30,12 @@ import (
 // falls back to unit discovery; a config that fails to *parse* does not.
 var errResolution = errors.New("project resolution failed")
 
-// languages is the registry of supported language adapters — the single place
-// multi-language support is wired. To add a language, implement lang.Loader in
-// internal/lang/<name> and add one entry here (see lang.Adapter); detection, the
-// --lang flag, dispatch and every error message read from this slice.
+// languages is the hand-written adapter set. To add a hand-written language,
+// implement lang.Loader in internal/lang/<name> and add one entry here (see
+// lang.Adapter). Detection, the --lang flag, dispatch and every error message
+// read from the full registry() — the hand-written set plus the embedded
+// built-in declarative adapters (internal/lang/spec/builtin) and any user specs
+// discovered at .depdog/adapters/*.yaml. See docs/adapters.md.
 var languages = []lang.Adapter{
 	{
 		Name:    "go",
@@ -92,10 +97,175 @@ var languages = []lang.Adapter{
 	},
 }
 
+// userAdaptersDir is the conventional per-repo directory holding user adapter
+// specs, discovered by walking up from the working directory.
+const userAdaptersDir = ".depdog/adapters"
+
+var (
+	registryOnce sync.Once
+	registryList []lang.Adapter
+	registryErr  error
+)
+
+// registry returns the full adapter set for this invocation: the hand-written
+// adapters, the embedded built-in declarative adapters (internal/lang/spec/
+// builtin), and any user specs discovered at .depdog/adapters/*.yaml walking up
+// from the working directory. It is computed once. A malformed user spec (or a
+// user spec that tries to override a hand-written adapter) is surfaced via
+// registryError, which the adapter-resolution entry points check.
+func registry() []lang.Adapter {
+	registryOnce.Do(buildRegistry)
+	return registryList
+}
+
+// registryError reports a problem building the registry, so command entry points
+// fail with a human-actionable message rather than silently dropping a spec.
+func registryError() error {
+	registry()
+	return registryErr
+}
+
+func buildRegistry() {
+	handWritten := make(map[string]bool, len(languages))
+	list := append([]lang.Adapter(nil), languages...) // hand-written, order preserved
+	for _, a := range list {
+		handWritten[a.Name] = true
+	}
+
+	// Declarative adapters: built-in first, then user specs override a built-in of
+	// the same name (but never a hand-written adapter). Appended after the
+	// hand-written set, sorted by name for deterministic help text and detection.
+	declarative := map[string]lang.Adapter{}
+	builtins, err := spec.Builtins()
+	if err != nil {
+		registryErr = fmt.Errorf("loading built-in adapters: %w", err)
+		registryList = list
+		return
+	}
+	for _, sp := range builtins {
+		if handWritten[sp.Name] {
+			continue // a built-in never shadows a hand-written adapter (would double-register)
+		}
+		declarative[sp.Name] = specAdapter(sp)
+	}
+
+	if cwd, err := os.Getwd(); err == nil {
+		user, uerr := discoverUserSpecs(cwd)
+		if uerr != nil {
+			registryErr = uerr
+		}
+		for _, us := range user {
+			if handWritten[us.spec.Name] {
+				registryErr = fmt.Errorf("%s: adapter name %q is reserved by a hand-written adapter and cannot be redefined by a user spec", us.file, us.spec.Name)
+				continue
+			}
+			declarative[us.spec.Name] = specAdapter(us.spec) // overrides a same-named built-in
+		}
+	}
+
+	names := make([]string, 0, len(declarative))
+	for n := range declarative {
+		names = append(names, n)
+	}
+	sort.Strings(names)
+	for _, n := range names {
+		list = append(list, declarative[n])
+	}
+	registryList = list
+}
+
+// specAdapter wraps a declarative Spec as a lang.Adapter registered like any
+// other (Markers -> auto-detect, Name -> --lang).
+func specAdapter(sp *spec.Spec) lang.Adapter {
+	s := sp
+	return lang.Adapter{
+		Name:    s.Name,
+		Markers: s.Markers,
+		New:     func(root string) lang.Loader { return &spec.Loader{Spec: s, Dir: root} },
+	}
+}
+
+// userSpec is a loaded user adapter spec plus the file it came from, so registry
+// errors can name the offending file.
+type userSpec struct {
+	file string
+	spec *spec.Spec
+}
+
+// discoverUserSpecs loads adapter specs from the nearest .depdog/adapters
+// directory found walking up from startDir. Each *.yaml/*.yml is a Spec; a
+// malformed one is a human-actionable error naming the file.
+func discoverUserSpecs(startDir string) ([]userSpec, error) {
+	dir := findAdaptersDir(startDir)
+	if dir == "" {
+		return nil, nil
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil, nil // present but unreadable: treat as no user specs
+	}
+	var names []string
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+		if strings.HasSuffix(e.Name(), ".yaml") || strings.HasSuffix(e.Name(), ".yml") {
+			names = append(names, e.Name())
+		}
+	}
+	sort.Strings(names)
+
+	var specs []userSpec
+	for _, name := range names {
+		p := filepath.Join(dir, name)
+		data, err := os.ReadFile(p)
+		if err != nil {
+			return nil, fmt.Errorf("reading user adapter spec %s: %w", p, err)
+		}
+		sp, err := spec.Load(data)
+		if err != nil {
+			return nil, fmt.Errorf("%s: %w", p, err)
+		}
+		specs = append(specs, userSpec{file: p, spec: sp})
+	}
+	return specs, nil
+}
+
+// findAdaptersDir returns the nearest .depdog/adapters directory walking up from
+// startDir, bounded by the repository root: the walk stops at the directory that
+// holds a .git entry, so a stray .depdog/adapters in an unrelated ancestor (a
+// parent repo, or $HOME) never leaks into this repo.
+func findAdaptersDir(startDir string) string {
+	abs, err := filepath.Abs(startDir)
+	if err != nil {
+		return ""
+	}
+	for d := abs; ; {
+		if cand := filepath.Join(d, filepath.FromSlash(userAdaptersDir)); dirExists(cand) {
+			return cand
+		}
+		if fileExists(filepath.Join(d, ".git")) {
+			return "" // repo root reached without a match; do not cross it
+		}
+		parent := filepath.Dir(d)
+		if parent == d {
+			return "" // filesystem root
+		}
+		d = parent
+	}
+}
+
+// dirExists reports whether p is an existing directory.
+func dirExists(p string) bool {
+	fi, err := os.Stat(p)
+	return err == nil && fi.IsDir()
+}
+
 // languageNames lists the registered --lang values, for flag help and errors.
 func languageNames() []string {
-	names := make([]string, len(languages))
-	for i, a := range languages {
+	reg := registry()
+	names := make([]string, len(reg))
+	for i, a := range reg {
 		names[i] = a.Name
 	}
 	return names
@@ -103,7 +273,7 @@ func languageNames() []string {
 
 // adapterByName returns the adapter registered under a --lang value.
 func adapterByName(name string) (lang.Adapter, bool) {
-	for _, a := range languages {
+	for _, a := range registry() {
 		if a.Name == name {
 			return a, true
 		}
@@ -114,6 +284,9 @@ func adapterByName(name string) (lang.Adapter, bool) {
 // pickAdapter chooses the adapter: an explicit --lang value when set (validated
 // against the registry), else auto-detection walking up from startDir.
 func pickAdapter(startDir, langFlag string) (lang.Adapter, error) {
+	if err := registryError(); err != nil {
+		return lang.Adapter{}, err
+	}
 	if langFlag != "" {
 		a, ok := adapterByName(langFlag)
 		if !ok {
@@ -136,7 +309,7 @@ func detectLanguage(startDir string) (lang.Adapter, string, error) {
 	}
 	for d := abs; ; {
 		var matched []lang.Adapter
-		for _, a := range languages {
+		for _, a := range registry() {
 			if hasAnyMarker(d, a.Markers) {
 				matched = append(matched, a)
 			}
@@ -255,6 +428,9 @@ func nearestConfigLang(startDir string) string {
 // never forwards a --lang flag (--lang with --all is a usage error), so the
 // resolution is exactly the config key or auto-detect.
 func adapterForUnit(dir, cfgLang string) (lang.Adapter, error) {
+	if err := registryError(); err != nil {
+		return lang.Adapter{}, err
+	}
 	if cfgLang != "" {
 		a, ok := adapterByName(cfgLang)
 		if !ok {
@@ -284,7 +460,7 @@ func adapterForUnit(dir, cfgLang string) (lang.Adapter, error) {
 func registryMarkers() []string {
 	seen := make(map[string]bool)
 	var out []string
-	for _, a := range languages {
+	for _, a := range registry() {
 		for _, m := range a.Markers {
 			if !seen[m] {
 				seen[m] = true
@@ -315,7 +491,7 @@ func rootByMarkers(startDir string, markers []string) (string, error) {
 	found := make([]string, len(markers)) // nearest dir seen for each marker
 	for d := abs; ; {
 		for i, m := range markers {
-			if found[i] == "" && fileExists(filepath.Join(d, m)) {
+			if found[i] == "" && config.MarkerMatch(d, m) {
 				found[i] = d
 			}
 		}
@@ -335,7 +511,7 @@ func rootByMarkers(startDir string, markers []string) (string, error) {
 
 func hasAnyMarker(dir string, markers []string) bool {
 	for _, m := range markers {
-		if fileExists(filepath.Join(dir, m)) {
+		if config.MarkerMatch(dir, m) {
 			return true
 		}
 	}
@@ -374,8 +550,9 @@ func ambiguityError(dir string, matched []lang.Adapter) error {
 }
 
 func noProjectError(startDir string) error {
-	kinds := make([]string, len(languages))
-	for i, a := range languages {
+	reg := registry()
+	kinds := make([]string, len(reg))
+	for i, a := range reg {
 		kinds[i] = fmt.Sprintf("%s (%s)", a.Name, strings.Join(a.Markers, "/"))
 	}
 	return fmt.Errorf("%w: no project root found from %s upward — depdog runs inside one of: %s",
