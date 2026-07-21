@@ -1,0 +1,23 @@
+name: block-label
+
+# Pre-merge gate: this check fails while a PR carries the "BLOCK" label, so the
+# PR cannot be merged once "block" is a required status check on main. The
+# labeled/unlabeled events re-run it the instant the label is added or removed;
+# opened/reopened/synchronize keep it reporting on every PR and push so a
+# required check is never left "expected — waiting".
+on:
+  pull_request:
+    types: [opened, reopened, synchronize, labeled, unlabeled]
+
+# Reads only the event payload's labels — no checkout, no API call, no token.
+permissions: {}
+
+jobs:
+  block:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Halt while the PR is labeled BLOCK
+        if: contains(github.event.pull_request.labels.*.name, 'BLOCK')
+        run: |
+          echo "::error::This PR is labeled 'BLOCK' — merging is intentionally halted. Remove the 'BLOCK' label to unblock."
+          exit 1
