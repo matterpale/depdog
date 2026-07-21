@@ -589,6 +589,42 @@ func TestMatrixVerdicts(t *testing.T) {
 	}
 }
 
+func TestMatrixGlobalDenyVerdicts(t *testing.T) {
+	// A top-level deny wins over a component's own allow in the matrix, exactly as
+	// it does in `check` — otherwise a cell would read allow while the build
+	// fails. Covers both the component-target and the module-target cell paths.
+	rs := &core.RuleSet{
+		Components: []core.Component{
+			{Name: "api", Patterns: []string{"internal/api/**"}},
+			{Name: "legacy", Patterns: []string{"internal/legacy/**"}},
+		},
+		Rules: map[string]core.Rule{
+			// api broadly allows a peer, any external, and one exact module — yet the
+			// global deny below must still render those cells as a hard deny.
+			"api": {Allow: []core.Ref{
+				{Kind: core.RefComponent, Name: "legacy"},
+				{Kind: core.RefExternal},
+				{Kind: core.RefExternalModule, Name: "github.com/evil/pkg"},
+			}},
+		},
+		GlobalDeny: []core.Ref{
+			{Kind: core.RefComponent, Name: "legacy"},
+			{Kind: core.RefExternalModule, Name: "github.com/evil/pkg"},
+		},
+		Policy: core.PolicyDeny,
+	}
+	if got := cellVerdict(rs, "api", "legacy"); got != cellDeny {
+		t.Errorf("cellVerdict(api→legacy) = %d, want cellDeny (global deny wins over allow)", got)
+	}
+	if got := moduleCellVerdict(rs, "api", "github.com/evil/pkg"); got != cellDeny {
+		t.Errorf("moduleCellVerdict(api→evil) = %d, want cellDeny (global deny wins over allow)", got)
+	}
+	// A non-banned module the component allows via `external` still reads as allow.
+	if got := moduleCellVerdict(rs, "api", "github.com/ok/pkg"); got != cellDefaultAllow {
+		t.Errorf("moduleCellVerdict(api→ok) = %d, want cellDefaultAllow", got)
+	}
+}
+
 func TestMatrixViewWithoutRuleSet(t *testing.T) {
 	// No WithConfig: the Matrix tab must still render a hint, never panic.
 	m := update(New(fixtureResult(), fixturePkgs()), runes("m"))

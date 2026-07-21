@@ -4,6 +4,7 @@ package e2e
 
 import (
 	"bytes"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"io/fs"
@@ -139,6 +140,114 @@ func TestCheckDirtySARIF(t *testing.T) {
 		t.Fatalf("exit %d, want 1\n%s", exit, out)
 	}
 	golden(t, "dirty_sarif.golden", out)
+}
+
+// TestCheckExternalModuleDeny exercises a deny-list over external dependencies:
+// the app component allows any third-party module (allow: [external]) but denies
+// example.test/extlib by name. Deny wins over the broad external allow, so the
+// extlib import is flagged while its sibling example.test/goodlib passes. The
+// substring assertions pin the semantic invariant so a stray golden -update
+// can't silently start (or stop) flagging the wrong module.
+func TestCheckExternalModuleDeny(t *testing.T) {
+	out, _, exit := run(t, fixture("extdeny"), "check")
+	if exit != 1 {
+		t.Fatalf("exit %d, want 1\n%s", exit, out)
+	}
+	if !strings.Contains(out, "example.test/extlib") {
+		t.Errorf("denied module example.test/extlib not reported:\n%s", out)
+	}
+	if strings.Contains(out, "example.test/goodlib") {
+		t.Errorf("allowed module example.test/goodlib should not be flagged:\n%s", out)
+	}
+	golden(t, "extdeny_text.golden", reTextDur.ReplaceAllString(out, "checked in X"))
+}
+
+// TestCheckGlobalDeny exercises the module-wide top-level `deny`: two
+// independently-ruled components (api, web) each allow any external module, yet
+// the banned example.test/extlib is flagged in BOTH — the case a component-level
+// deny or a `path: "**"` catch-all cannot cover. The permitted example.test/goodlib
+// passes, so the ban is targeted rather than a blanket external block.
+func TestCheckGlobalDeny(t *testing.T) {
+	out, _, exit := run(t, fixture("extdeny-global"), "check")
+	if exit != 1 {
+		t.Fatalf("exit %d, want 1\n%s", exit, out)
+	}
+	if strings.Count(out, "example.test/extlib") < 2 {
+		t.Errorf("extlib should be flagged in both api and web:\n%s", out)
+	}
+	if strings.Contains(out, "example.test/goodlib") {
+		t.Errorf("permitted module example.test/goodlib must not be flagged:\n%s", out)
+	}
+	golden(t, "extdeny_global_text.golden", reTextDur.ReplaceAllString(out, "checked in X"))
+}
+
+// TestExplainGlobalDeny locks in that `explain` reports a globally-denied edge
+// through the same Decide path check uses: the verdict names the global deny and
+// the prose points at the top-level list, not the component's own rule.
+func TestExplainGlobalDeny(t *testing.T) {
+	out, stderr, exit := run(t, fixture("extdeny-global"), "explain", "internal/api", "example.test/extlib")
+	if exit != 0 {
+		t.Fatalf("exit %d\nstderr:\n%s", exit, stderr)
+	}
+	golden(t, "extdeny_global_explain.golden", out)
+}
+
+// TestCheckExternalAlias exercises an `aliases` entry that names external-module
+// prefixes: the `sdk` alias is defined once and reused in api's allow and web's
+// deny. web's goodlib import is flagged (the alias expands to external-module
+// refs in the deny list), while api — which imports the same goodlib plus extlib
+// under the aliased allow — passes. extlib, imported only by the allowed api, is
+// never flagged, proving the alias resolves to third-party prefixes on both sides.
+func TestCheckExternalAlias(t *testing.T) {
+	out, _, exit := run(t, fixture("aliases"), "check")
+	if exit != 1 {
+		t.Fatalf("exit %d, want 1\n%s", exit, out)
+	}
+	// The alias expanded to both external prefixes in web's deny rule header.
+	if !strings.Contains(out, "deny [example.test/goodlib, example.test/extlib]") {
+		t.Errorf("web's deny rule should show the sdk alias expanded to both external prefixes:\n%s", out)
+	}
+	// web's goodlib import is the one flagged edge...
+	if !strings.Contains(out, "→ example.test/goodlib") {
+		t.Errorf("web's aliased-deny goodlib import should be flagged:\n%s", out)
+	}
+	// ...and extlib, imported only by the allowed api, is never a violation edge.
+	if strings.Contains(out, "→ example.test/extlib") {
+		t.Errorf("extlib is imported only by api, which allows the sdk alias; it must not be a violation:\n%s", out)
+	}
+	golden(t, "aliases_text.golden", reTextDur.ReplaceAllString(out, "checked in X"))
+}
+
+// TestCheckGroupsDeprecationNotice covers the deprecated `groups:` key end to
+// end: the config still parses and checks cleanly, and the deprecation notice is
+// delivered to stderr — never to the machine-readable stdout, and without
+// affecting the exit code — including under --format json.
+func TestCheckGroupsDeprecationNotice(t *testing.T) {
+	// Human check: config still valid (exit 0, no violations) and the notice is
+	// on stderr, not stdout.
+	out, stderr, exit := run(t, fixture("groups-deprecated"), "check")
+	if exit != 0 {
+		t.Fatalf("exit %d, want 0 (a deprecated groups config must still be valid)\nstdout:\n%s\nstderr:\n%s", exit, out, stderr)
+	}
+	if !strings.Contains(stderr, "depdog: deprecated:") || !strings.Contains(stderr, "aliases") {
+		t.Errorf("stderr should carry the groups→aliases deprecation notice:\n%s", stderr)
+	}
+	if strings.Contains(out, "deprecated") {
+		t.Errorf("the deprecation notice must not appear on stdout:\n%s", out)
+	}
+
+	// Under --format json the notice stays on stderr and stdout is clean JSON.
+	jsonOut, jsonErr, _ := run(t, fixture("groups-deprecated"), "check", "--format", "json")
+	if strings.Contains(jsonOut, "deprecated") {
+		t.Errorf("--format json stdout must not contain the deprecation notice:\n%s", jsonOut)
+	}
+	if !strings.Contains(jsonErr, "depdog: deprecated:") {
+		t.Errorf("the deprecation notice should still be on stderr under --format json:\n%s", jsonErr)
+	}
+	var parsed map[string]any
+	if err := json.Unmarshal([]byte(jsonOut), &parsed); err != nil {
+		t.Errorf("--format json stdout is not valid JSON: %v\n%s", err, jsonOut)
+	}
 }
 
 func TestCheckBadFormat(t *testing.T) {

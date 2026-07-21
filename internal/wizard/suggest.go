@@ -107,7 +107,7 @@ func (c Config) Keep(names []string) Config {
 // ProposeMissing returns a proposed component for every scanned directory
 // group that none of the existing components claims — the same grouping,
 // naming and rule heuristics Suggest applies to unmatched directories. taken
-// lists extra names the proposals must avoid (e.g. the config's groups);
+// lists extra names the proposals must avoid (e.g. the config's aliases);
 // collisions are resolved deterministically by proposedName (the dashed group
 // key, then numeric suffixes). Results are sorted by name so `init --merge`
 // output is stable. An empty result means every directory is already covered.

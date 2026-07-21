@@ -106,6 +106,13 @@ type RuleSet struct {
 	Components []Component
 	Rules      map[string]Rule
 	Policy     Policy
+	// GlobalDeny is the module-wide deny list from the config's top-level `deny:`
+	// key. Unlike a component rule it belongs to no component: it is an absolute
+	// ban that applies to every package's imports and wins over any component
+	// allow, so a dependency listed here can never appear anywhere in the module.
+	// Its entries use the same ref vocabulary as an allow/deny list (typically an
+	// external-module prefix). Empty means no module-wide ban.
+	GlobalDeny []Ref
 	TestFiles  TestFileMode
 	Skip       []string   // package-dir patterns excluded from analysis
 	Boundaries []Boundary // mutual-exclusion groups, orthogonal to components; sorted by name
@@ -114,6 +121,11 @@ type RuleSet struct {
 	// the string; the CLI (which owns the adapter registry) validates and
 	// resolves it. Empty means "auto-detect the adapter".
 	Lang string
+	// Deprecations are advisory notices about the config's use of deprecated keys
+	// (e.g. the old `groups:` spelling of `aliases:`). They never affect the rules
+	// or the exit code; the CLI prints them to stderr so a maintainer knows to
+	// migrate. Empty for a config using only current keys.
+	Deprecations []string
 }
 
 // AmbiguityError reports a package matched by equally specific patterns of
@@ -195,6 +207,9 @@ func (rs *RuleSet) Decide(component, target string) (allowed bool, reason string
 	if target == component {
 		return true, "same component"
 	}
+	if reason, ok := rs.GloballyDenied(target, false, ""); ok {
+		return false, reason
+	}
 	rule, hasRule := rs.Rules[component]
 	if hasRule {
 		for _, r := range rule.Deny {
@@ -215,6 +230,9 @@ func (rs *RuleSet) Decide(component, target string) (allowed bool, reason string
 // (by import path), and the rule or policy that decides it. Used by `explain`
 // when the target is a bare module path.
 func (rs *RuleSet) DecideModule(component, module string) (allowed bool, reason string) {
+	if reason, ok := rs.GloballyDenied("", true, module); ok {
+		return false, reason
+	}
 	rule, hasRule := rs.Rules[component]
 	if hasRule {
 		for _, r := range rule.Deny {
@@ -244,6 +262,39 @@ func (rs *RuleSet) fallback(component string, rule Rule, hasRule bool) (bool, st
 		return false, ruleText(component, "allow", rule.Allow)
 	}
 	return false, "default: deny"
+}
+
+// GloballyDenied reports whether the module-wide deny list covers this edge's
+// destination, returning the rule text to show when it does. Pass isModule with
+// the module import path to match an external module by prefix; otherwise target
+// is the destination classification (a component name, or std / external /
+// unassigned). This is the single check Evaluate, Decide/DecideModule and
+// `explain` all consult, so the ban is enforced and explained identically on
+// every surface. An import within the source's own component is exempt and must
+// be filtered by the caller (as Decide's same-component short-circuit does).
+func (rs *RuleSet) GloballyDenied(target string, isModule bool, module string) (string, bool) {
+	for _, r := range rs.GlobalDeny {
+		var match bool
+		if isModule {
+			match = moduleRefMatches(r, module)
+		} else {
+			match = refMatchesTarget(r, target)
+		}
+		if match {
+			return globalDenyText(rs.GlobalDeny), true
+		}
+	}
+	return "", false
+}
+
+// globalDenyText renders the module-wide deny list as the human-readable rule
+// string a global-deny violation carries, e.g. `global deny [github.com/evil]`.
+func globalDenyText(refs []Ref) string {
+	names := make([]string, len(refs))
+	for i, r := range refs {
+		names[i] = r.String()
+	}
+	return fmt.Sprintf("global deny [%s]", strings.Join(names, ", "))
 }
 
 func refMatchesTarget(r Ref, target string) bool {

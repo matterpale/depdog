@@ -56,6 +56,9 @@ Exit codes: 0 shown, 2 configuration or usage error.`,
 			if err != nil {
 				return err
 			}
+			// `config` is the command a user runs to inspect/validate a config, so
+			// it should surface the same deprecation nudge the check path does.
+			warnConfigDeprecations(cmd, rs)
 			// The same module-relative path label the TUI's Config tab titles
 			// itself with, so both surfaces name the file identically.
 			return report.RuleSet(cmd.OutOrStdout(), rs, configRelPath(root, cfgPath), color)

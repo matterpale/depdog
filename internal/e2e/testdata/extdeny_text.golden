@@ -1,0 +1,7 @@
+depdog check — example.test/extdeny
+
+✗ app: deny [example.test/extlib]  (1 violation)
+    example.test/extdeny/internal/app
+      → example.test/extlib  internal/app/app.go:9
+
+1 violation · 1 package · 3 edges checked in X

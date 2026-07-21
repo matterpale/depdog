@@ -150,7 +150,7 @@ An editor JSON Schema ships at
 validation (a test keeps it in lockstep with the parser).
 
 **Full reference — [docs/configuration.md](docs/configuration.md):** component
-matching and precedence, the complete `allow`/`deny` vocabulary, groups, the
+matching and precedence, the complete `allow`/`deny` vocabulary, aliases, the
 non-blocking signals (unmapped packages, dead patterns, component cycles), and
 test-file handling. Boundaries have their own page —
 [docs/boundaries.md](docs/boundaries.md).
@@ -252,6 +252,19 @@ The "before" graph is the ref materialized in a throwaway git worktree; both
 graphs are mapped to components under the *current* `depdog.yaml`, so the diff
 reflects structural movement, not a config change.
 
+### Trend your architecture over time
+
+Where `diff` shows a single PR's movement, `depdog trend --since <ref>` samples
+commits from a ref to HEAD and plots how the health metrics moved — so you catch
+architecture *drifting* before it becomes violations. Each sampled commit is
+scanned in a throwaway worktree under the *current* `depdog.yaml`, so the trend
+is about the code, not config churn.
+
+```bash
+depdog trend --since v1.0.0        # a table + first→last delta; --max caps the samples
+depdog trend --since v1.0.0 --format json | jq '.delta'
+```
+
 ## Commands
 
 | Command                                          | What it does                                                                                                                                       |
@@ -261,6 +274,7 @@ reflects structural movement, not a config change.
 | `depdog graph`                                   | Emit the dependency graph as DOT or Mermaid                                                                                                        |
 | `depdog diff --since <ref>`                      | Show how a change moved the architecture vs a git ref: cross-component edges added/removed, boundary crossings flagged (informational, exits `0`)   |
 | `depdog metrics`                                 | Report architecture-health numbers: per-component coupling (fan-in / fan-out) and instability, plus repo totals (edges, boundary crossings, cycles) — `text` or `json` (informational, exits `0`) |
+| `depdog trend --since <ref>`                     | Trend those metrics over git history (samples up to `--max` commits from a ref to HEAD) so drift shows up before it becomes violations — `text` or `json` (informational, exits `0`) |
 | `depdog explain <component-or-package> [import]` | Explain why something is red (rule/boundary that fired, with file:line), constraints, boundary membership etc.                                     |
 | `depdog config`                                  | Print the compiled rule set — components, patterns, inferred stances, boundaries, options — for debugging a config                                 |
 | `depdog lsp`                                     | LSP server over stdio: violations become inline editor diagnostics at their import lines ([editor setup](docs/editors.md) · [design](docs/lsp.md)) |
@@ -283,7 +297,7 @@ Exit codes are a [contract](docs/compatibility.md):
 
 ## Multi-language support
 
-depdog checks **nine** languages with the *same* `depdog.yaml`, the *same*
+depdog checks **many** languages with the *same* `depdog.yaml`, the *same*
 commands, and the *same* engine.
 
 Only a thin language adapter differs; the rule format is neutral — component
@@ -351,7 +365,7 @@ depdog's bet is different: one rule model, one engine, thin adapters.
 
 |                                            | depdog                     | go-arch-lint     | dependency-cruiser                 | deptrac                                  |
 |--------------------------------------------|----------------------------|------------------|------------------------------------|------------------------------------------|
-| Languages                                  | nine, one rule format      | Go               | JS/TS (+ Vue, Svelte)              | PHP                                      |
+| Languages                                  | many, one rule format      | Go               | JS/TS (+ Vue, Svelte)              | PHP                                      |
 | Needs                                      | one static binary*         | the Go toolchain | Node + the project's own compilers | PHP ≥ 8.2                                |
 | Baseline ratchet                           | ✓                          | —                | ✓                                  | ✓                                        |
 | CI formats                                 | GitHub annotations · SARIF | JSON             | Markdown · TeamCity · Azure DevOps | GitHub annotations · JUnit · CodeClimate |
@@ -370,7 +384,7 @@ your dependencies must resolve. The payoff is real — deepscan traces
 dependency injection through interfaces, catching inversions no import scan
 can see. depdog deliberately stays at the import layer: scan source text,
 never build — so it runs mid-refactor, on code that doesn't compile yet, and
-the identical engine covers eight more languages. On top of that layer depdog
+the identical engine covers many more languages. On top of that layer depdog
 adds what go-arch-lint doesn't have: the baseline ratchet, SARIF, an LSP, an
 MCP server, and per-PR architecture diffs.
 

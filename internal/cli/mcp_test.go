@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/spf13/cobra"
@@ -123,6 +124,53 @@ func TestMCPCanImportRuleSetOnly(t *testing.T) {
 		if out.Allowed != tt.wantAllowed {
 			t.Errorf("can_import(%s → %s) allowed = %v, want %v", tt.from, tt.to, out.Allowed, tt.wantAllowed)
 		}
+	}
+}
+
+// TestMCPCanImportGlobalDeny asserts the module-wide deny surfaces on the MCP
+// can_import path: a globally-banned module is denied even though the source
+// component allows external, and the verdict is labelled global-deny (not a
+// component rule).
+func TestMCPCanImportGlobalDeny(t *testing.T) {
+	h := mcpTestHandler(t, "extdeny-global")
+	payload, err := h.CanImport(context.Background(), "api", "example.test/extlib")
+	if err != nil {
+		t.Fatalf("CanImport: %v", err)
+	}
+	var out struct {
+		Allowed     bool   `json:"allowed"`
+		DecidedBy   string `json:"decided_by"`
+		Reason      string `json:"reason"`
+		Explanation string `json:"explanation"`
+	}
+	if err := json.Unmarshal(payload, &out); err != nil {
+		t.Fatalf("can_import payload: %v\n%s", err, payload)
+	}
+	if out.Allowed {
+		t.Errorf("api → example.test/extlib must be denied by the module-wide deny\n%s", payload)
+	}
+	if out.DecidedBy != "global-deny" {
+		t.Errorf("decided_by = %q, want global-deny", out.DecidedBy)
+	}
+	if !strings.Contains(out.Reason, "global deny") {
+		t.Errorf("reason = %q, want it to name the global deny", out.Reason)
+	}
+	if !strings.Contains(out.Explanation, "top-level `deny`") {
+		t.Errorf("explanation should point at the top-level deny list: %q", out.Explanation)
+	}
+	// A permitted external in the same component still passes — the ban is targeted.
+	okPayload, err := h.CanImport(context.Background(), "api", "example.test/goodlib")
+	if err != nil {
+		t.Fatalf("CanImport(goodlib): %v", err)
+	}
+	var okOut struct {
+		Allowed bool `json:"allowed"`
+	}
+	if err := json.Unmarshal(okPayload, &okOut); err != nil {
+		t.Fatalf("payload: %v", err)
+	}
+	if !okOut.Allowed {
+		t.Errorf("api → example.test/goodlib should be allowed (only extlib is banned)\n%s", okPayload)
 	}
 }
 

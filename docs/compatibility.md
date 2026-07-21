@@ -18,10 +18,12 @@ release, but existing ones never change name or meaning.
 
 - **The config v2 YAML schema** — [`schema/depdog.schema.json`](../schema/depdog.schema.json)
   and the `depdog.yaml` vocabulary it describes (`version`, `components`,
-  `allow`/`deny`, `groups`, `boundaries`, `default`, `options`, `lang`). New
-  keys may be added in a minor; the meaning of an existing key never changes
-  under a minor. A config that validates today keeps validating and keeps
-  meaning the same thing.
+  `allow`/`deny`, `aliases` — with `groups` retained as a deprecated synonym —
+  `boundaries`, `default`, `options`, `lang`). New keys may be added in a minor;
+  the meaning of an existing key never changes under a minor. A key may be
+  *soft-deprecated* in a minor — it keeps working, with a one-line notice — and
+  only *removed* in a major, the way `groups` became `aliases`. A config that
+  validates today keeps validating and keeps meaning the same thing.
 - **`--format json` — the single-unit report.** Top-level `module`, `default`,
   `violations`, `warnings`, `components`, `boundaries`, `cycles`, `stats`, with
   their `snake_case` field names (`from_package`, `test_only`, `duration_ms`, …).

@@ -16,7 +16,7 @@ components:
   service: { path: "internal/service/**", allow: [ domain ] }
   repository: { path: "internal/repository/**" }
 
-groups:
+aliases:
   inner: [ domain, service ]
 
 boundaries:
@@ -35,7 +35,7 @@ func TestRenameComponent(t *testing.T) {
 	}
 	s := string(out)
 
-	// The key, the deny ref on handler, the group entry, and both boundary member
+	// The key, the deny ref on handler, the alias entry, and both boundary member
 	// lists all move to "svc".
 	rs, err := Parse(out)
 	if err != nil {
@@ -58,9 +58,9 @@ func TestRenameComponent(t *testing.T) {
 	if !strings.Contains(lineFor(t, out, "svc:"), `internal/service/**`) {
 		t.Errorf("svc should keep its original path glob:\n%s", lineFor(t, out, "svc:"))
 	}
-	// group + boundaries carry the new name.
+	// alias + boundaries carry the new name.
 	if !strings.Contains(lineFor(t, out, "inner:"), "svc") {
-		t.Errorf("group inner should reference svc:\n%s", lineFor(t, out, "inner:"))
+		t.Errorf("alias inner should reference svc:\n%s", lineFor(t, out, "inner:"))
 	}
 	if !strings.Contains(lineFor(t, out, "layers:"), "svc") || strings.Contains(lineFor(t, out, "layers:"), " service") {
 		t.Errorf("boundary layers should reference svc, not service:\n%s", lineFor(t, out, "layers:"))
@@ -79,9 +79,9 @@ func TestRenameComponentRefusals(t *testing.T) {
 	if _, err := RenameComponent([]byte(renameFixture), "service", "domain"); err == nil {
 		t.Error("renaming onto an existing component should be refused")
 	}
-	// Collision with a group name.
+	// Collision with an alias name.
 	if _, err := RenameComponent([]byte(renameFixture), "service", "inner"); err == nil {
-		t.Error("renaming onto an existing group name should be refused")
+		t.Error("renaming onto an existing alias name should be refused")
 	}
 	// Unknown component.
 	if _, err := RenameComponent([]byte(renameFixture), "nope", "x"); err == nil {
@@ -91,6 +91,23 @@ func TestRenameComponentRefusals(t *testing.T) {
 	out, err := RenameComponent([]byte(renameFixture), "service", "service")
 	if err != nil || string(out) != renameFixture {
 		t.Error("renaming to the same name should be a no-op")
+	}
+}
+
+// TestRenameComponentGroupsSynonym confirms a rename carries references through
+// the deprecated `groups:` block, not just the current `aliases:` one, so a
+// not-yet-migrated 1.x config renames cleanly.
+func TestRenameComponentGroupsSynonym(t *testing.T) {
+	in := "version: 2\ncomponents:\n  domain: { path: \"internal/domain/**\" }\n  service: { path: \"internal/service/**\", allow: [domain] }\ngroups:\n  inner: [domain, service]\ndefault: deny\n"
+	out, err := RenameComponent([]byte(in), "service", "svc")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(lineFor(t, out, "inner:"), "svc") || strings.Contains(lineFor(t, out, "inner:"), " service") {
+		t.Errorf("the deprecated groups block should carry the new name:\n%s", lineFor(t, out, "inner:"))
+	}
+	if _, err := Parse(out); err != nil {
+		t.Fatalf("renamed config does not parse: %v\n%s", err, out)
 	}
 }
 

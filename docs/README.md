@@ -9,7 +9,7 @@ topic.
 
 | Page | Covers |
 |------|--------|
-| [configuration.md](configuration.md)   | The complete `depdog.yaml` reference: component matching and precedence, the full `allow`/`deny` vocabulary, groups, the non-blocking signals, test-file handling |
+| [configuration.md](configuration.md)   | The complete `depdog.yaml` reference: component matching and precedence, the full `allow`/`deny` vocabulary, aliases, the non-blocking signals, test-file handling |
 | [boundaries.md](boundaries.md)         | The orthogonal mutual-exclusion axis: members (components or path globs), the verdict table, `sealed` one-way walls |
 | [languages.md](languages.md)           | Adapter auto-detection from marker files, the `--lang` override, the `lang:` config key, two-language ambiguity |
 | [adapters.md](adapters.md)             | Add a language *declaratively* with a YAML spec (built-in or `.depdog/adapters/*.yaml`) — the engine, the two resolution families, the spec reference |
@@ -25,7 +25,7 @@ topic.
 Every adapter is a pure-Go static import scanner: it reads source text
 (comment- and string-aware) and extracts the import statements — **no language
 toolchain, no build**. That is why depdog works mid-refactor, on code that
-doesn't compile yet, and on nine languages from one binary — where
+doesn't compile yet, and on many languages from one binary — where
 package-loader-based linters (e.g.
 [go-arch-lint](https://github.com/fe3dback/go-arch-lint)) need the language's
 own toolchain to load your packages first. The one exception is the Go adapter

@@ -5,8 +5,7 @@
 the command `depdog lsp` and get depdog's rule violations as inline
 diagnostics on the exact import lines, plus `depdog explain` verdicts on
 hover. This guide gives concrete snippets for Neovim, Helix, VS Code, Zed,
-GoLand/JetBrains and Emacs, covering all seven adapter languages: **Go,
-TypeScript/JavaScript (incl. TSX/JSX), Python, Rust, Java, Ruby, Kotlin**.
+GoLand/JetBrains and Emacs, covering all of depdog's adapter languages.
 
 Things that hold for every editor:
 
@@ -177,7 +176,7 @@ is a manual, local step.*
 
 VS Code has no generic "run this LSP command" setting, so depdog ships a thin
 extension scaffold at [`editors/vscode/`](../editors/vscode/) — ~40 lines of
-glue that starts `depdog lsp` for the seven adapter languages and watches
+glue that starts `depdog lsp` for depdog's adapter languages and watches
 `depdog.yaml`. Build and install it locally:
 
 ```bash
@@ -188,7 +187,7 @@ code --install-extension depdog-*.vsix
 ```
 
 See [`editors/vscode/README.md`](../editors/vscode/README.md) for details.
-The extension activates on any of the seven languages or when the workspace
+The extension activates on any of the adapter languages or when the workspace
 contains a `depdog.yaml`, and expects `depdog` on `PATH`.
 
 ---

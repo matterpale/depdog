@@ -1,0 +1,10 @@
+# Deny-list over external modules. The app component may import ANY third-party
+# module (allow: [external]) EXCEPT example.test/extlib, which is blocked by
+# name. Deny is evaluated before allow, so the extlib import is a violation
+# while its sibling example.test/goodlib passes — "allow the rest, deny one".
+version: 2
+
+components:
+  app: { path: "internal/app/**", allow: [external, std], deny: [example.test/extlib] }
+
+default: deny

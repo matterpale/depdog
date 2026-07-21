@@ -122,14 +122,14 @@ func TestParsePolicyRenamed(t *testing.T) {
 	}
 }
 
-func TestParseGroups(t *testing.T) {
+func TestParseAliases(t *testing.T) {
 	rs, err := Parse([]byte(`
 version: 2
 components:
   ui:     { path: "internal/ui/**", allow: [inner, std] }
   app:    { path: "internal/app/**" }
   domain: { path: "internal/domain/**" }
-groups:
+aliases:
   inner: [app, domain]
 default: deny
 `))
@@ -143,11 +143,142 @@ default: deny
 	}
 	for _, want := range []string{"app", "domain", "std"} {
 		if !got[want] {
-			t.Errorf("ui allow should expand the group to include %q: %+v", want, allow)
+			t.Errorf("ui allow should expand the alias to include %q: %+v", want, allow)
 		}
 	}
 	if len(allow) != 3 {
 		t.Errorf("ui allow = %d refs, want 3 (app, domain, std)", len(allow))
+	}
+}
+
+// TestParseAliasExternal covers the widening that motivated the rename: an alias
+// may name external-module prefixes (not just components), a single-member alias
+// may be written as a bare scalar, and the same alias can be reused by name —
+// here in a component allow and the module-wide deny — instead of duplicating
+// the prefixes. Each aliased prefix must compile to a RefExternalModule.
+func TestParseAliasExternal(t *testing.T) {
+	rs, err := Parse([]byte(`
+version: 2
+components:
+  api: { path: "internal/api/**", allow: [sdk, std] }
+  web: { path: "internal/web/**", allow: [external, std] }
+aliases:
+  sdk: [github.com/aws/aws-sdk-go-v2, github.com/aws/smithy-go]
+  pgx: github.com/jackc/pgx/v5
+deny: [pgx]
+default: deny
+`))
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+
+	// The `sdk` alias expands to two external-module refs in api's allow.
+	ext := map[string]bool{}
+	for _, r := range rs.Rules["api"].Allow {
+		if r.Kind == core.RefExternalModule {
+			ext[r.Name] = true
+		}
+	}
+	for _, want := range []string{"github.com/aws/aws-sdk-go-v2", "github.com/aws/smithy-go"} {
+		if !ext[want] {
+			t.Errorf("api allow should expand alias sdk to external ref %q: %+v", want, rs.Rules["api"].Allow)
+		}
+	}
+
+	// The bare-scalar `pgx` alias, reused by name in the top-level deny, compiles
+	// to one external-module ref there.
+	if len(rs.GlobalDeny) != 1 || rs.GlobalDeny[0].Kind != core.RefExternalModule || rs.GlobalDeny[0].Name != "github.com/jackc/pgx/v5" {
+		t.Errorf("global deny should expand alias pgx to one external ref: %+v", rs.GlobalDeny)
+	}
+}
+
+// TestParseAliasMixedMembers pins the advertised "a list mixing both" case: one
+// alias naming a component and an external-module prefix expands to one
+// RefComponent plus one RefExternalModule, in order.
+func TestParseAliasMixedMembers(t *testing.T) {
+	rs, err := Parse([]byte(`
+version: 2
+components:
+  domain: { path: "internal/domain/**" }
+  api:    { path: "internal/api/**", allow: [mix, std] }
+aliases:
+  mix: [domain, github.com/pkg/errors]
+default: deny
+`))
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	var comp, ext int
+	for _, r := range rs.Rules["api"].Allow {
+		switch {
+		case r.Kind == core.RefComponent && r.Name == "domain":
+			comp++
+		case r.Kind == core.RefExternalModule && r.Name == "github.com/pkg/errors":
+			ext++
+		}
+	}
+	if comp != 1 || ext != 1 {
+		t.Errorf("mixed alias should expand to 1 component + 1 external ref, got comp=%d ext=%d: %+v", comp, ext, rs.Rules["api"].Allow)
+	}
+}
+
+// TestGroupsComponentsOnly locks in Option B: the deprecated `groups:` key is
+// frozen at its 1.0 behaviour — components only. A component member works
+// exactly as before; an external-module prefix (which `aliases:` accepts) is a
+// deliberate, actionable error pointing at `aliases:`, so `groups:`'s accepted
+// input never changes under the 1.x line.
+func TestGroupsComponentsOnly(t *testing.T) {
+	// A component member parses, same as in 1.0.
+	if _, err := Parse([]byte("version: 2\ncomponents:\n  a: { path: \"x/**\" }\n  b: { path: \"y/**\", allow: [g, std] }\ngroups:\n  g: [a]\ndefault: deny\n")); err != nil {
+		t.Fatalf("groups with a component member must parse: %v", err)
+	}
+	// An external-module prefix is rejected, and the message routes the user to
+	// the aliases key rather than a bare "not a known component".
+	_, err := Parse([]byte("version: 2\ncomponents:\n  a: { path: \"x/**\" }\ngroups:\n  g: [github.com/pkg/errors]\ndefault: deny\n"))
+	if err == nil {
+		t.Fatal("groups with an external-module prefix should be rejected — that requires the aliases key")
+	}
+	if !strings.Contains(err.Error(), "aliases:") {
+		t.Errorf("the error should point the user at the aliases key: %v", err)
+	}
+}
+
+// TestGroupsDeprecatedAlias locks in the backward-compatibility path: `groups`
+// (renamed to `aliases` after it shipped in v1.0.0) keeps parsing with identical
+// semantics, and Parse records a non-fatal deprecation notice rather than an
+// error, so an existing 1.x config never breaks.
+func TestGroupsDeprecatedAlias(t *testing.T) {
+	rs, err := Parse([]byte(`
+version: 2
+components:
+  ui:  { path: "internal/ui/**", allow: [inner, std] }
+  app: { path: "internal/app/**" }
+groups:
+  inner: [app]
+default: deny
+`))
+	if err != nil {
+		t.Fatalf("a config using the deprecated groups key must still parse: %v", err)
+	}
+	// Same expansion as if it had used `aliases`.
+	if got := rs.Rules["ui"].Allow; len(got) != 2 {
+		t.Errorf("ui allow = %d refs, want 2 (app via alias, std): %+v", len(got), got)
+	}
+	// The deprecation is surfaced, not swallowed.
+	if len(rs.Deprecations) != 1 || !strings.Contains(rs.Deprecations[0], "aliases") {
+		t.Errorf("expected a groups→aliases deprecation notice: %+v", rs.Deprecations)
+	}
+}
+
+// TestAliasesGroupsConflict guards the one new error the additive rename
+// introduces: a file may use `aliases` or the deprecated `groups`, never both.
+func TestAliasesGroupsConflict(t *testing.T) {
+	_, err := Parse([]byte("version: 2\ncomponents: {a: {path: \"x/**\"}}\naliases: {g: [a]}\ngroups: {h: [a]}\n"))
+	if err == nil {
+		t.Fatal("expected an error when both aliases and groups are set")
+	}
+	if !strings.Contains(err.Error(), "not both") {
+		t.Errorf("conflict error should say the keys are mutually exclusive: %v", err)
 	}
 }
 
@@ -168,6 +299,48 @@ func TestParseExternalModuleRef(t *testing.T) {
 	}
 	if !found {
 		t.Errorf("a module-path ref should parse to an external-module ref: %+v", allow)
+	}
+}
+
+func TestParseGlobalDeny(t *testing.T) {
+	// A top-level deny compiles into RuleSet.GlobalDeny using the same ref
+	// vocabulary as a component rule: a module path becomes an external-module
+	// ref, a component name a component ref.
+	rs, err := Parse([]byte("version: 2\ncomponents: {a: {path: \"x/**\", allow: [external]}}\ndeny: [\"github.com/evil/pkg\", a]\ndefault: deny\n"))
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	if len(rs.GlobalDeny) != 2 {
+		t.Fatalf("GlobalDeny = %+v, want 2 refs", rs.GlobalDeny)
+	}
+	if rs.GlobalDeny[0].Kind != core.RefExternalModule || rs.GlobalDeny[0].Name != "github.com/evil/pkg" {
+		t.Errorf("first global-deny ref = %+v, want external-module github.com/evil/pkg", rs.GlobalDeny[0])
+	}
+	if rs.GlobalDeny[1].Kind != core.RefComponent || rs.GlobalDeny[1].Name != "a" {
+		t.Errorf("second global-deny ref = %+v, want component a", rs.GlobalDeny[1])
+	}
+}
+
+func TestParseGlobalDenyAbsent(t *testing.T) {
+	// No top-level deny means no module-wide ban.
+	rs, err := Parse([]byte("version: 2\ncomponents: {a: {path: \"x/**\"}}\ndefault: deny\n"))
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	if len(rs.GlobalDeny) != 0 {
+		t.Errorf("GlobalDeny = %+v, want empty", rs.GlobalDeny)
+	}
+}
+
+func TestParseGlobalDenyUnknownRef(t *testing.T) {
+	// A bare word that is neither a known component/alias nor a module path is an
+	// error, and the message names the top-level deny (not a phantom component).
+	_, err := Parse([]byte("version: 2\ncomponents: {a: {path: \"x/**\"}}\ndeny: [nope]\ndefault: deny\n"))
+	if err == nil {
+		t.Fatal("expected an error for an unresolvable top-level deny ref")
+	}
+	if !strings.Contains(err.Error(), "top-level deny") {
+		t.Errorf("error should name the top-level deny: %v", err)
 	}
 }
 
@@ -204,10 +377,11 @@ func TestParseErrors(t *testing.T) {
 		{"empty patterns", "version: 2\ncomponents: {a: {path: []}}", "no patterns"},
 		{"bad glob", "version: 2\ncomponents: {a: {path: [\"x/[bad/**\"]}}", "segment"},
 		{"bad default", "version: 2\ncomponents: {a: {path: \"x/**\"}}\ndefault: strict", "default must be"},
-		{"unknown ref", "version: 2\ncomponents: {a: {path: \"x/**\", allow: [nope]}}", `unknown component or group "nope"`},
-		{"group unknown member", "version: 2\ncomponents: {a: {path: \"x/**\"}}\ngroups: {g: [nope]}", "not a known component"},
-		{"group collides", "version: 2\ncomponents: {a: {path: \"x/**\"}}\ngroups: {a: [a]}", "collides"},
-		{"group reserved", "version: 2\ncomponents: {a: {path: \"x/**\"}}\ngroups: {std: [a]}", "reserved"},
+		{"unknown ref", "version: 2\ncomponents: {a: {path: \"x/**\", allow: [nope]}}", `unknown component or alias "nope"`},
+		{"alias unknown member", "version: 2\ncomponents: {a: {path: \"x/**\"}}\naliases: {g: [nope]}", "not a known component or an external-module prefix"},
+		{"alias collides", "version: 2\ncomponents: {a: {path: \"x/**\"}}\naliases: {a: [a]}", "collides"},
+		{"alias reserved", "version: 2\ncomponents: {a: {path: \"x/**\"}}\naliases: {std: [a]}", "reserved"},
+		{"both alias keys", "version: 2\ncomponents: {a: {path: \"x/**\"}}\naliases: {g: [a]}\ngroups: {h: [a]}", "not both"},
 		{"bad test_files", "version: 2\ncomponents: {a: {path: \"x/**\"}}\noptions: {test_files: never}", "test_files"},
 		{"typo field", "version: 2\ncomponents: {a: {path: \"x/**\"}}\nrulez: {}", "rulez"},
 	}

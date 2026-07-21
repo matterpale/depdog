@@ -94,19 +94,25 @@ func mergeEntryBody(c MergeComponent) string {
 	return body + " }"
 }
 
-// DeclaredNames lists every name the raw config's components and groups
+// DeclaredNames lists every name the raw config's components and aliases
 // mappings declare, sorted. The merge uses it to pick collision-free names for
-// new components without compiling the whole file.
+// new components without compiling the whole file. It reads both the current
+// `aliases` key and its deprecated `groups` synonym so a not-yet-migrated config
+// still yields collision-free proposals.
 func DeclaredNames(data []byte) ([]string, error) {
 	var f struct {
 		Components map[string]yaml.Node `yaml:"components"`
+		Aliases    map[string]yaml.Node `yaml:"aliases"`
 		Groups     map[string]yaml.Node `yaml:"groups"`
 	}
 	if err := yaml.Unmarshal(data, &f); err != nil {
 		return nil, err
 	}
-	names := make([]string, 0, len(f.Components)+len(f.Groups))
+	names := make([]string, 0, len(f.Components)+len(f.Aliases)+len(f.Groups))
 	for n := range f.Components {
+		names = append(names, n)
+	}
+	for n := range f.Aliases {
 		names = append(names, n)
 	}
 	for n := range f.Groups {

@@ -1,0 +1,53 @@
+name: action-smoke
+
+# End-to-end test of the composite action (download → checksum → extract → PATH →
+# run) on every OS it supports. Kept out of the main ci workflow on purpose: it
+# downloads a *published* release, so it only makes sense once one exists and
+# would otherwise make ordinary PR CI depend on the network. It runs after each
+# release (verifying the freshly published assets install everywhere), on demand,
+# on a PR that touches the action (so action changes are validated before merge),
+# and when the action or release config lands on main.
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: depdog version to smoke-test (a tag like v0.6.0, or latest)
+        required: false
+        default: latest
+  pull_request:
+    paths:
+      - action.yml
+      - .goreleaser.yaml
+      - .github/workflows/action-smoke.yml
+  push:
+    branches: [main]
+    paths:
+      - action.yml
+      - .goreleaser.yaml
+      - .github/workflows/action-smoke.yml
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      # Exercise the action against a real release. On a release event that is the
+      # tag just published; on manual dispatch the chosen version; otherwise the
+      # latest release. `--version` needs no depdog.yaml and exits 0, so it proves
+      # the binary downloaded, verified, extracted, landed on PATH, and runs — the
+      # OS-specific mechanics (goreleaser asset names, Windows zip extraction, the
+      # GITHUB_PATH handoff) that the Go tests cannot cover.
+      - name: Install and run depdog via the action
+        uses: ./
+        with:
+          version: ${{ github.event.release.tag_name || inputs.version || 'latest' }}
+          args: --version
