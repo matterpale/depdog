@@ -6,7 +6,7 @@ description: >-
   this skill also covers running and interpreting `depdog check`, wiring it into
   CI, baselining a legacy repo, and exploring a codebase with the TUI, `explain`
   and `graph`. Use when the user wants to adopt depdog, set up or tighten
-  import/architecture rules, define components, groups or boundaries, debug
+  import/architecture rules, define components, aliases or boundaries, debug
   `depdog check` errors or violations, or integrate depdog into CI or an editor
   (LSP). Covers Go, TypeScript/JS, Python, Rust, Java, Kotlin, Ruby, Scala, and
   Elm.
@@ -116,9 +116,13 @@ components:
 
 default: allow        # fallback for rule-less components. Use `deny` to fail closed.
 
-# Optional: named reusable component sets, expanded in allow/deny.
-groups:
+# Optional: named reusable entries, expanded in allow/deny. A member is a
+# component OR an external-module prefix (a single member may be a bare scalar),
+# so a long or repeated import blob is named once instead of pasted per rule.
+# (The old key name `groups:` still works — components only; use `aliases:` for external prefixes.)
+aliases:
   inner: [domain, service]
+  pgx: github.com/jackc/pgx/v5
 
 # Optional: boundaries — an orthogonal, symmetric axis. Members (component names
 # OR path globs) may not import across each other: peer isolation without O(n²)
@@ -143,7 +147,7 @@ options:
 | `external` | any third-party dependency (node_modules, gems, crates, Maven deps, …) |
 | `unassigned` | in-project packages no component claims |
 | `"*"` | everything |
-| a group name | its members (expanded at parse time) |
+| an alias name | its members — components and/or external prefixes (expanded at parse time) |
 | an import path with `/` or `.` (`golang.org/x/sync`, `lodash`) | one external dependency, by prefix |
 
 **Rules that matter:**

@@ -23,9 +23,33 @@ error, not a silent pick.
 | `"*"`                  | everything                                                          |
 | `golang.org/x/sync`    | one specific external module, by prefix — any entry with `/` or `.` |
 
-**Groups** name a reusable set of components: declare `groups: { inner:
-[domain, core] }`, then reference `inner` in any allow/deny list; it expands
-to its members when the config loads.
+**Aliases** name a reusable entry — or set of entries — for any allow/deny
+list. An alias member is a component *or* an external-module prefix (or a list
+mixing both), told apart the same way an inline entry is: a bare word is a
+component, anything with a `/` or `.` is an external module. Declare them once
+and reference the name wherever the expansion is needed:
+
+```yaml
+aliases:
+  inner: [ domain, core ]                               # a set of components
+  pgx:   github.com/jackc/pgx/v5                         # one prefix (bare scalar)
+  aws:   [ github.com/aws/aws-sdk-go-v2, github.com/aws/smithy-go ]
+components:
+  api: { path: "internal/api/**", allow: [ inner, aws, std ] }
+deny: [ pgx ]        # reuse the same alias by name, no duplicated blob
+```
+
+An alias with a single member may be written as a bare scalar (`pgx:
+github.com/jackc/pgx/v5`); it expands to its members when the config loads. This
+is the tool for a long external-module prefix — or a set of them — that you'd
+otherwise paste into several rules.
+
+> Renamed from `groups` (which only held components). `groups:` still works
+> through the 1.x line, **frozen at its original behaviour — components only**; a
+> config that uses it parses unchanged and prints a one-line deprecation notice.
+> To alias an external-module prefix, use `aliases:` (that is the one thing
+> `groups:` will not do — it errors with a pointer to `aliases:`). Setting both
+> `groups:` and `aliases:` is an error. `groups` is removed in the next major.
 
 A component's **stance** is read from which word its rule uses: one with an
 `allow` list is a **whitelist** (only what's listed passes), one with only a
@@ -54,7 +78,7 @@ components:
 ```
 
 It takes the same entries as a component list (an external-module prefix is the
-common one; component and group names work too) and is the right tool for a
+common one; component and alias names work too) and is the right tool for a
 security or license ban that must hold everywhere — `api` and `web` above may
 import any *other* external module, but never `github.com/evil/pkg`.
 

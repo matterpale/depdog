@@ -86,7 +86,7 @@ func TestMergedConfigsRoundTrip(t *testing.T) {
 		"plain":      "version: 2\ncomponents:\n  main: { path: \"cmd/**\" }\n  domain: { path: \"internal/domain/**\", allow: [std] }\ndefault: deny\n",
 		"no rules":   "version: 2\ncomponents:\n  main: { path: \"cmd/**\" }\ndefault: deny\n",
 		"allow":      "version: 2\ncomponents:\n  main: { path: \"cmd/**\" }\ndefault: allow\n",
-		"groups":     "version: 2\ncomponents:\n  main: { path: \"cmd/**\", allow: [util, std] }\ngroups:\n  util: [main]\ndefault: deny\n",
+		"aliases":    "version: 2\ncomponents:\n  main: { path: \"cmd/**\", allow: [util, std] }\naliases:\n  util: [main]\ndefault: deny\n",
 		"everything": "version: 2\ncomponents:\n  all: { path: \"**\" }\ndefault: deny\n",
 	}
 	for name, in := range existing {
@@ -125,12 +125,12 @@ func TestMergedConfigsRoundTrip(t *testing.T) {
 			if _, err := config.Parse(merged); err != nil {
 				t.Fatalf("merged config does not parse: %v\n%s", err, merged)
 			}
-			if name == "groups" {
-				// "util" is taken by a group: the pkg/util proposal must have
+			if name == "aliases" {
+				// "util" is taken by an alias: the pkg/util proposal must have
 				// been renamed, or Parse above would have rejected the merge.
 				for _, c := range proposed {
 					if c.Name == "util" {
-						t.Errorf("proposal %q collides with the group of the same name", c.Name)
+						t.Errorf("proposal %q collides with the alias of the same name", c.Name)
 					}
 				}
 			}

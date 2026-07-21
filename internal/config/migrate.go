@@ -71,6 +71,11 @@ func legacyError(data []byte) error {
 // key (renamed to `default` in v2, with its default flipped from deny to allow),
 // pointing at the rename rather than letting KnownFields emit "field policy not
 // found". Returns nil when there is no such key.
+//
+// The `groups` -> `aliases` rename is deliberately NOT handled here: `groups`
+// shipped in v1.0.0, so per docs/compatibility.md it must keep working within
+// the 1.x line. Parse accepts it as a deprecated synonym of `aliases` and emits
+// an advisory instead of an error; the hard removal waits for a major bump.
 func renamedFieldError(data []byte) error {
 	var doc yaml.Node
 	if err := yaml.Unmarshal(data, &doc); err != nil {

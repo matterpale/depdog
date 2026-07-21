@@ -1,0 +1,16 @@
+# Aliasing external modules. The `sdk` alias names two third-party module
+# prefixes once; api and web then refer to it by name instead of pasting the
+# prefixes into each rule. api may use the whole SDK (allow: [sdk]); web is a
+# pure layer that must not (deny: [sdk]), so its goodlib import is flagged while
+# api's identical import passes — the same alias, resolved to external-module
+# refs on both sides.
+version: 2
+
+aliases:
+  sdk: [example.test/goodlib, example.test/extlib]
+
+components:
+  api: { path: "internal/api/**", allow: [sdk, std] }
+  web: { path: "internal/web/**", allow: [std], deny: [sdk] }
+
+default: deny

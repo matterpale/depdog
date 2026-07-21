@@ -9,7 +9,7 @@ topic.
 
 | Page | Covers |
 |------|--------|
-| [configuration.md](configuration.md)   | The complete `depdog.yaml` reference: component matching and precedence, the full `allow`/`deny` vocabulary, groups, the non-blocking signals, test-file handling |
+| [configuration.md](configuration.md)   | The complete `depdog.yaml` reference: component matching and precedence, the full `allow`/`deny` vocabulary, aliases, the non-blocking signals, test-file handling |
 | [boundaries.md](boundaries.md)         | The orthogonal mutual-exclusion axis: members (components or path globs), the verdict table, `sealed` one-way walls |
 | [languages.md](languages.md)           | Adapter auto-detection from marker files, the `--lang` override, the `lang:` config key, two-language ambiguity |
 | [monorepo.md](monorepo.md)             | The per-unit fan-out: `go.work` mode, `--all` polyglot discovery, `--unit`/`--module` narrowing, advisory skips |

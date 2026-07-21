@@ -39,12 +39,25 @@
         }
       }
     },
-    "groups": {
+    "aliases": {
       "type": "object",
-      "description": "Named sets of components, usable in any allow/deny list.",
+      "description": "Named aliases usable in any allow/deny list. Each maps a short name to a component, an external-module prefix (e.g. github.com/pkg/errors), or a list mixing both, and expands to its members when the config loads — name a long or repeated set of imports once instead of pasting it into every rule. A single-member alias may be written as a bare scalar. (Renamed from `groups`, which only held components.)",
       "additionalProperties": {
-        "type": "array",
-        "items": { "type": "string" }
+        "oneOf": [
+          { "type": "string" },
+          { "type": "array", "items": { "type": "string" } }
+        ]
+      }
+    },
+    "groups": {
+      "deprecated": true,
+      "type": "object",
+      "description": "DEPRECATED — the pre-1.1 name for `aliases`, frozen at its original behaviour: it names components only. Still accepted through the 1.x line (with a deprecation notice); use `aliases`, which additionally accepts external-module prefixes. A prefix member here is an error pointing at `aliases`. Setting both `groups` and `aliases` is an error. Will be removed in the next major release.",
+      "additionalProperties": {
+        "oneOf": [
+          { "type": "string" },
+          { "type": "array", "items": { "type": "string" } }
+        ]
       }
     },
     "boundaries": {
@@ -105,7 +118,7 @@
       ]
     },
     "refs": {
-      "description": "Allow/deny entries: component names, group names, or std / external / unassigned / \"*\".",
+      "description": "Allow/deny entries: component names, alias names, external-module prefixes, or std / external / unassigned / \"*\".",
       "type": "array",
       "items": { "type": "string" }
     }

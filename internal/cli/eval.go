@@ -99,6 +99,12 @@ func evaluateAt(cmd *cobra.Command, adapter lang.Adapter, root, cfgPath string, 
 // its `lang:` key for adapter selection) and hands the result here so it is not
 // re-parsed.
 func evaluateWith(cmd *cobra.Command, adapter lang.Adapter, root, cfgPath string, rs *core.RuleSet, args []string) (*evaluation, error) {
+	// Surface config deprecations (e.g. the old `groups:` key), then drain them so
+	// a command that evaluates the same loaded config twice — `diff` runs the
+	// before and after trees through here with one rs — does not repeat the notice.
+	warnConfigDeprecations(cmd, rs)
+	rs.Deprecations = nil
+
 	graph, err := adapter.New(root).Load(cmd.Context(), args...)
 	if err != nil {
 		return nil, err
@@ -115,6 +121,15 @@ func evaluateWith(cmd *cobra.Command, adapter lang.Adapter, root, cfgPath string
 	}
 	res.Degraded = len(graph.LoadWarnings) > 0
 	return &evaluation{Result: res, Graph: graph, Rules: rs, ConfigPath: cfgPath}, nil
+}
+
+// warnConfigDeprecations prints a loaded config's deprecation notices (e.g. the
+// old `groups:` key) to stderr, so they never touch the machine-readable stdout
+// (--format json/github/sarif) and never affect the exit code.
+func warnConfigDeprecations(cmd *cobra.Command, rs *core.RuleSet) {
+	for _, d := range rs.Deprecations {
+		fmt.Fprintln(cmd.ErrOrStderr(), "depdog: deprecated: "+d)
+	}
 }
 
 // languageFlag reads and validates the persistent --lang flag against the

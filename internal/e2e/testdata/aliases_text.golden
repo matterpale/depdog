@@ -1,0 +1,7 @@
+depdog check — example.test/aliases
+
+✗ web: deny [example.test/goodlib, example.test/extlib]  (1 violation)
+    example.test/aliases/internal/web
+      → example.test/goodlib  internal/web/web.go:6
+
+1 violation · 2 packages · 4 edges checked in X

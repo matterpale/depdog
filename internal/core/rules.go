@@ -121,6 +121,11 @@ type RuleSet struct {
 	// the string; the CLI (which owns the adapter registry) validates and
 	// resolves it. Empty means "auto-detect the adapter".
 	Lang string
+	// Deprecations are advisory notices about the config's use of deprecated keys
+	// (e.g. the old `groups:` spelling of `aliases:`). They never affect the rules
+	// or the exit code; the CLI prints them to stderr so a maintainer knows to
+	// migrate. Empty for a config using only current keys.
+	Deprecations []string
 }
 
 // AmbiguityError reports a package matched by equally specific patterns of

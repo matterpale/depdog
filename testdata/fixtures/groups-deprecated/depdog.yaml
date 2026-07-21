@@ -1,0 +1,13 @@
+# Backward-compat fixture: uses the DEPRECATED `groups:` key (renamed to
+# `aliases:`). The config must still parse and check cleanly; `depdog check`
+# emits a one-line deprecation notice to stderr while leaving stdout clean.
+version: 2
+
+groups:
+  core: [domain]
+
+components:
+  domain: { path: "internal/domain/**", allow: [std] }
+  app:    { path: "internal/app/**",    allow: [core, std] }
+
+default: deny

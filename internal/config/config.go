@@ -27,9 +27,14 @@ type file struct {
 	Module     string                   `yaml:"module"`
 	Lang       string                   `yaml:"lang"`
 	Components map[string]componentYAML `yaml:"components"`
-	Groups     map[string]stringList    `yaml:"groups"`
-	Boundaries map[string]boundaryYAML  `yaml:"boundaries"`
-	Default    string                   `yaml:"default"`
+	Aliases    map[string]stringList    `yaml:"aliases"`
+	// Groups is the deprecated pre-1.1 spelling of Aliases. It shipped in v1.0.0,
+	// so it stays accepted through the 1.x line (docs/compatibility.md); Parse
+	// treats it as a synonym of Aliases and emits a deprecation advisory. Setting
+	// both keys is an error.
+	Groups     map[string]stringList   `yaml:"groups"`
+	Boundaries map[string]boundaryYAML `yaml:"boundaries"`
+	Default    string                  `yaml:"default"`
 	// Deny is the module-wide deny list: refs (typically external-module prefixes)
 	// that no package anywhere may import, regardless of its component. It is a
 	// hard, global ban that wins over any component allow — for security/license
@@ -261,7 +266,21 @@ func Parse(data []byte) (*core.RuleSet, error) {
 		known[name] = true
 	}
 
-	groups, err := parseGroups(f.Groups, known, names)
+	// `aliases` is the current key; `groups` is its deprecated pre-1.1 synonym.
+	// Accept either (not both). `groups` is frozen at its 1.0 behaviour —
+	// components only — so its accepted input never changes under the 1.x line;
+	// naming an external-module prefix requires the wider `aliases` key.
+	rawAliases, noun, allowExternal := f.Aliases, "alias", true
+	if len(f.Groups) > 0 {
+		if len(f.Aliases) > 0 {
+			return nil, errors.New("set `aliases:` or the deprecated `groups:`, not both — move every entry under `aliases:`")
+		}
+		rawAliases, noun, allowExternal = f.Groups, "group", false
+		rs.Deprecations = append(rs.Deprecations,
+			"`groups:` was renamed to `aliases:` (which additionally accepts external-module prefixes); "+
+				"it still works but is deprecated and will be removed in the next major release — rename the block to `aliases:`")
+	}
+	aliases, err := parseAliases(rawAliases, known, names, noun, allowExternal)
 	if err != nil {
 		return nil, err
 	}
@@ -269,11 +288,11 @@ func Parse(data []byte) (*core.RuleSet, error) {
 	for _, name := range names {
 		c := f.Components[name]
 		subject := fmt.Sprintf("component %q", name)
-		allow, err := parseRefs(subject, c.Allow, known, groups)
+		allow, err := parseRefs(subject, c.Allow, known, aliases)
 		if err != nil {
 			return nil, err
 		}
-		deny, err := parseRefs(subject, c.Deny, known, groups)
+		deny, err := parseRefs(subject, c.Deny, known, aliases)
 		if err != nil {
 			return nil, err
 		}
@@ -284,7 +303,7 @@ func Parse(data []byte) (*core.RuleSet, error) {
 
 	// The top-level deny is the module-wide ban. It uses the same ref vocabulary
 	// as a component rule but belongs to no component, so it is parsed once here.
-	globalDeny, err := parseRefs("top-level deny", f.Deny, known, groups)
+	globalDeny, err := parseRefs("top-level deny", f.Deny, known, aliases)
 	if err != nil {
 		return nil, err
 	}
@@ -316,39 +335,57 @@ func Parse(data []byte) (*core.RuleSet, error) {
 	return rs, nil
 }
 
-// parseGroups validates the optional `groups` map (each a named set of
-// components) and returns name -> member components. A group may not use a
-// reserved name or collide with a component, and every member must be a known
-// component.
-func parseGroups(raw map[string]stringList, known map[string]bool, componentNames []string) (map[string][]string, error) {
+// parseAliases validates an alias map (the `aliases` key, or its deprecated
+// `groups` synonym) and returns name -> the refs it expands to. A member is a
+// component or, when allowExternal is set, an external-module prefix — told apart
+// by the same heuristic parseRefs uses inline: a bare word is a component,
+// anything with a "/" or "." is an external-module prefix. noun ("alias" or
+// "group") names the entity in error messages. The deprecated `groups` key is
+// frozen at its 1.0 behaviour (components only, allowExternal=false), so a prefix
+// member there is an actionable error pointing at `aliases`. An entry may not use
+// a reserved name or collide with a component. Members are resolved to refs here,
+// once, so parseRefs can splice them in by name.
+func parseAliases(raw map[string]stringList, known map[string]bool, componentNames []string, noun string, allowExternal bool) (map[string][]core.Ref, error) {
 	if len(raw) == 0 {
 		return nil, nil
 	}
-	groups := make(map[string][]string, len(raw))
-	gnames := make([]string, 0, len(raw))
+	aliases := make(map[string][]core.Ref, len(raw))
+	anames := make([]string, 0, len(raw))
 	for name := range raw {
-		gnames = append(gnames, name)
+		anames = append(anames, name)
 	}
-	sort.Strings(gnames)
-	for _, name := range gnames {
+	sort.Strings(anames)
+	for _, name := range anames {
 		if reserved[name] {
-			return nil, fmt.Errorf("group name %q is reserved", name)
+			return nil, fmt.Errorf("%s name %q is reserved", noun, name)
 		}
 		if known[name] {
-			return nil, fmt.Errorf("group %q collides with a component of the same name", name)
+			return nil, fmt.Errorf("%s %q collides with a component of the same name", noun, name)
 		}
 		members := raw[name]
 		if len(members) == 0 {
-			return nil, fmt.Errorf("group %q has no members", name)
+			return nil, fmt.Errorf("%s %q has no members", noun, name)
 		}
+		refs := make([]core.Ref, 0, len(members))
 		for _, m := range members {
-			if !known[m] {
-				return nil, fmt.Errorf("group %q member %q is not a known component (known: %s)", name, m, strings.Join(componentNames, ", "))
+			switch {
+			case known[m]:
+				refs = append(refs, core.Ref{Kind: core.RefComponent, Name: m})
+			case strings.ContainsAny(m, "/."):
+				if !allowExternal {
+					// `groups` is components-only; external prefixes live under `aliases`.
+					return nil, fmt.Errorf("%s %q member %q looks like an external-module prefix, which the deprecated `groups:` key does not accept — move this entry to the `aliases:` key, which names external modules as well as components", noun, name, m)
+				}
+				refs = append(refs, core.Ref{Kind: core.RefExternalModule, Name: m})
+			case allowExternal:
+				return nil, fmt.Errorf("%s %q member %q is not a known component or an external-module prefix (a prefix needs a %q or %q, e.g. github.com/pkg/errors) (known components: %s)", noun, name, m, "/", ".", strings.Join(componentNames, ", "))
+			default:
+				return nil, fmt.Errorf("%s %q member %q is not a known component (known: %s)", noun, name, m, strings.Join(componentNames, ", "))
 			}
 		}
-		groups[name] = members
+		aliases[name] = refs
 	}
-	return groups, nil
+	return aliases, nil
 }
 
 // isGlobMember reports whether a boundary member string is a path glob rather
@@ -435,8 +472,9 @@ func parseBoundaries(raw map[string]boundaryYAML, known map[string]bool, compone
 // parseRefs compiles a list of allow/deny entries into refs. subject is the
 // already-formatted owner named in error messages (e.g. `component "api"` or
 // `top-level deny`), so the same routine serves both component rules and the
-// module-wide deny list.
-func parseRefs(subject string, entries []string, known map[string]bool, groups map[string][]string) ([]core.Ref, error) {
+// module-wide deny list. aliases maps each alias name to the refs it expands to
+// (resolved once by parseAliases).
+func parseRefs(subject string, entries []string, known map[string]bool, aliases map[string][]core.Ref) ([]core.Ref, error) {
 	refs := make([]core.Ref, 0, len(entries))
 	for _, e := range entries {
 		switch e {
@@ -449,23 +487,23 @@ func parseRefs(subject string, entries []string, known map[string]bool, groups m
 		case "unassigned":
 			refs = append(refs, core.Ref{Kind: core.RefUnassigned})
 		default:
-			if members, ok := groups[e]; ok {
-				for _, m := range members {
-					refs = append(refs, core.Ref{Kind: core.RefComponent, Name: m})
-				}
+			// An alias expands to the components and/or external-module prefixes
+			// it names, each already resolved to a ref by parseAliases.
+			if expanded, ok := aliases[e]; ok {
+				refs = append(refs, expanded...)
 				continue
 			}
 			if known[e] {
 				refs = append(refs, core.Ref{Kind: core.RefComponent, Name: e})
 				continue
 			}
-			// A ref that is neither a component nor a group, but looks like an
+			// A ref that is neither a component nor an alias, but looks like an
 			// import path, restricts a specific external module (depguard-style).
 			if strings.ContainsAny(e, "/.") {
 				refs = append(refs, core.Ref{Kind: core.RefExternalModule, Name: e})
 				continue
 			}
-			return nil, fmt.Errorf("%s refers to unknown component or group %q", subject, e)
+			return nil, fmt.Errorf("%s refers to unknown component or alias %q", subject, e)
 		}
 	}
 	return refs, nil
